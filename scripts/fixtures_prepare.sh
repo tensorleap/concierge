@@ -266,6 +266,7 @@ while IFS= read -r fixture_json; do
   assert_clean_git_tree "${post_dir}" "post variant for fixture '${id}'"
 
   log "  Creating pre variant from source repository"
+  reset_fixture_dir "${pre_dir}"
   git_fixture clone --quiet --no-checkout --filter=blob:none "${repo}" "${pre_dir}"
   git_fixture -C "${pre_dir}" checkout --quiet "${post_ref}"
 

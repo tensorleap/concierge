@@ -84,7 +84,12 @@ ensure_relevant_model_lfs_hydrated() {
   include_csv="${include_csv%,}"
 
   log "  Hydrating ${#lfs_pointer_files[@]} LFS model file(s) in ${label}"
-  git -C "${repo_dir}" lfs pull --include "${include_csv}" --exclude ""
+  if ! git -C "${repo_dir}" lfs pull --include "${include_csv}" --exclude ""; then
+    if [[ "${strict_lfs}" == "1" ]]; then
+      fail "${label}: git lfs pull failed for model file(s): ${lfs_pointer_files[*]}"
+    fi
+    warn "${label}: git lfs pull failed in best-effort mode for model file(s): ${lfs_pointer_files[*]}"
+  fi
 
   local unresolved_lfs=()
   for rel_path in "${lfs_pointer_files[@]}"; do
@@ -103,14 +108,39 @@ ensure_relevant_model_lfs_hydrated() {
   return 0
 }
 
-array_contains() {
+strip_entry_covers_path() {
   local needle="$1"
   shift
   local item
   for item in "$@"; do
     [[ "${item}" == "${needle}" ]] && return 0
+    [[ "${needle}" == "${item}/"* ]] && return 0
   done
   return 1
+}
+
+collect_python_code_loader_files() {
+  local repo_dir="$1"
+  while IFS= read -r abs_path; do
+    [[ -n "${abs_path}" ]] || continue
+    echo "${abs_path#"${repo_dir}/"}"
+  done < <(rg -l --glob '*.py' 'code_loader|inner_leap_binder|leapbinder_decorators' "${repo_dir}" | sort || true)
+}
+
+collect_tensorleap_folder_dirs() {
+  local repo_dir="$1"
+  while IFS= read -r abs_path; do
+    [[ -n "${abs_path}" ]] || continue
+    echo "${abs_path#"${repo_dir}/"}"
+  done < <(find "${repo_dir}" -type d \( -name 'tensorleap_folder' -o -name '.tensorleap' \) | sort)
+}
+
+collect_tensorleap_mapping_files() {
+  local repo_dir="$1"
+  while IFS= read -r abs_path; do
+    [[ -n "${abs_path}" ]] || continue
+    echo "${abs_path#"${repo_dir}/"}"
+  done < <(find "${repo_dir}" -type f \( -name 'leap_mapping*.yaml' -o -name 'leap_mapping*.yml' \) | sort)
 }
 
 assert_clean_git_tree() {
@@ -180,7 +210,7 @@ while IFS= read -r fixture_json; do
   done < <(find "${post_dir}" -maxdepth 1 -type f -name 'leap*' -exec basename {} \; | sort)
 
   for rel_path in "${post_root_leap_files[@]}"; do
-    array_contains "${rel_path}" "${strip_files[@]}" \
+    strip_entry_covers_path "${rel_path}" "${strip_files[@]}" \
       || fail "fixture '${id}': root leap file '${rel_path}' is present in post but missing from strip_for_pre"
   done
 
@@ -190,8 +220,38 @@ while IFS= read -r fixture_json; do
     post_tensorleap_files+=("${abs_path#"${post_dir}/"}")
   done < <(rg -n --ignore-case --files-with-matches "tensorleap" "${post_dir}" || true)
   for rel_path in "${post_tensorleap_files[@]}"; do
-    array_contains "${rel_path}" "${strip_files[@]}" \
+    strip_entry_covers_path "${rel_path}" "${strip_files[@]}" \
       || fail "fixture '${id}': post file '${rel_path}' contains 'tensorleap' but is missing from strip_for_pre"
+  done
+
+  post_code_loader_python_files=()
+  while IFS= read -r rel_path; do
+    [[ -n "${rel_path}" ]] || continue
+    post_code_loader_python_files+=("${rel_path}")
+  done < <(collect_python_code_loader_files "${post_dir}")
+  for rel_path in "${post_code_loader_python_files[@]}"; do
+    strip_entry_covers_path "${rel_path}" "${strip_files[@]}" \
+      || fail "fixture '${id}': post Python file '${rel_path}' imports code_loader but is missing from strip_for_pre"
+  done
+
+  post_tensorleap_dirs=()
+  while IFS= read -r rel_path; do
+    [[ -n "${rel_path}" ]] || continue
+    post_tensorleap_dirs+=("${rel_path}")
+  done < <(collect_tensorleap_folder_dirs "${post_dir}")
+  for rel_path in "${post_tensorleap_dirs[@]}"; do
+    strip_entry_covers_path "${rel_path}" "${strip_files[@]}" \
+      || fail "fixture '${id}': post directory '${rel_path}' is Tensorleap-only content but is missing from strip_for_pre"
+  done
+
+  post_tensorleap_mapping_files=()
+  while IFS= read -r rel_path; do
+    [[ -n "${rel_path}" ]] || continue
+    post_tensorleap_mapping_files+=("${rel_path}")
+  done < <(collect_tensorleap_mapping_files "${post_dir}")
+  for rel_path in "${post_tensorleap_mapping_files[@]}"; do
+    strip_entry_covers_path "${rel_path}" "${strip_files[@]}" \
+      || fail "fixture '${id}': post mapping file '${rel_path}' is Tensorleap-only content but is missing from strip_for_pre"
   done
 
   assert_clean_git_tree "${post_dir}" "post variant for fixture '${id}'"
@@ -203,7 +263,7 @@ while IFS= read -r fixture_json; do
 
   log "  Stripping pre-integration files from pre variant"
   for rel_path in "${strip_files[@]}"; do
-    rm -f -- "${pre_dir:?}/${rel_path}"
+    rm -rf -- "${pre_dir:?}/${rel_path}"
   done
 
   # Remove compiled artifacts that can leak stripped integration semantics.
@@ -255,6 +315,30 @@ while IFS= read -r fixture_json; do
     ((${#pre_compiled_matches[@]} == 0)) \
       || fail "fixture '${id}': pre variant still has compiled artifacts for stripped '${base_name}.py': ${pre_compiled_matches[*]}"
   done
+
+  pre_code_loader_python_files=()
+  while IFS= read -r rel_path; do
+    [[ -n "${rel_path}" ]] || continue
+    pre_code_loader_python_files+=("${rel_path}")
+  done < <(collect_python_code_loader_files "${pre_dir}")
+  ((${#pre_code_loader_python_files[@]} == 0)) \
+    || fail "fixture '${id}': pre variant still contains Python files importing code_loader: ${pre_code_loader_python_files[*]}"
+
+  pre_tensorleap_dirs=()
+  while IFS= read -r rel_path; do
+    [[ -n "${rel_path}" ]] || continue
+    pre_tensorleap_dirs+=("${rel_path}")
+  done < <(collect_tensorleap_folder_dirs "${pre_dir}")
+  ((${#pre_tensorleap_dirs[@]} == 0)) \
+    || fail "fixture '${id}': pre variant still contains Tensorleap directories: ${pre_tensorleap_dirs[*]}"
+
+  pre_tensorleap_mapping_files=()
+  while IFS= read -r rel_path; do
+    [[ -n "${rel_path}" ]] || continue
+    pre_tensorleap_mapping_files+=("${rel_path}")
+  done < <(collect_tensorleap_mapping_files "${pre_dir}")
+  ((${#pre_tensorleap_mapping_files[@]} == 0)) \
+    || fail "fixture '${id}': pre variant still contains Tensorleap mapping files: ${pre_tensorleap_mapping_files[*]}"
 
   pre_tensorleap_files=()
   while IFS= read -r abs_path; do

@@ -29,6 +29,75 @@ type fixtureEntry struct {
 	ID string `json:"id"`
 }
 
+func TestFixturePreVariantsHaveNoHiddenTensorleapArtifacts(t *testing.T) {
+	requireFixtureReposPrepared(t)
+
+	fixtures := loadFixtures(t)
+	for _, fixture := range fixtures {
+		fixture := fixture
+		t.Run(fixture.ID, func(t *testing.T) {
+			preRoot, _ := resolveFixtureRoots(t, fixture.ID)
+			err := filepath.WalkDir(preRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+				if walkErr != nil {
+					return walkErr
+				}
+
+				if entry.IsDir() {
+					switch entry.Name() {
+					case ".git", "__pycache__", ".idea", ".concierge":
+						return fs.SkipDir
+					case "tensorleap_folder", ".tensorleap":
+						relPath, err := filepath.Rel(preRoot, path)
+						if err != nil {
+							return err
+						}
+						return core.NewError(core.KindUnknown, "fixtures.hidden_tensorleap_artifact.dir", "unexpected Tensorleap artifact directory: "+filepath.ToSlash(relPath))
+					default:
+						return nil
+					}
+				}
+
+				relPath, err := filepath.Rel(preRoot, path)
+				if err != nil {
+					return err
+				}
+				normalizedPath := filepath.ToSlash(relPath)
+				lowerName := strings.ToLower(entry.Name())
+				if strings.HasPrefix(lowerName, "leap_mapping") &&
+					(strings.HasSuffix(lowerName, ".yaml") || strings.HasSuffix(lowerName, ".yml")) {
+					return core.NewError(core.KindUnknown, "fixtures.hidden_tensorleap_artifact.mapping", "unexpected Tensorleap mapping artifact: "+normalizedPath)
+				}
+
+				lowerExt := strings.ToLower(filepath.Ext(entry.Name()))
+				switch lowerExt {
+				case ".py", ".md", ".yaml", ".yml", ".json", ".toml":
+				default:
+					return nil
+				}
+
+				raw, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				content := string(raw)
+				if strings.Contains(strings.ToLower(content), "tensorleap") {
+					return core.NewError(core.KindUnknown, "fixtures.hidden_tensorleap_artifact.content", "unexpected Tensorleap text marker in pre fixture file: "+normalizedPath)
+				}
+				if lowerExt == ".py" &&
+					(strings.Contains(content, "code_loader") ||
+						strings.Contains(content, "inner_leap_binder") ||
+						strings.Contains(content, "leapbinder_decorators")) {
+					return core.NewError(core.KindUnknown, "fixtures.hidden_tensorleap_artifact.python", "unexpected Tensorleap Python import marker in pre fixture file: "+normalizedPath)
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestFixturePreVsPostIssueDeltas(t *testing.T) {
 	requireFixtureReposPrepared(t)
 	t.Setenv(validate.HarnessEnableEnvVar, "0")

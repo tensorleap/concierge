@@ -12,9 +12,7 @@
         "leap_binder.py",
         "leap_custom_test.py",
         "ultralytics/cfg/default.yaml",
-        "ultralytics/tensorleap_folder/README.md",
-        "ultralytics/tensorleap_folder/global_params.py",
-        "ultralytics/tensorleap_folder/utils.py",
+        "ultralytics/tensorleap_folder",
         "ultralytics/utils/__init__.py"
       ]
     },
@@ -72,6 +70,7 @@
       "strip_for_pre": [
         "LICENSE",
         "README.md",
+        "cifar10_resnet/utils.py",
         "leap.yaml",
         "leap_binder.py",
         "leap_custom_test.py",

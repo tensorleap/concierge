@@ -151,6 +151,14 @@ assert_clean_git_tree() {
   fi
 }
 
+reset_fixture_dir() {
+  local dir="$1"
+  [[ -e "${dir}" ]] || return 0
+  chmod -R u+w "${dir}" 2>/dev/null || true
+  find "${dir}" -depth -delete
+  [[ ! -e "${dir}" ]] || fail "failed to reset fixture directory: ${dir}"
+}
+
 require_cmd git
 require_cmd jq
 require_cmd rg
@@ -191,7 +199,8 @@ while IFS= read -r fixture_json; do
   log "  Pinned post_ref: ${post_ref}"
 
   log "  Resetting existing fixture directories"
-  rm -rf "${post_dir}" "${pre_dir}"
+  reset_fixture_dir "${post_dir}"
+  reset_fixture_dir "${pre_dir}"
   mkdir -p "${fixture_root}"
 
   log "  Cloning post variant and checking out pinned commit"
@@ -259,7 +268,6 @@ while IFS= read -r fixture_json; do
   log "  Creating pre variant from source repository"
   git_fixture clone --quiet --no-checkout --filter=blob:none "${repo}" "${pre_dir}"
   git_fixture -C "${pre_dir}" checkout --quiet "${post_ref}"
-  ensure_relevant_model_lfs_hydrated "${pre_dir}" "pre variant for fixture '${id}'"
 
   log "  Stripping pre-integration files from pre variant"
   for rel_path in "${strip_files[@]}"; do

@@ -282,7 +282,6 @@ while IFS= read -r fixture_json; do
 
   log "  Validating relevant model files are hydrated (not LFS pointers)"
   assert_relevant_model_files_hydrated "${post_dir}" "post variant for fixture '${id}'"
-  assert_relevant_model_files_hydrated "${pre_dir}" "pre variant for fixture '${id}'"
 
   log "  Validating both repos are clean"
   assert_clean_git_tree "${post_dir}" "post variant for fixture '${id}'"

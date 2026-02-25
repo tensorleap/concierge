@@ -76,3 +76,63 @@ If a commit is made on `main` or `master` by mistake:
 
 - Step 2 must produce a Go CLI release pipeline that builds binaries for Linux and macOS on both `amd64` and `arm64`.
 - Step 2 must use semantic version tags (e.g. `v0.0.1`) and publish release notes with each release.
+
+## Tensorleap Hub Fixture Onboarding
+
+Use this process when adding another `tensorleap-hub` repository to `fixtures/manifest.json`.
+
+### 1) Pick and pin a stable post-integration commit
+
+- Choose a concrete commit SHA from the target repo. Do not use branches or tags as `post_ref`.
+- Prefer a commit that already represents a working integrated state.
+
+### 2) Suitability gate (mandatory before manifest edit)
+
+For the candidate `<repo>` and `<sha>`, verify all required integration artifacts exist at repo root:
+
+- `leap.yaml`
+- `leap_binder.py`
+- `leap_custom_test.py`
+
+Example check:
+
+```bash
+tmp="$(mktemp -d)"
+git clone --filter=blob:none --no-checkout "https://github.com/tensorleap-hub/<repo>.git" "$tmp/repo"
+cd "$tmp/repo"
+git cat-file -e "<sha>^{commit}"
+for f in leap.yaml leap_binder.py leap_custom_test.py; do
+  git ls-tree --name-only "<sha>" -- "$f" | grep -qx "$f"
+done
+```
+
+If any file is missing, do not add the fixture until a suitable commit is identified.
+
+### 3) Add manifest entry
+
+Add one object under `fixtures[].` with:
+
+- `id`: lowercase stable identifier (letters, numbers, underscore preferred)
+- `repo`: full HTTPS clone URL
+- `post_ref`: full 40-char commit SHA
+- `strip_for_pre`: keep as `["leap.yaml", "leap_binder.py", "leap_custom_test.py"]` unless Step requirements change
+
+### 4) Validate fixture generation end to end
+
+Run:
+
+```bash
+bash scripts/fixtures_prepare.sh
+bash scripts/fixtures_verify.sh
+```
+
+Both commands must pass. `prepare` must create:
+
+- `.fixtures/<id>/post` at `post_ref`
+- `.fixtures/<id>/pre` derived from `post` with stripped integration files
+
+`verify` must confirm:
+
+- stripped files exist in `post`
+- stripped files do not exist in `pre`
+- both repos are clean git trees

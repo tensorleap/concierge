@@ -1,0 +1,34 @@
+{
+  "fixtures": [
+    {
+      "id": "mnist",
+      "repo": "https://github.com/tensorleap-hub/mnist.git",
+      "post_ref": "1c4c6f0d5c4254cc4ae5c2df5ae8ef9f0a61212b",
+      "strip_for_pre": [
+        "leap.yaml",
+        "leap_binder.py",
+        "leap_custom_test.py"
+      ]
+    },
+    {
+      "id": "cifar10_resnet",
+      "repo": "https://github.com/tensorleap-hub/cifar10_resnet.git",
+      "post_ref": "5dd3611ca9efdf34c28279e036a7bb90638dda4d",
+      "strip_for_pre": [
+        "leap.yaml",
+        "leap_binder.py",
+        "leap_custom_test.py"
+      ]
+    },
+    {
+      "id": "imdb",
+      "repo": "https://github.com/tensorleap-hub/IMDb.git",
+      "post_ref": "b4ce7cf109c89402147cc2e7f071165fc143d1d8",
+      "strip_for_pre": [
+        "leap.yaml",
+        "leap_binder.py",
+        "leap_custom_test.py"
+      ]
+    }
+  ]
+}

@@ -28,7 +28,7 @@ The desired outcome is that another engineer can implement each step with no add
 | Step 3: Core deterministic contracts | `ACCEPTED` | 2026-02-25 11:24Z (`main`) | Add `internal/core` types + typed errors and `internal/core/ports` interfaces; seed issue-code catalog and deterministic issue-to-step mapping helpers. |
 | Step 4A: Iteration engine skeleton | `ACCEPTED` | 2026-02-25 11:55Z (`main`) | Add `internal/orchestrator` engine and stage-scoped error handling with strict call order and short-circuit semantics. |
 | Step 4B: CLI dry-run wiring to engine metadata | `ACCEPTED` | 2026-02-25 12:41Z (`main`) | Remove hardcoded stage string in `run --dry-run`; render stage order from orchestrator/core metadata. |
-| Step 4C: Multi-iteration orchestration loop | `PENDING` | — | Add explicit outer loop with max-iterations + deterministic stop conditions; aggregate per-iteration reports. |
+| Step 4C: Multi-iteration orchestration loop | `DONE` | 2026-02-25 12:49Z (`feature/step-4c-multi-iteration-loop`, PR #3) | Add explicit outer loop with max-iterations + deterministic stop conditions; aggregate per-iteration reports. |
 | Step 5A: Snapshot adapter (git and workspace identity) | `PENDING` | — | Implement snapshot adapter for repo root/git root/branch/head plus stable worktree fingerprint for change detection and deterministic snapshot IDs. |
 | Step 5B: Inspector adapter (Layer 1 baseline inventory) | `PENDING` | — | Implement deterministic inventory checks for required integration artifacts, plus minimal `leap.yaml` parse + `entryFile` validation, emitting canonical issues. |
 | Step 5C: Planner adapter | `PENDING` | — | Implement planner using `IssueCode -> EnsureStep` mapping and deterministic primary/secondary step selection; define terminal "complete" step for no-issue state. |
@@ -168,7 +168,7 @@ Rollback boundary:
 
 ---
 
-### Step 4C: Multi-iteration orchestration loop (`PENDING`)
+### Step 4C: Multi-iteration orchestration loop (`DONE`)
 
 Objective:
 
@@ -1103,7 +1103,7 @@ Phase acceptance condition:
 
 ## Outcomes & Retrospective
 
-Current status: foundational steps (1-4B) are complete in branch/main history, and pending work is now specified at implementation depth. The next executable atomic step is Step 4C.
+Current status: foundational steps (1-4C) are complete through branch/PR status, and pending work remains specified at implementation depth. The next executable atomic step is Step 5A.
 
 Residual risk: runtime harness behavior (Step 6C) may reveal additional Python environment assumptions.
 

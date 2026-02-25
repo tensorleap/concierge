@@ -10,6 +10,7 @@ type ErrorKind string
 
 const (
 	KindUnknown           ErrorKind = "unknown"
+	KindNotGitRepo        ErrorKind = "not_git_repo"
 	KindDirtyWorkingTree  ErrorKind = "dirty_working_tree"
 	KindMissingLeapYAML   ErrorKind = "missing_leap_yaml"
 	KindInvalidEntryFile  ErrorKind = "invalid_entry_file"
@@ -59,6 +60,7 @@ func (e *Error) Is(target error) bool {
 }
 
 var (
+	ErrNotGitRepo        = &Error{Kind: KindNotGitRepo}
 	ErrDirtyWorkingTree  = &Error{Kind: KindDirtyWorkingTree}
 	ErrMissingLeapYAML   = &Error{Kind: KindMissingLeapYAML}
 	ErrInvalidEntryFile  = &Error{Kind: KindInvalidEntryFile}

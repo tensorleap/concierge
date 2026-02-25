@@ -10,11 +10,14 @@ LDFLAGS := -s -w \
 	-X github.com/tensorleap/concierge/internal/buildinfo.Commit=$(COMMIT) \
 	-X github.com/tensorleap/concierge/internal/buildinfo.Date=$(DATE)
 
-.PHONY: build clean
+.PHONY: build test clean
 
 build:
 	@mkdir -p $(BIN_DIR)
 	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY_NAME) $(CMD_PATH)
+
+test:
+	go test ./...
 
 clean:
 	rm -rf $(BIN_DIR)

@@ -25,7 +25,10 @@ jobs:
         run: go list -m
 
       - name: Run unit tests
-        run: go test ./...
+        run: make test
+
+      - name: Run snapshot adapter tests
+        run: go test ./internal/core ./internal/adapters/snapshot
 
   build-binaries:
     runs-on: ubuntu-latest

@@ -46,9 +46,10 @@ type RepositoryState struct {
 
 // WorkspaceSnapshot is an immutable iteration input.
 type WorkspaceSnapshot struct {
-	ID         string          `json:"id"`
-	CapturedAt time.Time       `json:"capturedAt"`
-	Repository RepositoryState `json:"repository"`
+	ID                  string          `json:"id"`
+	CapturedAt          time.Time       `json:"capturedAt"`
+	WorktreeFingerprint string          `json:"worktreeFingerprint"`
+	Repository          RepositoryState `json:"repository"`
 }
 
 // Severity represents the importance of an inspection or validation issue.

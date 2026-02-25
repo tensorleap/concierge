@@ -420,11 +420,11 @@ Tensorleap states only decorators called in `@tensorleap_integration_test` are u
 
 ---
 
-## 10) Agent collaboration model (Claude Code session)
+## 10) Agent collaboration model (coding agent session)
 
 ### 10.1 Design intent
 
-Concierge should **unleash Claude Code’s strengths**:
+Concierge should **unleash the selected coding agent’s strengths** (Claude Code in v1):
 
 * repo navigation and understanding
 * searching (grep/ripgrep), reading multiple files
@@ -488,6 +488,18 @@ Instead of imposing arbitrary limits (max files touched), Concierge should use *
 * if validations regress, Concierge either reverts or enters a guided fix loop
 
 This preserves power while maintaining reliability.
+
+### 10.6 Agent dependency and credential strategy (v1 baseline)
+
+For **v1**, Concierge assumes the coding-agent runtime is already available in the user environment (starting with Claude Code), including any required user authentication/API credentials.
+
+Rationale for v1:
+
+* fastest path to a deterministic orchestrator with clear trust boundaries
+* avoids introducing backend credential brokerage in the first release
+* keeps ownership of provider spend and access with the user
+
+Future provisioning models are intentionally deferred. Candidate directions (managed access, BYOK-first, or hybrid) are tracked as open questions in section 17.
 
 ---
 
@@ -692,6 +704,17 @@ How strongly Concierge can enforce “repo-only access” depends on the agent i
 ### 17.5 Custom layers and external code
 
 Models with custom layers may require special handling; Concierge should treat this as an advanced ensure-step.
+
+### 17.6 Coding agent provisioning and rollout model (v2/v3)
+
+Open decision. v1 is fixed to local tool availability + user-managed credentials.
+
+Questions to resolve before broader rollout:
+
+* should Concierge offer a **gated managed mode** for select users who do not yet have coding-agent tooling/accounts
+* should public rollout be **BYOK-only** or **BYOK + optional managed fallback**
+* if managed mode exists, what backend architecture should issue short-lived usage tokens and enforce spend/rate limits
+* what policy should determine model/backend selection when preferred local tools are unavailable
 
 ---
 

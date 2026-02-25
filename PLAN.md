@@ -4,6 +4,7 @@ This ExecPlan is a living document. Keep `Progress`, `Surprises & Discoveries`, 
 
 ## Revision Notes
 
+- 2026-02-25 17:06Z: Verified merged state on `main` through PR #6 and updated step statuses so Steps 4C through 5G are `ACCEPTED`.
 - 2026-02-25 16:17Z: Implemented Steps 5B-5F adapters and tests on `feature/step-5b-5f-baseline-adapters`; local validation (`go test ./...`) is green. Step statuses remain `PENDING` until explicit user approval plus commit/push/PR/CI per workflow.
 - 2026-02-25 16:06Z: Completed Step 5A on `feature/step-5a-snapshot-adapter` and opened PR #4 with green branch CI; updated progress/status to advance next actionable step to 5B.
 - 2026-02-25 12:28Z: Updated remaining `PENDING` steps to close design/plan gaps: added explicit Step 4C multi-iteration loop and Step 5H non-dry-run CLI wiring; strengthened Step 5A/5B/5C contracts; normalized all remaining steps with explicit interface changes and rollback boundaries.
@@ -30,14 +31,14 @@ The desired outcome is that another engineer can implement each step with no add
 | Step 3: Core deterministic contracts | `ACCEPTED` | 2026-02-25 11:24Z (`main`) | Add `internal/core` types + typed errors and `internal/core/ports` interfaces; seed issue-code catalog and deterministic issue-to-step mapping helpers. |
 | Step 4A: Iteration engine skeleton | `ACCEPTED` | 2026-02-25 11:55Z (`main`) | Add `internal/orchestrator` engine and stage-scoped error handling with strict call order and short-circuit semantics. |
 | Step 4B: CLI dry-run wiring to engine metadata | `ACCEPTED` | 2026-02-25 12:41Z (`main`) | Remove hardcoded stage string in `run --dry-run`; render stage order from orchestrator/core metadata. |
-| Step 4C: Multi-iteration orchestration loop | `DONE` | 2026-02-25 12:49Z (`feature/step-4c-multi-iteration-loop`, PR #3) | Add explicit outer loop with max-iterations + deterministic stop conditions; aggregate per-iteration reports. |
-| Step 5A: Snapshot adapter (git and workspace identity) | `DONE` | 2026-02-25 16:06Z (`feature/step-5a-snapshot-adapter`, PR #4) | Implement snapshot adapter for repo root/git root/branch/head plus stable worktree fingerprint for change detection and deterministic snapshot IDs. |
-| Step 5B: Inspector adapter (Layer 1 baseline inventory) | `PENDING` | — | Implement deterministic inventory checks for required integration artifacts, plus minimal `leap.yaml` parse + `entryFile` validation, emitting canonical issues. |
-| Step 5C: Planner adapter | `PENDING` | — | Implement planner using `IssueCode -> EnsureStep` mapping and deterministic primary/secondary step selection; define terminal "complete" step for no-issue state. |
-| Step 5D: Executor adapter skeleton | `PENDING` | — | Add ensure-step dispatcher that returns structured execution results and evidence stubs. |
-| Step 5E: Validator adapter baseline | `PENDING` | — | Add deterministic validation checks over execution results (without Python harness yet). |
-| Step 5F: Reporter adapter baseline | `PENDING` | — | Add reporter that emits human-readable summary and machine-readable in-memory report payload. |
-| Step 5G: Fixture corpus preparation | `PENDING` | — | Add fixture manifest and scripts that materialize post-integration and pre-integration working copies locally. |
+| Step 4C: Multi-iteration orchestration loop | `ACCEPTED` | 2026-02-25 12:53Z (`main`, PR #3) | Add explicit outer loop with max-iterations + deterministic stop conditions; aggregate per-iteration reports. |
+| Step 5A: Snapshot adapter (git and workspace identity) | `ACCEPTED` | 2026-02-25 16:09Z (`main`, PR #4) | Implement snapshot adapter for repo root/git root/branch/head plus stable worktree fingerprint for change detection and deterministic snapshot IDs. |
+| Step 5B: Inspector adapter (Layer 1 baseline inventory) | `ACCEPTED` | 2026-02-25 16:24Z (`main`, PR #5) | Implement deterministic inventory checks for required integration artifacts, plus minimal `leap.yaml` parse + `entryFile` validation, emitting canonical issues. |
+| Step 5C: Planner adapter | `ACCEPTED` | 2026-02-25 16:24Z (`main`, PR #5) | Implement planner using `IssueCode -> EnsureStep` mapping and deterministic primary/secondary step selection; define terminal "complete" step for no-issue state. |
+| Step 5D: Executor adapter skeleton | `ACCEPTED` | 2026-02-25 16:24Z (`main`, PR #5) | Add ensure-step dispatcher that returns structured execution results and evidence stubs. |
+| Step 5E: Validator adapter baseline | `ACCEPTED` | 2026-02-25 16:24Z (`main`, PR #5) | Add deterministic validation checks over execution results (without Python harness yet). |
+| Step 5F: Reporter adapter baseline | `ACCEPTED` | 2026-02-25 16:24Z (`main`, PR #5) | Add reporter that emits human-readable summary and machine-readable in-memory report payload. |
+| Step 5G: Fixture corpus preparation | `ACCEPTED` | 2026-02-25 16:51Z (`main`, PR #6) | Add fixture manifest and scripts that materialize post-integration and pre-integration working copies locally. |
 | Step 5H: CLI `run` (non-dry-run) wiring | `PENDING` | — | Wire CLI `run` to default adapters + orchestrator multi-iteration loop with `--max-iterations`; no repo mutation beyond reporting in this phase. |
 | Step 6A: `.concierge` persistence primitives | `PENDING` | — | Add atomic JSON writer and stable path layout for state/reports/evidence artifacts. |
 | Step 6B: Persist reports and evidence from pipeline | `PENDING` | — | Wire reporter/executor outputs to `.concierge/reports` and `.concierge/evidence`; add CLI switch to enable persistence output. |
@@ -170,7 +171,7 @@ Rollback boundary:
 
 ---
 
-### Step 4C: Multi-iteration orchestration loop (`DONE`)
+### Step 4C: Multi-iteration orchestration loop (`ACCEPTED`)
 
 Objective:
 
@@ -230,7 +231,7 @@ Rollback boundary:
 
 ---
 
-### Step 5A: Snapshot adapter (git and workspace identity) (`DONE`)
+### Step 5A: Snapshot adapter (git and workspace identity) (`ACCEPTED`)
 
 Objective:
 
@@ -303,7 +304,7 @@ Rollback boundary:
 
 ---
 
-### Step 5B: Inspector adapter (Layer 1 baseline inventory) (`PENDING`)
+### Step 5B: Inspector adapter (Layer 1 baseline inventory) (`ACCEPTED`)
 
 Objective:
 
@@ -374,7 +375,7 @@ Rollback boundary:
 
 ---
 
-### Step 5C: Planner adapter (`PENDING`)
+### Step 5C: Planner adapter (`ACCEPTED`)
 
 Objective:
 
@@ -426,7 +427,7 @@ Rollback boundary:
 
 ---
 
-### Step 5D: Executor adapter skeleton (`PENDING`)
+### Step 5D: Executor adapter skeleton (`ACCEPTED`)
 
 Objective:
 
@@ -468,7 +469,7 @@ Rollback boundary:
 
 ---
 
-### Step 5E: Validator adapter baseline (`PENDING`)
+### Step 5E: Validator adapter baseline (`ACCEPTED`)
 
 Objective:
 
@@ -510,7 +511,7 @@ Rollback boundary:
 
 ---
 
-### Step 5F: Reporter adapter baseline (`PENDING`)
+### Step 5F: Reporter adapter baseline (`ACCEPTED`)
 
 Objective:
 
@@ -551,7 +552,7 @@ Rollback boundary:
 
 ---
 
-### Step 5G: Fixture corpus preparation (`PENDING`)
+### Step 5G: Fixture corpus preparation (`ACCEPTED`)
 
 Objective:
 
@@ -1028,25 +1029,16 @@ Rollback boundary:
 
 ## Concrete Step Execution Order
 
-Note: Step 4A is already `ACCEPTED`. The list below is the intended order for remaining `PENDING` steps.
+Note: Steps 1 through 5G are already `ACCEPTED`. The list below is the intended order for remaining `PENDING` steps.
 
-1. Implement Step 4B and commit.
-2. Implement Step 4C and commit.
-3. Implement Step 5A and commit.
-4. Implement Step 5B and commit.
-5. Implement Step 5C and commit.
-6. Implement Step 5D and commit.
-7. Implement Step 5E and commit.
-8. Implement Step 5F and commit.
-9. Implement Step 5G and commit.
-10. Implement Step 5H and commit.
-11. Implement Step 6A and commit.
-12. Implement Step 6B and commit.
-13. Implement Step 6C and commit.
-14. Implement Step 6D and commit.
-15. Implement Step 6E and commit.
-16. Implement Step 7 and commit.
-17. Implement Step 8 and commit.
+1. Implement Step 5H and commit.
+2. Implement Step 6A and commit.
+3. Implement Step 6B and commit.
+4. Implement Step 6C and commit.
+5. Implement Step 6D and commit.
+6. Implement Step 6E and commit.
+7. Implement Step 7 and commit.
+8. Implement Step 8 and commit.
 
 Each step follows this gate:
 
@@ -1105,7 +1097,7 @@ Phase acceptance condition:
 
 ## Outcomes & Retrospective
 
-Current status: foundational steps (1-4C) plus Step 5A are complete through branch/PR status, and pending work remains specified at implementation depth. The next executable atomic step is Step 5B.
+Current status: steps 1 through 5G are `ACCEPTED` on `main`. Pending work remains specified at implementation depth. The next executable atomic step is Step 5H.
 
 Residual risk: runtime harness behavior (Step 6C) may reveal additional Python environment assumptions.
 

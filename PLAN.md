@@ -12,7 +12,7 @@ The desired outcome for this phase is a clean baseline with correct project meta
 
 - Step 1: Baseline cleanup (`ACCEPTED`, 2026-02-25 07:28Z on `main`). Scope: remove inherited Python/aider workflows, add Go module metadata, add minimal Go CI, and add README implementation status note.
 - Plan tracking bootstrap: `DONE` (2026-02-25 07:07Z). Scope: establish `PLAN.md` as the cross-session source of truth.
-- Step 2: Add Cobra CLI bootstrap (`root`, `doctor`, `run --dry-run`, `version`) with global `--log-level`, plus semver release automation for Linux/macOS amd64+arm64 with release notes. Status: `DONE` (2026-02-25 07:43Z).
+- Step 2: Add Cobra CLI bootstrap (`root`, `doctor`, `run --dry-run`, `version`) with global `--log-level`, plus semver release automation for Linux/macOS amd64+arm64 with release notes. Status: `ACCEPTED` (merged to `main` on 2026-02-25 10:57Z).
 - Step 3: Add core deterministic contracts (`types`, `ports`, typed errors, context-first APIs). Status: `PENDING`.
 - Step 4: Add stub orchestration engine (`snapshot -> inspect -> plan -> execute -> validate -> report`) with deterministic outputs. Status: `PENDING`.
 - Step 5: Add `.concierge` persistence scaffolding (`state`, `reports`, `evidence`) with atomic JSON writes. Status: `PENDING`.
@@ -57,8 +57,8 @@ The desired outcome for this phase is a clean baseline with correct project meta
 
 ## Outcomes & Retrospective
 
-Current status: Step 2 CLI bootstrap and release pipeline are implemented and validated locally.  
-Remaining risk: branch CI + release workflow behavior still need remote verification after push/tag.
+Current status: Step 2 is merged and accepted on `main` with CI binary artifacts and linux/amd64 smoke test coverage in place.  
+Remaining risk: tag-triggered release workflow should still be validated end-to-end with the first real semver release tag.
 
 ## Context and Orientation
 

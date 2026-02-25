@@ -4,6 +4,7 @@ This ExecPlan is a living document. Keep `Progress`, `Surprises & Discoveries`, 
 
 ## Revision Notes
 
+- 2026-02-25 16:17Z: Implemented Steps 5B-5F adapters and tests on `feature/step-5b-5f-baseline-adapters`; local validation (`go test ./...`) is green. Step statuses remain `PENDING` until explicit user approval plus commit/push/PR/CI per workflow.
 - 2026-02-25 16:06Z: Completed Step 5A on `feature/step-5a-snapshot-adapter` and opened PR #4 with green branch CI; updated progress/status to advance next actionable step to 5B.
 - 2026-02-25 12:28Z: Updated remaining `PENDING` steps to close design/plan gaps: added explicit Step 4C multi-iteration loop and Step 5H non-dry-run CLI wiring; strengthened Step 5A/5B/5C contracts; normalized all remaining steps with explicit interface changes and rollback boundaries.
 - 2026-02-25 12:10Z: Replaced the coarse pending-step summary with a decision-complete implementation spec. The new plan defines exact interfaces, file-level edits, test cases, validation commands, fixture preparation strategy, and acceptance criteria for every pending step.

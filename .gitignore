@@ -18,3 +18,4 @@ aider/_version.py
 tmp.benchmarks/
 .docker_bash_history
 bin/
+.fixtures/

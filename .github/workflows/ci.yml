@@ -30,9 +30,43 @@ jobs:
       - name: Run snapshot adapter tests
         run: go test ./internal/core ./internal/adapters/snapshot
 
+  fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify fixture script prerequisites
+        run: |
+          git --version
+          jq --version
+
+      - name: Prepare fixtures (retry once for transient network failures)
+        run: |
+          for attempt in 1 2; do
+            if bash scripts/fixtures_prepare.sh; then
+              exit 0
+            fi
+
+            if [[ "${attempt}" -eq 2 ]]; then
+              echo "Fixture preparation failed after retry." >&2
+              exit 1
+            fi
+
+            echo "Fixture preparation failed on attempt ${attempt}; retrying..."
+            rm -rf .fixtures
+            sleep 5
+          done
+
+      - name: Verify prepared fixtures
+        run: bash scripts/fixtures_verify.sh
+
   build-binaries:
     runs-on: ubuntu-latest
-    needs: verify
+    needs:
+      - verify
+      - fixtures
     strategy:
       fail-fast: false
       matrix:

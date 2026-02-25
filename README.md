@@ -4,6 +4,7 @@
 **Primary audience:** Engineering + agent-assisted coding implementation
 **Status:** Draft (implementation-oriented, no step-by-step implementation plan)
 **Implementation status (2026-02-25):** Step 1 baseline is complete (Go module initialized, inherited CI removed, minimal Go CI added with Go `1.24.x`).
+**Release protocol (2026-02-25):** See [RELEASE.md](./RELEASE.md) for semver selection and GitHub Actions release flow.
 
 ---
 

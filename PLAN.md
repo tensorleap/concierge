@@ -4,6 +4,7 @@ This ExecPlan is a living document. Keep `Progress`, `Surprises & Discoveries`, 
 
 ## Revision Notes
 
+- 2026-02-25 16:06Z: Completed Step 5A on `feature/step-5a-snapshot-adapter` and opened PR #4 with green branch CI; updated progress/status to advance next actionable step to 5B.
 - 2026-02-25 12:28Z: Updated remaining `PENDING` steps to close design/plan gaps: added explicit Step 4C multi-iteration loop and Step 5H non-dry-run CLI wiring; strengthened Step 5A/5B/5C contracts; normalized all remaining steps with explicit interface changes and rollback boundaries.
 - 2026-02-25 12:10Z: Replaced the coarse pending-step summary with a decision-complete implementation spec. The new plan defines exact interfaces, file-level edits, test cases, validation commands, fixture preparation strategy, and acceptance criteria for every pending step.
 
@@ -29,7 +30,7 @@ The desired outcome is that another engineer can implement each step with no add
 | Step 4A: Iteration engine skeleton | `ACCEPTED` | 2026-02-25 11:55Z (`main`) | Add `internal/orchestrator` engine and stage-scoped error handling with strict call order and short-circuit semantics. |
 | Step 4B: CLI dry-run wiring to engine metadata | `ACCEPTED` | 2026-02-25 12:41Z (`main`) | Remove hardcoded stage string in `run --dry-run`; render stage order from orchestrator/core metadata. |
 | Step 4C: Multi-iteration orchestration loop | `DONE` | 2026-02-25 12:49Z (`feature/step-4c-multi-iteration-loop`, PR #3) | Add explicit outer loop with max-iterations + deterministic stop conditions; aggregate per-iteration reports. |
-| Step 5A: Snapshot adapter (git and workspace identity) | `PENDING` | — | Implement snapshot adapter for repo root/git root/branch/head plus stable worktree fingerprint for change detection and deterministic snapshot IDs. |
+| Step 5A: Snapshot adapter (git and workspace identity) | `DONE` | 2026-02-25 16:06Z (`feature/step-5a-snapshot-adapter`, PR #4) | Implement snapshot adapter for repo root/git root/branch/head plus stable worktree fingerprint for change detection and deterministic snapshot IDs. |
 | Step 5B: Inspector adapter (Layer 1 baseline inventory) | `PENDING` | — | Implement deterministic inventory checks for required integration artifacts, plus minimal `leap.yaml` parse + `entryFile` validation, emitting canonical issues. |
 | Step 5C: Planner adapter | `PENDING` | — | Implement planner using `IssueCode -> EnsureStep` mapping and deterministic primary/secondary step selection; define terminal "complete" step for no-issue state. |
 | Step 5D: Executor adapter skeleton | `PENDING` | — | Add ensure-step dispatcher that returns structured execution results and evidence stubs. |
@@ -228,7 +229,7 @@ Rollback boundary:
 
 ---
 
-### Step 5A: Snapshot adapter (git and workspace identity) (`PENDING`)
+### Step 5A: Snapshot adapter (git and workspace identity) (`DONE`)
 
 Objective:
 
@@ -1103,7 +1104,7 @@ Phase acceptance condition:
 
 ## Outcomes & Retrospective
 
-Current status: foundational steps (1-4C) are complete through branch/PR status, and pending work remains specified at implementation depth. The next executable atomic step is Step 5A.
+Current status: foundational steps (1-4C) plus Step 5A are complete through branch/PR status, and pending work remains specified at implementation depth. The next executable atomic step is Step 5B.
 
 Residual risk: runtime harness behavior (Step 6C) may reveal additional Python environment assumptions.
 

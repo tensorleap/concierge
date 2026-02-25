@@ -10,15 +10,17 @@ The desired outcome for this phase is a clean baseline with correct project meta
 
 ## Progress
 
-- Step 1: Baseline cleanup (`ACCEPTED`, 2026-02-25 07:28Z on `main`). Scope: remove inherited Python/aider workflows, add Go module metadata, add minimal Go CI, and add README implementation status note.
-- Plan tracking bootstrap: `DONE` (2026-02-25 07:07Z). Scope: establish `PLAN.md` as the cross-session source of truth.
-- Step 2: Add Cobra CLI bootstrap (`root`, `doctor`, `run --dry-run`, `version`) with global `--log-level`, plus semver release automation for Linux/macOS amd64+arm64 with release notes. Status: `ACCEPTED` (merged to `main` on 2026-02-25 10:57Z).
-- Step 3: Add core deterministic contracts (`types`, `ports`, typed errors, context-first APIs). Status: `PENDING`.
-- Step 4: Add stub orchestration engine (`snapshot -> inspect -> plan -> execute -> validate -> report`) with deterministic outputs. Status: `PENDING`.
-- Step 5: Add `.concierge` persistence scaffolding (`state`, `reports`, `evidence`) with atomic JSON writes. Status: `PENDING`.
-- Step 6: Add test foundation (unit tests + CLI smoke tests). Status: `PENDING`.
-- Step 7: Add developer tooling (`Makefile`, lint config) and expand CI for lint/test/build. Status: `PENDING`.
-- Step 8: Add baseline docs (`docs/architecture.md`, `docs/dev-setup.md`) and README quickstart. Status: `PENDING`.
+| Item | Status | Updated | Scope |
+| --- | --- | --- | --- |
+| Step 1: Baseline cleanup | `ACCEPTED` | 2026-02-25 07:28Z (`main`) | Remove inherited Python/aider workflows, add Go module metadata, add minimal Go CI, and add README implementation-status note. |
+| Plan tracking bootstrap | `DONE` | 2026-02-25 07:07Z | Establish `PLAN.md` as the cross-session source of truth. |
+| Step 2: Cobra CLI bootstrap + release automation | `ACCEPTED` | 2026-02-25 10:57Z (merged to `main`) | Add `root`/`doctor`/`run --dry-run`/`version` with global `--log-level`, plus semver release automation for Linux/macOS amd64+arm64 with release notes. |
+| Step 3: Core deterministic contracts | `PENDING` | — | Add `types`, `ports`, typed errors, and context-first APIs. |
+| Step 4: Stub orchestration engine | `PENDING` | — | Add `snapshot -> inspect -> plan -> execute -> validate -> report` deterministic stub flow. |
+| Step 5: `.concierge` persistence scaffolding | `PENDING` | — | Add `state`, `reports`, and `evidence` with atomic JSON writes. |
+| Step 6: Test foundation | `PENDING` | — | Add unit tests and CLI smoke tests. |
+| Step 7: Developer tooling and CI expansion | `PENDING` | — | Add tooling (`Makefile`, lint config) and expand CI for lint/test/build. |
+| Step 8: Baseline docs | `PENDING` | — | Add `docs/architecture.md`, `docs/dev-setup.md`, and README quickstart. |
 
 ## Surprises & Discoveries
 

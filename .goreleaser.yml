@@ -1,0 +1,33 @@
+version: 2
+
+project_name: concierge
+
+builds:
+  - id: concierge
+    main: ./cmd/concierge
+    binary: concierge
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/tensorleap/concierge/internal/buildinfo.Version={{.Version}} -X github.com/tensorleap/concierge/internal/buildinfo.Commit={{.Commit}} -X github.com/tensorleap/concierge/internal/buildinfo.Date={{.Date}}
+
+archives:
+  - id: concierge-archives
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github-native
+
+release:
+  prerelease: auto

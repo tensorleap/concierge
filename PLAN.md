@@ -12,7 +12,7 @@ The desired outcome for this phase is a clean baseline with correct project meta
 
 - Step 1: Baseline cleanup (`ACCEPTED`, 2026-02-25 07:28Z on `main`). Scope: remove inherited Python/aider workflows, add Go module metadata, add minimal Go CI, and add README implementation status note.
 - Plan tracking bootstrap: `DONE` (2026-02-25 07:07Z). Scope: establish `PLAN.md` as the cross-session source of truth.
-- Step 2: Add Cobra CLI bootstrap (`root`, `doctor`, `run --dry-run`, `version`) with global output/log flags. Status: `PENDING`.
+- Step 2: Add Cobra CLI bootstrap (`root`, `doctor`, `run --dry-run`, `version`) with global `--log-level`, plus semver release automation for Linux/macOS amd64+arm64 with release notes. Status: `DONE` (2026-02-25 07:43Z).
 - Step 3: Add core deterministic contracts (`types`, `ports`, typed errors, context-first APIs). Status: `PENDING`.
 - Step 4: Add stub orchestration engine (`snapshot -> inspect -> plan -> execute -> validate -> report`) with deterministic outputs. Status: `PENDING`.
 - Step 5: Add `.concierge` persistence scaffolding (`state`, `reports`, `evidence`) with atomic JSON writes. Status: `PENDING`.
@@ -28,6 +28,8 @@ The desired outcome for this phase is a clean baseline with correct project meta
   Evidence: removed workflows referenced PyPI, Windows Python tests, Docker images, and Jekyll pages for `aider`.
 - Observation: Step 1 changes are currently uncommitted on branch `obey`.
   Evidence: `git status --short --branch` shows new Go CI + module files and deleted old workflows.
+- Observation: Local system Go is `1.16.6`, which cannot manage a `go 1.24` module for dependency operations.
+  Evidence: `go mod tidy` failed under system Go, then succeeded with an isolated Go `1.26.0` toolchain under `/tmp/concierge-go1.26`.
 
 ## Decision Log
 
@@ -43,11 +45,20 @@ The desired outcome for this phase is a clean baseline with correct project meta
 - Decision: Acceptance policy is merge-based.
   Rationale: a step may be `DONE` after implementation+commit+push+CI on a branch, and only merge to `main` counts as `ACCEPTED`.
   Date/Author: 2026-02-25 / user + assistant.
+- Decision: Step 2 CLI scope uses global `--log-level` only; defer output-mode flag.
+  Rationale: user explicitly requested to eliminate `--output` until it has functional value.
+  Date/Author: 2026-02-25 / user + assistant.
+- Decision: Step 2 must include release deliverables.
+  Rationale: user requires Linux/macOS binaries on amd64+arm64, semantic versioning, and release notes.
+  Date/Author: 2026-02-25 / user + assistant.
+- Decision: Regular CI must publish build artifacts from the start, not only release tags.
+  Rationale: user requested binary visibility and cross-platform build confidence on PR/push workflows.
+  Date/Author: 2026-02-25 / user + assistant.
 
 ## Outcomes & Retrospective
 
-Current status: foundational cleanup is complete and tracked.  
-Remaining risk: the repository still lacks executable Concierge code until Step 2 begins.
+Current status: Step 2 CLI bootstrap and release pipeline are implemented and validated locally.  
+Remaining risk: branch CI + release workflow behavior still need remote verification after push/tag.
 
 ## Context and Orientation
 
@@ -80,6 +91,19 @@ Next-step kickoff checks (for Step 2):
 - `go version`
 - `go test ./...` (expected to fail until packages/tests are added)
 - `git status --short --branch` (ensure working tree state is understood before coding)
+
+Step 2 completion checks (executed):
+- `GOTOOLCHAIN=local /tmp/concierge-go1.26/go/bin/go test ./...`
+- `GOTOOLCHAIN=local /tmp/concierge-go1.26/go/bin/go run ./cmd/concierge --help`
+- `GOTOOLCHAIN=local /tmp/concierge-go1.26/go/bin/go run ./cmd/concierge doctor`
+- `GOTOOLCHAIN=local /tmp/concierge-go1.26/go/bin/go run ./cmd/concierge run --dry-run`
+- `GOTOOLCHAIN=local /tmp/concierge-go1.26/go/bin/go run ./cmd/concierge version`
+- Cross-compile matrix:
+  - `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 ... go build ./cmd/concierge`
+  - `GOOS=linux GOARCH=arm64 CGO_ENABLED=0 ... go build ./cmd/concierge`
+  - `GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 ... go build ./cmd/concierge`
+  - `GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 ... go build ./cmd/concierge`
+- `GOTOOLCHAIN=local /tmp/concierge-go1.26/go/bin/go run github.com/goreleaser/goreleaser/v2@latest check --config .goreleaser.yml`
 
 ## Validation and Acceptance
 

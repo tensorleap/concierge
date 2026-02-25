@@ -1,13 +1,13 @@
-name: Go Baseline CI
+name: Go CI
 
 on:
   push:
     branches:
-      - main
+      - "**"
   pull_request:
 
 jobs:
-  go-baseline:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -23,3 +23,72 @@ jobs:
 
       - name: Verify module metadata
         run: go list -m
+
+      - name: Run unit tests
+        run: go test ./...
+
+  build-binaries:
+    runs-on: ubuntu-latest
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Resolve build metadata
+        run: |
+          VERSION="v0.0.1"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+          fi
+
+          COMMIT="${GITHUB_SHA::7}"
+          DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+          echo "BUILD_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "BUILD_COMMIT=${COMMIT}" >> "$GITHUB_ENV"
+          echo "BUILD_DATE=${DATE}" >> "$GITHUB_ENV"
+
+      - name: Build concierge binary
+        run: |
+          mkdir -p dist
+          LDFLAGS="-s -w \
+            -X github.com/tensorleap/concierge/internal/buildinfo.Version=${BUILD_VERSION} \
+            -X github.com/tensorleap/concierge/internal/buildinfo.Commit=${BUILD_COMMIT} \
+            -X github.com/tensorleap/concierge/internal/buildinfo.Date=${BUILD_DATE}"
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 go build \
+            -ldflags "$LDFLAGS" \
+            -o dist/concierge-${{ matrix.goos }}-${{ matrix.goarch }} \
+            ./cmd/concierge
+
+      - name: Smoke test linux amd64 binary
+        if: ${{ matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
+        run: |
+          output="$(./dist/concierge-linux-amd64 version)"
+          echo "$output"
+          echo "$output" | grep -Fx "version: ${BUILD_VERSION}"
+          echo "$output" | grep -Fx "commit: ${BUILD_COMMIT}"
+          echo "$output" | grep -Fx "date: ${BUILD_DATE}"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: concierge-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/concierge-${{ matrix.goos }}-${{ matrix.goarch }}
+          if-no-files-found: error

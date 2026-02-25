@@ -1,12 +1,21 @@
-# Concierge High-Resolution Implementation Plan
+# Concierge Detailed Implementation Plan (Execution-Ready)
 
 This ExecPlan is a living document. Keep `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` up to date.
 
+## Revision Notes
+
+- 2026-02-25 12:10Z: Replaced the coarse pending-step summary with a decision-complete implementation spec. The new plan defines exact interfaces, file-level edits, test cases, validation commands, fixture preparation strategy, and acceptance criteria for every pending step.
+
 ## Purpose / Big Picture
 
-Move Concierge from "contracts only" into an executable deterministic orchestrator with adapter seams, persistent artifacts, and fixture-backed behavior validation against Tensorleap Hub repositories.
+Move Concierge from a contract-only foundation to a deterministic, runnable orchestration system with:
 
-The outcome for this phase is a reliable path from `concierge run --dry-run` to a real iteration engine with auditable reports and repeatable tests that compare pre-integration vs post-integration behavior.
+1. A strict stage pipeline (`snapshot -> inspect -> plan -> execute -> validate -> report`).
+2. Adapter implementations that can run without external services first.
+3. Persistent state/report/evidence artifacts under `.concierge/`.
+4. Fixture-based pre-integration vs post-integration comparisons using Tensorleap Hub repositories.
+
+The desired outcome is that another engineer can implement each step with no additional product decisions.
 
 ## Progress
 
@@ -16,151 +25,801 @@ The outcome for this phase is a reliable path from `concierge run --dry-run` to 
 | Step 1: Baseline cleanup | `ACCEPTED` | 2026-02-25 07:28Z (`main`) | Remove inherited Python/aider workflows, add Go module metadata, add minimal Go CI, and add README implementation-status note. |
 | Step 2: Cobra CLI bootstrap + release automation | `ACCEPTED` | 2026-02-25 10:57Z (`main`) | Add `root`/`doctor`/`run --dry-run`/`version` with global `--log-level`; add semver release automation for Linux/macOS amd64+arm64 with release notes. |
 | Step 3: Core deterministic contracts | `ACCEPTED` | 2026-02-25 11:24Z (`main`) | Add `internal/core` types + typed errors and `internal/core/ports` interfaces; seed issue-code catalog and deterministic issue-to-step mapping helpers. |
-| Step 4A: Iteration engine skeleton | `PENDING` | — | Add `internal/orchestrator` engine with strict stage order: `snapshot -> inspect -> plan -> execute -> validate -> report`. |
-| Step 4B: CLI run wiring for engine contract | `PENDING` | — | Wire `run --dry-run` to use orchestrator stage metadata so CLI reflects engine contract. |
-| Step 5A: Snapshot adapter (repo identity baseline) | `PENDING` | — | Implement snapshot adapter for repo root/git root/branch/head/dirty + deterministic snapshot IDs/timestamps. |
-| Step 5B: Inspector stub adapter | `PENDING` | — | Implement deterministic inspector stub returning structured status/issues for engine integration. |
-| Step 5C: Planner adapter | `PENDING` | — | Implement planner adapter using `IssueCode -> EnsureStep` mapping to choose primary/secondary steps. |
-| Step 5D: Fixture corpus preparation | `PENDING` | — | Prepare Tensorleap Hub fixtures with `pre-integration` and `post-integration` refs and manifest mapping. |
-| Step 6A: `.concierge` persistence primitives | `PENDING` | — | Add atomic JSON persistence primitives for `state`, `reports`, and `evidence`. |
-| Step 6B: Persist reports/evidence from engine | `PENDING` | — | Persist iteration reports and evidence artifacts produced by orchestration stages. |
-| Step 6C: Fixture-backed behavior tests | `PENDING` | — | Run Concierge on prepared `pre-integration` fixtures and compare behavior/contract fingerprints to `post-integration` refs. |
-| Step 7: Developer tooling and CI expansion | `PENDING` | — | Expand CI for lint/test/build and codify local dev commands. |
-| Step 8: Docs sync with implementation | `PENDING` | — | Add architecture and developer setup docs; align README quickstart with real behavior. |
+| Step 4A: Iteration engine skeleton | `PENDING` | — | Add `internal/orchestrator` engine and stage-scoped error handling with strict call order and short-circuit semantics. |
+| Step 4B: CLI dry-run wiring to engine metadata | `PENDING` | — | Remove hardcoded stage string in `run --dry-run`; render stage order from orchestrator metadata. |
+| Step 5A: Snapshot adapter (git and workspace identity) | `PENDING` | — | Implement snapshot adapter for repo root/git root/branch/head/dirty and deterministic snapshot IDs. |
+| Step 5B: Inspector adapter (Layer 1 baseline inventory) | `PENDING` | — | Implement deterministic inventory checks for required integration artifacts and basic issue emission. |
+| Step 5C: Planner adapter | `PENDING` | — | Implement planner using `IssueCode -> EnsureStep` mapping and deterministic primary/secondary step selection. |
+| Step 5D: Executor adapter skeleton | `PENDING` | — | Add ensure-step dispatcher that returns structured execution results and evidence stubs. |
+| Step 5E: Validator adapter baseline | `PENDING` | — | Add deterministic validation checks over execution results (without Python harness yet). |
+| Step 5F: Reporter adapter baseline | `PENDING` | — | Add reporter that emits human-readable summary and machine-readable in-memory report payload. |
+| Step 5G: Fixture corpus preparation | `PENDING` | — | Add fixture manifest and scripts that materialize post-integration and pre-integration working copies locally. |
+| Step 6A: `.concierge` persistence primitives | `PENDING` | — | Add atomic JSON writer and stable path layout for state/reports/evidence artifacts. |
+| Step 6B: Persist reports and evidence from pipeline | `PENDING` | — | Wire reporter/executor outputs to `.concierge/reports` and `.concierge/evidence`. |
+| Step 6C: Runtime harness baseline (Layer 2) | `PENDING` | — | Add initial Python harness invocation contract and deterministic parsing of harness outputs into `IssueCode`s. |
+| Step 6D: Anti-stub heuristics baseline (Layer 3) | `PENDING` | — | Add constant-output and empty-subset heuristics as deterministic validator findings. |
+| Step 6E: Fixture-backed pre-vs-post behavior tests | `PENDING` | — | Execute Concierge against prepared fixtures and assert behavior/contract deltas between pre and post variants. |
+| Step 7: Developer tooling and CI expansion | `PENDING` | — | Add lint/test/build gates and fixture-test strategy in CI with safe defaults. |
+| Step 8: Documentation sync | `PENDING` | — | Update architecture/dev setup/README to match actual implementation and fixture workflow. |
 
-## Surprises & Discoveries
+## Scope Boundaries For This Phase
 
-- Observation: Repository content started design-heavy and code-light.
-  Evidence: initial code surface had only foundational files.
-- Observation: Existing CI workflows were inherited from an unrelated Python template.
-  Evidence: removed workflows referenced PyPI and unrelated Docker/page pipelines.
-- Observation: Local system Go (`1.16.6`) cannot manage module operations for a `go 1.24` module.
-  Evidence: dependency operations required a newer isolated Go toolchain.
-- Observation: Step 3 already established adapter-agnostic contracts that are ready for engine wiring.
-  Evidence: `internal/core` and `internal/core/ports` compile and pass tests.
-- Observation: The previous plan was too coarse between "engine stubs" and "tests".
-  Evidence: fixture preparation timing and behavior-ground-truth testing were not explicitly sequenced.
+In scope:
 
-## Decision Log
+1. Deterministic orchestration and adapters in Go.
+2. Local fixture preparation and local fixture validation.
+3. Machine-readable artifacts and deterministic tests.
 
-- Decision: Use `PLAN.md` as the persistent cross-session implementation log.
-  Rationale: explicit workflow agreement in `AGENTS.md`.
-  Date/Author: 2026-02-25 / user + assistant.
-- Decision: Status values remain strictly `PENDING`, `DONE`, or `ACCEPTED`.
-  Rationale: keep lifecycle semantics machine-checkable and aligned with repo policy.
-  Date/Author: 2026-02-25 / user + assistant.
-- Decision: Acceptance is merge-based (`main`), not branch-based.
-  Rationale: branch CI pass means `DONE`; merge to `main` means `ACCEPTED`.
-  Date/Author: 2026-02-25 / user + assistant.
-- Decision: Keep deterministic core adapter-agnostic and context-first.
-  Rationale: enables isolated testing of orchestrator decisions independent of external tools.
-  Date/Author: 2026-02-25 / assistant.
-- Decision: Insert fixture preparation immediately after planner adapter implementation (Step 5C).
-  Rationale: snapshot/inspect/plan seams must exist before creating realistic pre/post fixture workflows.
-  Date/Author: 2026-02-25 / user + assistant.
-- Decision: Run pre-vs-post fixture assertions after persistence/reporting primitives (Step 6C).
-  Rationale: behavior comparison needs stable report/evidence artifacts, not only in-memory results.
-  Date/Author: 2026-02-25 / user + assistant.
+Out of scope for this phase:
 
-## Outcomes & Retrospective
+1. Full live Tensorleap server E2E upload automation in CI.
+2. Production-grade agent mediation boundary enforcement.
+3. Broad Python model execution matrix beyond fixture needs.
 
-Current status: Steps 1-3 are `ACCEPTED` on `main`; the repository baseline is stable.  
-Current risk: implementing an engine without strong stage-level tests can hide ordering/regression bugs.  
-Mitigation: Step 4A is explicitly test-first and stage-order strict before adapter implementation starts.
+## Detailed Step Specifications
 
-## Context and Orientation
+### Step 4A: Iteration engine skeleton (`PENDING`)
 
-Repository root: `/Users/assaf/Dropbox/tensorleap/concierge`
+Objective:
 
-Current key files:
-- `/Users/assaf/Dropbox/tensorleap/concierge/README.md`
-- `/Users/assaf/Dropbox/tensorleap/concierge/PLAN.md`
-- `/Users/assaf/Dropbox/tensorleap/concierge/cmd/concierge/main.go`
-- `/Users/assaf/Dropbox/tensorleap/concierge/internal/cli/run.go`
-- `/Users/assaf/Dropbox/tensorleap/concierge/internal/core/types.go`
-- `/Users/assaf/Dropbox/tensorleap/concierge/internal/core/ports/interfaces.go`
+Implement a deterministic orchestration engine that composes existing `ports` and enforces stage ordering and failure semantics.
 
-Definitions:
-- Iteration engine: deterministic orchestration runner for one full loop.
-- Fixture corpus: curated repositories with both pre-integration and post-integration references for behavior comparison.
+Files to add:
 
-## Plan of Work
+1. `internal/orchestrator/engine.go`
+2. `internal/orchestrator/errors.go`
+3. `internal/orchestrator/engine_test.go`
 
-Implement the deterministic orchestration seam first (Step 4A), then align CLI dry-run behavior to that seam (Step 4B). Add minimal concrete adapters for snapshot/inspect/plan (Steps 5A-5C) so the orchestration path can execute with real data structures. At that point, prepare fixture repositories (Step 5D) and only then add persistence/reporting (Steps 6A-6B), so fixture assertions can rely on stable output artifacts. Finally, add fixture-backed behavior tests (Step 6C), followed by CI/tooling hardening and documentation sync.
+Files to modify:
 
-Each step remains atomic, independently testable, and commit-scoped.
+1. `internal/core/types.go` only if a new report field is strictly required (default: no change).
 
-## Concrete Steps
+Public interface and types (locked decisions):
 
-Step 4A completion checks:
-- `go test ./internal/orchestrator ./internal/core ./internal/core/ports`
-- `go test ./...`
+1. `type Dependencies struct { Snapshotter ports.Snapshotter; Inspector ports.Inspector; Planner ports.Planner; Executor ports.Executor; Validator ports.Validator; Reporter ports.Reporter; Clock func() time.Time }`
+2. `func NewEngine(deps Dependencies) (*Engine, error)`
+3. `func (e *Engine) RunIteration(ctx context.Context, req core.SnapshotRequest) (core.IterationReport, error)`
+4. `type StageError struct { Stage core.Stage; Err error }` with `Error()` and `Unwrap()`.
 
-Step 4B completion checks:
-- `go run ./cmd/concierge run --dry-run`
-- `go test ./internal/cli`
+Implementation tasks:
 
-Step 5A-5C completion checks:
-- `go test ./internal/adapters/... ./internal/orchestrator ./internal/core`
-- `go test ./...`
+1. Validate all dependencies in `NewEngine`; return typed missing-dependency errors with operation context.
+2. Provide default clock (`time.Now().UTC`) when `Clock` is nil.
+3. Run stages strictly in this order: snapshot, inspect, plan, execute, validate, report.
+4. On each stage failure, return `*StageError` and do not call later stages.
+5. Build `core.IterationReport` from snapshot ID, selected step, validation result, and generated timestamp.
+6. Call reporter once on success path; reporting errors should also be wrapped as `StageError{Stage: core.StageReport}`.
 
-Step 5D completion checks:
-- Fixture manifest exists and is parseable (for example `fixtures/manifest.json`).
-- Each fixture has both `pre-integration` and `post-integration` refs recorded.
-- Dry validation command confirms all fixture refs resolve.
+Test cases (exact):
 
-Step 6A-6B completion checks:
-- Atomic writer tests pass under forced interruption scenarios.
-- Iteration report and evidence files are written under `.concierge/` with deterministic structure.
+1. `TestRunIterationSuccessCallsStagesInOrder`
+2. `TestRunIterationSnapshotFailureStopsPipeline`
+3. `TestRunIterationInspectFailureStopsPipeline`
+4. `TestRunIterationPlanFailureStopsPipeline`
+5. `TestRunIterationExecuteFailureStopsPipeline`
+6. `TestRunIterationValidateFailureStopsPipeline`
+7. `TestRunIterationReportFailureReturnsStageError`
+8. `TestNewEngineRejectsMissingDependencies`
+9. `TestRunIterationUsesDefaultClock`
 
-Step 6C completion checks:
-- Fixture test runner executes Concierge over at least one prepared pre-integration fixture.
-- Reported behavior fingerprints/contract checks are compared against corresponding post-integration references.
-- Regression test fails when known contract invariants are intentionally violated in a fixture branch.
+Validation commands:
 
-Step 7 completion checks:
-- CI runs lint + test + build matrix on PR/push.
-- Local developer commands in `Makefile` are documented and verified.
+1. `go test ./internal/orchestrator ./internal/core ./internal/core/ports`
+2. `go test ./...`
 
-Step 8 completion checks:
-- `docs/architecture.md` and `docs/dev-setup.md` exist and reflect current package boundaries and workflows.
-- README quickstart matches implemented CLI behavior and current step status.
+Acceptance criteria:
+
+1. Success path returns a fully populated `core.IterationReport`.
+2. Failure path is stage-specific and short-circuited.
+3. Tests above exist and pass.
+
+Rollback notes:
+
+1. Revert only files under `internal/orchestrator` if regression appears.
+
+---
+
+### Step 4B: CLI dry-run wiring to engine metadata (`PENDING`)
+
+Objective:
+
+Ensure CLI dry-run output reflects canonical stage metadata from orchestrator/core instead of hardcoded text.
+
+Files to modify:
+
+1. `internal/cli/run.go`
+2. `internal/cli/run_test.go`
+
+Optional files to add:
+
+1. `internal/orchestrator/stages.go` if stage formatting helper is introduced.
+
+Implementation tasks:
+
+1. Replace hardcoded stage pipeline string in `run --dry-run` with `core.DefaultStages()`-derived rendering.
+2. Keep user-visible order exactly: `snapshot -> inspect -> plan -> execute -> validate -> report`.
+3. Preserve existing guard behavior: `run` without `--dry-run` still returns not-implemented error.
+
+Test cases:
+
+1. `TestRunDryRunPrintsExecutionStages` (assert output generated from stage list, not string literal).
+2. `TestRunWithoutDryRunReturnsNotImplementedError` (existing behavior unchanged).
+
+Validation commands:
+
+1. `go test ./internal/cli`
+2. `go run ./cmd/concierge run --dry-run`
+
+Acceptance criteria:
+
+1. No hardcoded stage pipeline literal remains.
+2. Existing CLI UX remains unchanged except implementation source of truth.
+
+---
+
+### Step 5A: Snapshot adapter (git and workspace identity) (`PENDING`)
+
+Objective:
+
+Create a deterministic snapshot implementation that populates `core.WorkspaceSnapshot` from filesystem and git.
+
+Files to add:
+
+1. `internal/adapters/snapshot/git_snapshotter.go`
+2. `internal/adapters/snapshot/git_snapshotter_test.go`
+
+Implementation details (locked):
+
+1. Adapter type name: `GitSnapshotter`.
+2. Snapshot request behavior:
+   1. Use `request.RepoRoot` when provided.
+   2. If empty, use current working directory.
+3. Resolve absolute repository root.
+4. Determine git root via `git rev-parse --show-toplevel`.
+5. Determine branch via `git rev-parse --abbrev-ref HEAD`.
+6. Determine HEAD via `git rev-parse HEAD`.
+7. Determine dirty state via `git status --porcelain` non-empty output.
+8. Snapshot ID algorithm: SHA-256 of `root|gitRoot|branch|head|dirty` (hex encoded, lowercase).
+9. `CapturedAt` uses injected clock (default UTC now).
+
+Error mapping:
+
+1. Non-git workspace should emit `IssueCodeRepositoryNotGit` via inspector later; snapshotter returns typed error `KindUnknown` with operation context for now.
+2. Command execution failures must include command and stderr in wrapped error message.
+
+Test cases:
+
+1. `TestSnapshotCapturesGitIdentity`
+2. `TestSnapshotDirtyFlag`
+3. `TestSnapshotIDStableForSameState`
+4. `TestSnapshotIDChangesOnHeadChange`
+5. `TestSnapshotUsesRequestRepoRoot`
+6. `TestSnapshotErrorsOutsideGitRepo`
+
+Validation commands:
+
+1. `go test ./internal/adapters/snapshot`
+2. `go test ./...`
+
+Acceptance criteria:
+
+1. Snapshot fields are deterministic and test-covered.
+2. Adapter works on macOS and Linux with standard git CLI.
+
+---
+
+### Step 5B: Inspector adapter (Layer 1 baseline inventory) (`PENDING`)
+
+Objective:
+
+Implement first-pass artifact inventory checks aligned with README section 8.2 and section 9 Layer 1.
+
+Files to add:
+
+1. `internal/adapters/inspect/baseline_inspector.go`
+2. `internal/adapters/inspect/baseline_inspector_test.go`
+
+Locked inspection checks:
+
+1. Required root files: `leap.yaml`, `leap_binder.py`.
+2. Required integration-test file: either `leap_custom_test.py` or `integration_test.py`.
+3. Emit missing artifacts in `IntegrationStatus.Missing` using canonical labels:
+   1. `leap.yaml`
+   2. `leap_binder.py`
+   3. `integration_test`
+4. Emit corresponding issues with these codes:
+   1. `IssueCodeLeapYAMLMissing`
+   2. `IssueCodeIntegrationScriptMissing`
+   3. `IssueCodeIntegrationTestMissing`
+5. Severity for missing required artifact: `error`.
+6. Scope mapping:
+   1. `leap.yaml` -> `IssueScopeLeapYAML`
+   2. binder/test -> `IssueScopeIntegrationScript` or `IssueScopeIntegrationTest`
+
+Test cases:
+
+1. `TestInspectorReportsAllMissingArtifacts`
+2. `TestInspectorAcceptsEitherIntegrationTestFileName`
+3. `TestInspectorNoIssuesWhenArtifactsExist`
+4. `TestInspectorIssueScopesAndSeverities`
+
+Validation commands:
+
+1. `go test ./internal/adapters/inspect`
+2. `go test ./...`
+
+Acceptance criteria:
+
+1. Inspector emits deterministic missing/issue output for equivalent directories.
+2. Issue codes align with existing mapping in `internal/core/issue_step_map.go`.
+
+---
+
+### Step 5C: Planner adapter (`PENDING`)
+
+Objective:
+
+Implement planner adapter that converts inspection issues into deterministic `ExecutionPlan`.
+
+Files to add:
+
+1. `internal/adapters/planner/deterministic_planner.go`
+2. `internal/adapters/planner/deterministic_planner_test.go`
+
+Locked behavior:
+
+1. Planner uses `core.PreferredEnsureStepsForIssues(status.Issues)`.
+2. If no steps are returned, planner uses fallback primary step `EnsureStepInvestigate`.
+3. Primary step = highest-priority step in returned list.
+4. Additional steps = remaining returned steps in priority order.
+5. Planner does not mutate or reorder issue list except through deterministic priority rules.
+
+Test cases:
+
+1. `TestPlannerChoosesPrimaryByPriority`
+2. `TestPlannerReturnsAdditionalSteps`
+3. `TestPlannerFallbackToInvestigateWhenNoIssues`
+4. `TestPlannerDeterministicAcrossRepeatedCalls`
+
+Validation commands:
+
+1. `go test ./internal/adapters/planner`
+2. `go test ./...`
+
+Acceptance criteria:
+
+1. Planner output is deterministic and fully covered by unit tests.
+
+---
+
+### Step 5D: Executor adapter skeleton (`PENDING`)
+
+Objective:
+
+Provide a safe executor skeleton that accepts ensure-step requests and returns structured evidence without mutating user repos.
+
+Files to add:
+
+1. `internal/adapters/execute/stub_executor.go`
+2. `internal/adapters/execute/stub_executor_test.go`
+
+Locked behavior:
+
+1. For any known step ID, return `ExecutionResult{Applied:false, Summary:"not implemented"}`.
+2. Include one evidence item with key `executor.mode` and value `stub`.
+3. Unknown step IDs return `KindStepNotApplicable` typed errors.
+
+Test cases:
+
+1. `TestExecutorReturnsStubResultForKnownStep`
+2. `TestExecutorRejectsUnknownStep`
+3. `TestExecutorReturnsEvidenceStub`
+
+Validation commands:
+
+1. `go test ./internal/adapters/execute`
+2. `go test ./...`
+
+Acceptance criteria:
+
+1. Orchestrator can run end-to-end with deterministic non-mutating executor behavior.
+
+---
+
+### Step 5E: Validator adapter baseline (`PENDING`)
+
+Objective:
+
+Add deterministic validator baseline for execution-level consistency checks before Python harness exists.
+
+Files to add:
+
+1. `internal/adapters/validate/baseline_validator.go`
+2. `internal/adapters/validate/baseline_validator_test.go`
+
+Locked behavior:
+
+1. If `ExecutionResult.Step.ID` is empty, return failed validation with `IssueCodeHarnessValidationFailed`.
+2. If `ExecutionResult.Applied` is false and summary contains `not implemented`, return passed=true with warning note issue `IssueCodeUnknown` severity `info`.
+3. If execution returned explicit error upstream, validator is not called (covered by orchestrator tests in Step 4A).
+
+Test cases:
+
+1. `TestValidatorFailsOnEmptyStepID`
+2. `TestValidatorPassesForStubExecution`
+3. `TestValidatorDeterministicOutput`
+
+Validation commands:
+
+1. `go test ./internal/adapters/validate`
+2. `go test ./...`
+
+Acceptance criteria:
+
+1. Validator behavior is explicit and deterministic for stub execution phase.
+
+---
+
+### Step 5F: Reporter adapter baseline (`PENDING`)
+
+Objective:
+
+Add baseline reporter that can print concise human summary and keep machine report payload intact.
+
+Files to add:
+
+1. `internal/adapters/report/stdout_reporter.go`
+2. `internal/adapters/report/stdout_reporter_test.go`
+
+Locked behavior:
+
+1. Reporter outputs one line: `snapshot=<id> step=<step-id> validation=<passed|failed>`.
+2. Reporter does not write files in this step.
+3. Reporter returns error on write failure.
+
+Test cases:
+
+1. `TestReporterWritesSingleLineSummary`
+2. `TestReporterReturnsWriteError`
+
+Validation commands:
+
+1. `go test ./internal/adapters/report`
+2. `go test ./...`
+
+Acceptance criteria:
+
+1. End-to-end pipeline can run with baseline adapters without persistence.
+
+---
+
+### Step 5G: Fixture corpus preparation (`PENDING`)
+
+Objective:
+
+Create reproducible local fixture preparation that provides paired pre-integration and post-integration states.
+
+Locked fixture set for initial coverage:
+
+1. `Tensorleap-hub/mnist` @ `1c4c6f0d5c4254cc4ae5c2df5ae8ef9f0a61212b`
+2. `Tensorleap-hub/cifar10_resnet` @ `5dd3611ca9efdf34c28279e036a7bb90638dda4d`
+3. `Tensorleap-hub/IMDb` @ `b4ce7cf109c89402147cc2e7f071165fc143d1d8`
+
+Important decision:
+
+1. We do not require write access to upstream repos.
+2. Pre-integration variants are generated locally from pinned post-integration commits by stripping integration artifacts.
+
+Files to add:
+
+1. `fixtures/manifest.json`
+2. `scripts/fixtures_prepare.sh`
+3. `scripts/fixtures_verify.sh`
+4. `fixtures/README.md`
+
+Manifest schema (locked):
+
+```json
+{
+  "fixtures": [
+    {
+      "id": "mnist",
+      "repo": "https://github.com/tensorleap-hub/mnist.git",
+      "post_ref": "1c4c6f0d5c4254cc4ae5c2df5ae8ef9f0a61212b",
+      "strip_for_pre": ["leap.yaml", "leap_binder.py", "leap_custom_test.py"]
+    }
+  ]
+}
+```
+
+Preparation behavior (locked):
+
+1. Create `.fixtures/<id>/post` by cloning and checking out `post_ref`.
+2. Create `.fixtures/<id>/pre` by copying `post` and deleting `strip_for_pre` files.
+3. Never modify tracked repository files during fixture materialization.
+
+Verification behavior:
+
+1. Confirm `post` contains all stripped files.
+2. Confirm `pre` is missing all stripped files.
+3. Confirm both working copies are clean git trees.
+
+Validation commands:
+
+1. `bash scripts/fixtures_prepare.sh`
+2. `bash scripts/fixtures_verify.sh`
+
+Acceptance criteria:
+
+1. Fixture pairs are reproducible from manifest only.
+2. Preparation process is idempotent.
+
+---
+
+### Step 6A: `.concierge` persistence primitives (`PENDING`)
+
+Objective:
+
+Implement atomic persistence building blocks used by reporter and state management.
+
+Files to add:
+
+1. `internal/persistence/atomic_json.go`
+2. `internal/persistence/paths.go`
+3. `internal/persistence/atomic_json_test.go`
+4. `internal/persistence/paths_test.go`
+
+Locked behavior:
+
+1. `WriteJSONAtomic(path string, v any) error` writes to temp file in same directory then renames.
+2. Temp filename pattern: `<target>.tmp.<pid>.<nsec>`.
+3. Path builder roots everything under `.concierge/` relative to selected project root.
+4. Directory layout:
+   1. `.concierge/state/state.json`
+   2. `.concierge/reports/<snapshot-id>.json`
+   3. `.concierge/evidence/<snapshot-id>/<evidence-name>.log`
+
+Test cases:
+
+1. `TestWriteJSONAtomicCreatesFile`
+2. `TestWriteJSONAtomicOverwritesSafely`
+3. `TestWriteJSONAtomicRejectsInvalidPath`
+4. `TestPathsBuilderReturnsExpectedLayout`
+
+Validation commands:
+
+1. `go test ./internal/persistence`
+2. `go test ./...`
+
+Acceptance criteria:
+
+1. Persistence helpers are deterministic and independently tested.
+
+---
+
+### Step 6B: Persist reports and evidence (`PENDING`)
+
+Objective:
+
+Wire orchestration outputs to filesystem artifacts using Step 6A primitives.
+
+Files to add:
+
+1. `internal/adapters/report/file_reporter.go`
+2. `internal/adapters/report/file_reporter_test.go`
+
+Files to modify:
+
+1. `internal/adapters/execute/stub_executor.go` (optional evidence payload enrichment).
+2. `internal/orchestrator/engine.go` only if dependency injection requires reporter mode selection.
+
+Locked behavior:
+
+1. Reporter writes `core.IterationReport` JSON to `.concierge/reports/<snapshot-id>.json`.
+2. Evidence items are written as one file per item under `.concierge/evidence/<snapshot-id>/`.
+3. Reporter also prints one-line summary to stdout.
+
+Test cases:
+
+1. `TestFileReporterWritesReportJSON`
+2. `TestFileReporterWritesEvidenceFiles`
+3. `TestFileReporterPreservesExistingEvidenceDirectory`
+
+Validation commands:
+
+1. `go test ./internal/adapters/report ./internal/persistence`
+2. `go test ./...`
+
+Acceptance criteria:
+
+1. Running one pipeline iteration produces both report and evidence artifacts on disk.
+
+---
+
+### Step 6C: Runtime harness baseline (Layer 2) (`PENDING`)
+
+Objective:
+
+Add a minimal harness contract invocation path and parser so validator can consume runtime check outputs deterministically.
+
+Files to add:
+
+1. `internal/adapters/validate/harness_runner.go`
+2. `internal/adapters/validate/harness_parser.go`
+3. `internal/adapters/validate/harness_runner_test.go`
+4. `internal/adapters/validate/harness_parser_test.go`
+5. `scripts/harness_stub.py`
+
+Locked behavior:
+
+1. Harness invocation is optional and gated by config flag/env var.
+2. Harness output format is newline-delimited JSON events.
+3. Parser maps events to issue codes:
+   1. preprocess failure -> `IssueCodeHarnessPreprocessFailed`
+   2. encoder coverage incomplete -> `IssueCodeHarnessEncoderCoverageIncomplete`
+   3. generic validation failure -> `IssueCodeHarnessValidationFailed`
+4. Harness timeout default: 120 seconds.
+
+Test cases:
+
+1. `TestHarnessParserMapsKnownEvents`
+2. `TestHarnessParserUnknownEventFallsBackToUnknownIssue`
+3. `TestHarnessRunnerTimeout`
+4. `TestHarnessRunnerSuccessPath`
+
+Validation commands:
+
+1. `go test ./internal/adapters/validate`
+2. `go test ./...`
+
+Acceptance criteria:
+
+1. Validator can ingest deterministic harness signals into structured issues.
+
+---
+
+### Step 6D: Anti-stub heuristics baseline (Layer 3) (`PENDING`)
+
+Objective:
+
+Detect likely stub integrations with deterministic heuristics and explicit issue codes.
+
+Files to add:
+
+1. `internal/adapters/validate/heuristics.go`
+2. `internal/adapters/validate/heuristics_test.go`
+
+Locked heuristics:
+
+1. Constant input fingerprint across sampled indices -> `IssueCodeSuspiciousConstantInputs`.
+2. Constant label fingerprint across sampled indices -> `IssueCodeSuspiciousConstantLabels`.
+3. Empty train or validation subset in harness report -> `IssueCodePreprocessSubsetEmpty`.
+
+Test cases:
+
+1. `TestHeuristicsDetectConstantInputs`
+2. `TestHeuristicsDetectConstantLabels`
+3. `TestHeuristicsDetectEmptySubset`
+4. `TestHeuristicsNoFalsePositiveOnVaryingData`
+
+Validation commands:
+
+1. `go test ./internal/adapters/validate`
+2. `go test ./...`
+
+Acceptance criteria:
+
+1. Heuristic issues are deterministic and use existing core issue codes.
+
+---
+
+### Step 6E: Fixture-backed pre-vs-post behavior tests (`PENDING`)
+
+Objective:
+
+Use prepared fixture pairs to prove Concierge distinguishes pre-integration and post-integration states.
+
+Files to add:
+
+1. `internal/e2e/fixtures/fixtures_test.go`
+2. `internal/e2e/fixtures/testdata/README.md`
+3. `scripts/fixtures_run_checks.sh`
+
+Locked assertions per fixture:
+
+1. Pre variant must emit missing-artifact issues (`leap.yaml`, integration script, integration test).
+2. Post variant must not emit those missing-artifact issues.
+3. Planner primary step for pre variant must be one of:
+   1. `ensure.leap_yaml`
+   2. `ensure.integration_script`
+   3. `ensure.integration_test_contract`
+4. Pipeline report files exist for both variants when persistence is enabled.
+
+Execution policy:
+
+1. Fixture E2E tests are opt-in locally and in CI via explicit flag:
+   1. env `CONCIERGE_RUN_FIXTURE_E2E=1`
+2. Default `go test ./...` should skip fixture network/materialization work.
+
+Validation commands:
+
+1. `CONCIERGE_RUN_FIXTURE_E2E=1 bash scripts/fixtures_prepare.sh`
+2. `CONCIERGE_RUN_FIXTURE_E2E=1 go test ./internal/e2e/fixtures -v`
+
+Acceptance criteria:
+
+1. At least three fixtures execute with deterministic pass/fail behavior.
+2. Failing fixture output includes actionable issue code diffs.
+
+---
+
+### Step 7: Developer tooling and CI expansion (`PENDING`)
+
+Objective:
+
+Codify local and CI quality gates, including optional fixture E2E execution.
+
+Files to add:
+
+1. `Makefile` targets update (if missing targets).
+2. `.golangci.yml` (or equivalent lint config).
+3. `.github/workflows/ci.yml` updates.
+
+Locked CI behavior:
+
+1. Required on PR/push:
+   1. `go test ./...`
+   2. cross-platform build checks for configured matrix
+2. Optional scheduled/manual fixture E2E job gated by environment and timeout budget.
+3. Release workflow from Step 2 remains unchanged.
+
+Validation commands:
+
+1. `make test`
+2. `make lint`
+3. `make build`
+
+Acceptance criteria:
+
+1. CI fails on lint/test/build regressions.
+2. Fixture E2E path is documented and isolated from default fast CI.
+
+---
+
+### Step 8: Documentation sync (`PENDING`)
+
+Objective:
+
+Make docs reflect actual behavior and implementation boundaries.
+
+Files to add or update:
+
+1. `README.md`
+2. `docs/architecture.md`
+3. `docs/dev-setup.md`
+4. `docs/fixtures.md`
+
+Locked documentation content:
+
+1. Architecture diagram/text for orchestrator + adapter layers.
+2. Step-by-step developer setup for Go toolchain and fixture preparation.
+3. Exact explanation of `PENDING` / `DONE` / `ACCEPTED` semantics.
+4. Clear statement of what is deterministic now vs planned later.
+
+Validation commands:
+
+1. Verify all command snippets in docs execute or are explicitly marked as examples.
+2. `go test ./...` after documentation updates (guard against accidental code drift).
+
+Acceptance criteria:
+
+1. README quickstart and docs align with implemented CLI behavior.
+2. Fixture workflow is reproducible from docs only.
+
+## Concrete Step Execution Order
+
+1. Implement Step 4A and commit.
+2. Implement Step 4B and commit.
+3. Implement Step 5A and commit.
+4. Implement Step 5B and commit.
+5. Implement Step 5C and commit.
+6. Implement Step 5D and commit.
+7. Implement Step 5E and commit.
+8. Implement Step 5F and commit.
+9. Implement Step 5G and commit.
+10. Implement Step 6A and commit.
+11. Implement Step 6B and commit.
+12. Implement Step 6C and commit.
+13. Implement Step 6D and commit.
+14. Implement Step 6E and commit.
+15. Implement Step 7 and commit.
+16. Implement Step 8 and commit.
+
+Each step follows this gate:
+
+1. Implement step scope only.
+2. Run step-specific validation commands.
+3. Update step status to `DONE` after commit/push/CI pass.
+4. Mark step `ACCEPTED` only after merge to `main`.
 
 ## Validation and Acceptance
 
 Status semantics:
-- `PENDING`: step not implemented.
-- `DONE`: step implemented, committed, pushed, and branch CI passes.
-- `ACCEPTED`: step merged to `main`.
 
-Step 4A is accepted for merge readiness when:
-- Engine executes stages in strict order.
-- Stage failure short-circuits downstream stages with typed stage context.
-- Success path returns a populated `core.IterationReport`.
-- Existing CLI tests remain green.
+1. `PENDING`: step not implemented.
+2. `DONE`: step implemented, committed, pushed, and branch CI passes.
+3. `ACCEPTED`: step merged to `main`.
 
-Overall phase is accepted when Steps 4A-8 are `ACCEPTED`.
+Phase acceptance condition:
+
+1. Steps 4A through 8 are all `ACCEPTED`.
+2. Fixture E2E has at least one green run on all three locked fixtures.
 
 ## Idempotence and Recovery
 
-- Keep one commit per step scope to simplify review and rollback.
-- If a step regresses behavior, revert that step’s commit without modifying accepted earlier steps.
-- Re-running non-mutating checks should not modify repository-tracked files.
+1. Keep one commit per step for clean rollback and bisect.
+2. If a step fails CI, fix within that step scope only; do not start next step.
+3. If a step introduces regressions, revert that step commit only.
+4. Fixture preparation scripts must be safe to rerun without manual cleanup.
+
+## Surprises & Discoveries
+
+- Observation: The previous version of this plan was not implementation-complete for pending steps.
+  Evidence: It lacked file-level changes, interface contracts, and test case definitions for each pending item.
+- Observation: Tensorleap Hub repositories suitable for fixture seeding are publicly listable and have stable `main` heads.
+  Evidence: `mnist`, `cifar10_resnet`, and `IMDb` were resolved with concrete commit SHAs.
+
+## Decision Log
+
+- Decision: Keep step statuses strictly to `PENDING`, `DONE`, and `ACCEPTED`.
+  Rationale: Required by repository workflow agreement.
+  Date/Author: 2026-02-25 / user + assistant.
+- Decision: Sequence fixture preparation before persistence-enabled fixture assertions.
+  Rationale: Reproducible fixture setup is a dependency for behavior comparison tests.
+  Date/Author: 2026-02-25 / user + assistant.
+- Decision: Define and lock initial fixture repositories and SHAs now.
+  Rationale: Removes ambiguity when implementing Step 5G and Step 6E.
+  Date/Author: 2026-02-25 / assistant.
+- Decision: Keep default `go test ./...` fast by making networked fixture E2E opt-in.
+  Rationale: Prevent default CI from becoming flaky or slow.
+  Date/Author: 2026-02-25 / assistant.
+
+## Outcomes & Retrospective
+
+Current status: foundational steps (1-3) are merged, and pending work is now specified at implementation depth. The next executable atomic step is Step 4A.
+
+Residual risk: runtime harness behavior (Step 6C) may reveal additional Python environment assumptions.
+
+Mitigation: harness invocation is introduced behind an explicit gate and parser contract before broad E2E rollout.
 
 ## Artifacts and Notes
 
-Current working tree snapshot at plan update time:
+Current working tree snapshot before this plan revision commit:
 
-    ## main...origin/main
+    ## main...origin/main [ahead 1]
+    M PLAN.md
     ?? bin/
 
 Operational note:
-- Untracked `bin/` is currently ignored for step-scoped commits unless the step explicitly includes release artifact handling.
+
+1. Untracked `bin/` remains out of scope for planning commits unless a step explicitly targets release artifact handling.
 
 ## Interfaces and Dependencies
 
-- Language/runtime: Go `1.24.x`
-- CLI framework: Cobra
-- Existing core contracts: `internal/core`, `internal/core/ports`
-- Planned package additions: `internal/orchestrator`, `internal/adapters/*`, fixture test utilities
-- CI platform: GitHub Actions
+1. Language/runtime: Go `1.24.x`.
+2. CLI framework: Cobra.
+3. Core contracts: `internal/core`, `internal/core/ports`.
+4. Planned new packages:
+   1. `internal/orchestrator`
+   2. `internal/adapters/snapshot`
+   3. `internal/adapters/inspect`
+   4. `internal/adapters/planner`
+   5. `internal/adapters/execute`
+   6. `internal/adapters/validate`
+   7. `internal/adapters/report`
+   8. `internal/persistence`
+   9. `internal/e2e/fixtures`
+5. External tools used by specific steps:
+   1. `git`
+   2. `bash`
+   3. optional Python runtime for harness step

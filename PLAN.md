@@ -51,6 +51,9 @@ The desired outcome for this phase is a clean baseline with correct project meta
 - Decision: Step 2 must include release deliverables.
   Rationale: user requires Linux/macOS binaries on amd64+arm64, semantic versioning, and release notes.
   Date/Author: 2026-02-25 / user + assistant.
+- Decision: Regular CI must publish build artifacts from the start, not only release tags.
+  Rationale: user requested binary visibility and cross-platform build confidence on PR/push workflows.
+  Date/Author: 2026-02-25 / user + assistant.
 
 ## Outcomes & Retrospective
 

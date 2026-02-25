@@ -3,8 +3,10 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/tensorleap/concierge/internal/core"
 )
 
 func newRunCommand() *cobra.Command {
@@ -18,7 +20,12 @@ func newRunCommand() *cobra.Command {
 				return errors.New("run is not implemented yet; use --dry-run")
 			}
 
-			_, err := fmt.Fprintln(cmd.OutOrStdout(), "dry-run plan: snapshot -> inspect -> plan -> execute -> validate -> report")
+			stages := core.DefaultStages()
+			stageNames := make([]string, 0, len(stages))
+			for _, stage := range stages {
+				stageNames = append(stageNames, string(stage))
+			}
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "dry-run plan: %s\n", strings.Join(stageNames, " -> "))
 			return err
 		},
 	}

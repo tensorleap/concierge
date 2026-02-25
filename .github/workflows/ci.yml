@@ -1,0 +1,25 @@
+name: Go Baseline CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  go-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Verify Go toolchain
+        run: go version
+
+      - name: Verify module metadata
+        run: go list -m

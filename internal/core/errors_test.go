@@ -33,3 +33,23 @@ func TestKindOfReturnsUnknownForUntypedErrors(t *testing.T) {
 		t.Fatalf("expected KindUnknown, got %q", kind)
 	}
 }
+
+func TestWrapErrorSupportsNotGitRepoKind(t *testing.T) {
+	cause := errors.New("fatal: not a git repository")
+	err := WrapError(KindNotGitRepo, "snapshot.git_root", cause)
+
+	if !errors.Is(err, ErrNotGitRepo) {
+		t.Fatalf("expected errors.Is with ErrNotGitRepo to match, got: %v", err)
+	}
+
+	var typed *Error
+	if !errors.As(err, &typed) {
+		t.Fatalf("expected errors.As to extract *Error, got: %v", err)
+	}
+	if typed.Kind != KindNotGitRepo {
+		t.Fatalf("expected kind %q, got %q", KindNotGitRepo, typed.Kind)
+	}
+	if typed.Op != "snapshot.git_root" {
+		t.Fatalf("expected operation to be preserved, got %q", typed.Op)
+	}
+}

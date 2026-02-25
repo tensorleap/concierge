@@ -10,7 +10,7 @@ The desired outcome for this phase is a clean baseline with correct project meta
 
 ## Progress
 
-- Step 1: Baseline cleanup (`DONE`, 2026-02-25 07:04Z). Scope: remove inherited Python/aider workflows, add Go module metadata, add minimal Go CI, and add README implementation status note.
+- Step 1: Baseline cleanup (`ACCEPTED`, 2026-02-25 07:28Z on `main`). Scope: remove inherited Python/aider workflows, add Go module metadata, add minimal Go CI, and add README implementation status note.
 - Plan tracking bootstrap: `DONE` (2026-02-25 07:07Z). Scope: establish `PLAN.md` as the cross-session source of truth.
 - Step 2: Add Cobra CLI bootstrap (`root`, `doctor`, `run --dry-run`, `version`) with global output/log flags. Status: `PENDING`.
 - Step 3: Add core deterministic contracts (`types`, `ports`, typed errors, context-first APIs). Status: `PENDING`.

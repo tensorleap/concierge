@@ -1,0 +1,69 @@
+package orchestrator
+
+import (
+	"context"
+
+	"github.com/tensorleap/concierge/internal/core"
+)
+
+// RunOptions configures the outer orchestration loop.
+type RunOptions struct {
+	MaxIterations int
+}
+
+// RunStopReason captures why the orchestration loop stopped.
+type RunStopReason string
+
+const (
+	RunStopReasonSuccess       RunStopReason = "success"
+	RunStopReasonMaxIterations RunStopReason = "max_iterations"
+	RunStopReasonCancelled     RunStopReason = "cancelled"
+)
+
+// RunResult aggregates per-iteration reports for one run invocation.
+type RunResult struct {
+	Reports    []core.IterationReport `json:"reports"`
+	StopReason RunStopReason          `json:"stopReason"`
+}
+
+// Run executes the outer loop until completion, cancellation, or max-iteration limit.
+func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOptions) (RunResult, error) {
+	maxIterations := opts.MaxIterations
+	if maxIterations <= 0 {
+		maxIterations = 1
+	}
+
+	reports := make([]core.IterationReport, 0, maxIterations)
+	for i := 0; i < maxIterations; i++ {
+		if err := ctx.Err(); err != nil {
+			return RunResult{
+				Reports:    reports,
+				StopReason: RunStopReasonCancelled,
+			}, err
+		}
+
+		report, err := e.RunIteration(ctx, req)
+		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return RunResult{
+					Reports:    reports,
+					StopReason: RunStopReasonCancelled,
+				}, ctxErr
+			}
+			return RunResult{Reports: reports}, err
+		}
+
+		reports = append(reports, report)
+		if report.Step.ID == core.EnsureStepComplete {
+			return RunResult{
+				Reports:    reports,
+				StopReason: RunStopReasonSuccess,
+			}, nil
+		}
+	}
+
+	return RunResult{
+		Reports:    reports,
+		StopReason: RunStopReasonMaxIterations,
+	}, nil
+}

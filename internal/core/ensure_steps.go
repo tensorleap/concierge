@@ -4,6 +4,7 @@ package core
 type EnsureStepID string
 
 const (
+	EnsureStepComplete                EnsureStepID = "ensure.complete"
 	EnsureStepInvestigate             EnsureStepID = "ensure.investigate"
 	EnsureStepRepositoryContext       EnsureStepID = "ensure.repository_context"
 	EnsureStepPythonRuntime           EnsureStepID = "ensure.python_runtime"
@@ -24,6 +25,10 @@ const (
 )
 
 var ensureStepCatalog = map[EnsureStepID]EnsureStep{
+	EnsureStepComplete: {
+		ID:          EnsureStepComplete,
+		Description: "No additional ensure-step is required; integration state is complete",
+	},
 	EnsureStepInvestigate: {
 		ID:          EnsureStepInvestigate,
 		Description: "Investigate unmapped issues and enrich planner rules",

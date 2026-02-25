@@ -25,7 +25,7 @@ The desired outcome is that another engineer can implement each step with no add
 | Step 1: Baseline cleanup | `ACCEPTED` | 2026-02-25 07:28Z (`main`) | Remove inherited Python/aider workflows, add Go module metadata, add minimal Go CI, and add README implementation-status note. |
 | Step 2: Cobra CLI bootstrap + release automation | `ACCEPTED` | 2026-02-25 10:57Z (`main`) | Add `root`/`doctor`/`run --dry-run`/`version` with global `--log-level`; add semver release automation for Linux/macOS amd64+arm64 with release notes. |
 | Step 3: Core deterministic contracts | `ACCEPTED` | 2026-02-25 11:24Z (`main`) | Add `internal/core` types + typed errors and `internal/core/ports` interfaces; seed issue-code catalog and deterministic issue-to-step mapping helpers. |
-| Step 4A: Iteration engine skeleton | `PENDING` | — | Add `internal/orchestrator` engine and stage-scoped error handling with strict call order and short-circuit semantics. |
+| Step 4A: Iteration engine skeleton | `DONE` | 2026-02-25 11:47Z | Add `internal/orchestrator` engine and stage-scoped error handling with strict call order and short-circuit semantics. |
 | Step 4B: CLI dry-run wiring to engine metadata | `PENDING` | — | Remove hardcoded stage string in `run --dry-run`; render stage order from orchestrator metadata. |
 | Step 5A: Snapshot adapter (git and workspace identity) | `PENDING` | — | Implement snapshot adapter for repo root/git root/branch/head/dirty and deterministic snapshot IDs. |
 | Step 5B: Inspector adapter (Layer 1 baseline inventory) | `PENDING` | — | Implement deterministic inventory checks for required integration artifacts and basic issue emission. |
@@ -58,7 +58,7 @@ Out of scope for this phase:
 
 ## Detailed Step Specifications
 
-### Step 4A: Iteration engine skeleton (`PENDING`)
+### Step 4A: Iteration engine skeleton (`DONE`)
 
 Objective:
 
@@ -786,7 +786,7 @@ Phase acceptance condition:
 
 ## Outcomes & Retrospective
 
-Current status: foundational steps (1-3) are merged, and pending work is now specified at implementation depth. The next executable atomic step is Step 4A.
+Current status: foundational steps (1-3) are merged, and pending work is now specified at implementation depth. The next executable atomic step is Step 4B.
 
 Residual risk: runtime harness behavior (Step 6C) may reveal additional Python environment assumptions.
 

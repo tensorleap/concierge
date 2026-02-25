@@ -51,10 +51,29 @@ jobs:
         with:
           go-version: "1.24.x"
 
+      - name: Resolve build metadata
+        run: |
+          VERSION="v0.0.0-dev+${GITHUB_SHA::7}"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+          fi
+
+          COMMIT="${GITHUB_SHA::7}"
+          DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+          echo "BUILD_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "BUILD_COMMIT=${COMMIT}" >> "$GITHUB_ENV"
+          echo "BUILD_DATE=${DATE}" >> "$GITHUB_ENV"
+
       - name: Build concierge binary
         run: |
           mkdir -p dist
+          LDFLAGS="-s -w \
+            -X github.com/tensorleap/concierge/internal/buildinfo.Version=${BUILD_VERSION} \
+            -X github.com/tensorleap/concierge/internal/buildinfo.Commit=${BUILD_COMMIT} \
+            -X github.com/tensorleap/concierge/internal/buildinfo.Date=${BUILD_DATE}"
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 go build \
+            -ldflags "$LDFLAGS" \
             -o dist/concierge-${{ matrix.goos }}-${{ matrix.goarch }} \
             ./cmd/concierge
 
@@ -63,7 +82,9 @@ jobs:
         run: |
           output="$(./dist/concierge-linux-amd64 version)"
           echo "$output"
-          echo "$output" | grep -q '^version:'
+          echo "$output" | grep -Eq '^version: v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          echo "$output" | grep -Eq '^commit: [0-9a-f]{7}$'
+          echo "$output" | grep -Eq '^date: [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4

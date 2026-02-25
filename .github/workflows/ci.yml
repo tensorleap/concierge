@@ -58,6 +58,13 @@ jobs:
             -o dist/concierge-${{ matrix.goos }}-${{ matrix.goarch }} \
             ./cmd/concierge
 
+      - name: Smoke test linux amd64 binary
+        if: ${{ matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
+        run: |
+          output="$(./dist/concierge-linux-amd64 version)"
+          echo "$output"
+          echo "$output" | grep -q '^version:'
+
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:

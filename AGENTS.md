@@ -19,6 +19,7 @@ This repository is implemented step by step.
 ## Execution Rules
 
 - Implement only one step at a time.
+- Before any `git commit` or `git push`, stop and let the user review changes locally; proceed only after explicit user approval.
 - After finishing a step, update its status in `PLAN.md` to `DONE` only after commit, push, PR creation, and passing branch CI.
 - The agent may commit and push step changes on a non-main feature branch before acceptance.
 - The agent should trigger and monitor CI for the pushed branch and fix failures within the step scope.
@@ -55,10 +56,11 @@ If branch is `main` or `master`, stop and do not commit.
 
 After finishing one step:
 
-1. Commit on feature branch.
-2. Push feature branch.
-3. Open PR to `main`.
-4. Monitor CI for that PR branch and fix failures in step scope.
+1. Request and receive explicit user approval after local review.
+2. Commit on feature branch.
+3. Push feature branch.
+4. Open PR to `main`.
+5. Monitor CI for that PR branch and fix failures in step scope.
 
 Only then update step status to `DONE`.
 

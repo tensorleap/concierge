@@ -54,6 +54,12 @@ func TestRunNonDryRunExecutesSingleIterationByDefault(t *testing.T) {
 	if !strings.Contains(output, "All required checks passed.") {
 		t.Fatalf("expected completed checklist in output, got: %q", output)
 	}
+	if !strings.Contains(output, "Next steps:") {
+		t.Fatalf("expected next-steps guidance in output, got: %q", output)
+	}
+	if !strings.Contains(output, "run `leap push` from the repository root.") {
+		t.Fatalf("expected leap push guidance in output, got: %q", output)
+	}
 }
 
 func TestRunNonDryRunHonorsMaxIterationsFlag(t *testing.T) {
@@ -149,11 +155,33 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected max-iterations stop to return error")
 	}
+	promptOutput := output
+	if promptEnd := strings.Index(output, "Review proposed changes"); promptEnd >= 0 {
+		promptOutput = output[:promptEnd]
+	}
 	if !strings.Contains(output, "Integration checks:") {
 		t.Fatalf("expected checklist before approval prompt, got output: %q", output)
 	}
-	if !strings.Contains(output, "☐ Check leap.yaml setup (blocking)") {
+	if !strings.Contains(promptOutput, "☐ Check leap.yaml setup (blocking)") {
 		t.Fatalf("expected blocking checklist row in approval prompt, got output: %q", output)
+	}
+	if strings.Contains(promptOutput, "☐ Check model compatibility") {
+		t.Fatalf("expected checklist to omit future unchecked steps, got output: %q", output)
+	}
+	if !strings.Contains(promptOutput, "Current blocker: Check leap.yaml setup") {
+		t.Fatalf("expected blocker heading in approval prompt, got output: %q", output)
+	}
+	if !strings.Contains(promptOutput, "Why it matters: leap.yaml defines the upload boundary and entry point that Tensorleap uses to run your integration.") {
+		t.Fatalf("expected blocker explanation in approval prompt, got output: %q", output)
+	}
+	if !strings.Contains(promptOutput, "Docs: "+stepGuideLeapYAMLURL) {
+		t.Fatalf("expected leap.yaml docs link in approval prompt, got output: %q", output)
+	}
+	if strings.Contains(promptOutput, "Next required check:") {
+		t.Fatalf("expected prompt to avoid next-check phrasing, got output: %q", output)
+	}
+	if strings.Contains(promptOutput, "(No changes will be made before approval.)") {
+		t.Fatalf("expected prompt to avoid redundant parenthetical approval note, got output: %q", output)
 	}
 	if !strings.Contains(output, "Allow Concierge to make changes for this check now?") {
 		t.Fatalf("expected pre-change approval prompt, got output: %q", output)
@@ -168,6 +196,66 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	latestMessage := runGit(t, repo, "log", "-1", "--pretty=%s")
 	if !strings.HasPrefix(latestMessage, "concierge(ensure.leap_yaml):") {
 		t.Fatalf("expected structured commit message, got %q", latestMessage)
+	}
+}
+
+func TestStepApprovalMessageShowsOnlyChecklistThroughBlockingStep(t *testing.T) {
+	step, ok := core.EnsureStepByID(core.EnsureStepLeapYAML)
+	if !ok {
+		t.Fatal("expected leap.yaml ensure-step in catalog")
+	}
+	status := core.IntegrationStatus{
+		Issues: []core.Issue{
+			{
+				Code:     core.IssueCodeLeapYAMLMissing,
+				Message:  "leap.yaml is required at repository root",
+				Severity: core.SeverityError,
+			},
+		},
+	}
+
+	message := stepApprovalMessage(step, status, true)
+	if !strings.Contains(message, "☑ Check required secrets") {
+		t.Fatalf("expected prior checks to be marked done, got message: %q", message)
+	}
+	if !strings.Contains(message, "☐ Check leap.yaml setup (blocking)") {
+		t.Fatalf("expected blocking check row, got message: %q", message)
+	}
+	if strings.Contains(message, "☐ Check model compatibility") {
+		t.Fatalf("expected future unchecked checks to be omitted, got message: %q", message)
+	}
+}
+
+func TestStepApprovalMessageIncludesBlockerContext(t *testing.T) {
+	step, ok := core.EnsureStepByID(core.EnsureStepLeapYAML)
+	if !ok {
+		t.Fatal("expected leap.yaml ensure-step in catalog")
+	}
+	status := core.IntegrationStatus{
+		Issues: []core.Issue{
+			{
+				Code:     core.IssueCodeLeapYAMLMissing,
+				Message:  "leap.yaml is required at repository root",
+				Severity: core.SeverityError,
+			},
+		},
+	}
+
+	message := stepApprovalMessage(step, status, true)
+	if !strings.Contains(message, "Current blocker: Check leap.yaml setup") {
+		t.Fatalf("expected blocker heading, got message: %q", message)
+	}
+	if !strings.Contains(message, "What failed:\n- leap.yaml is required at repository root") {
+		t.Fatalf("expected failure details, got message: %q", message)
+	}
+	if !strings.Contains(message, "Docs: "+stepGuideLeapYAMLURL) {
+		t.Fatalf("expected docs link, got message: %q", message)
+	}
+	if strings.Contains(message, "Next required check:") {
+		t.Fatalf("expected next-check wording to be removed, got message: %q", message)
+	}
+	if strings.Contains(message, "(No changes will be made before approval.)") {
+		t.Fatalf("expected redundant approval note to be removed, got message: %q", message)
 	}
 }
 

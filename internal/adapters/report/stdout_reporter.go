@@ -17,6 +17,8 @@ const (
 	ansiGreen  = "\033[32m"
 	ansiYellow = "\033[33m"
 	ansiCyan   = "\033[36m"
+
+	tensorleapUploadGuideURL = "https://docs.tensorleap.ai/tensorleap-integration/uploading-with-cli/cli-assets-upload"
 )
 
 // OutputOptions controls how reporter output is rendered for humans.
@@ -103,6 +105,15 @@ func writeSummaryLine(writer io.Writer, report core.IterationReport, options Out
 
 	if complete {
 		if _, err := fmt.Fprintln(writer, "All required checks passed."); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(writer, "Next steps:"); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(writer, "- If you have not uploaded this integration yet, run `leap push` from the repository root."); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(writer, "- Upload guide: %s\n", tensorleapUploadGuideURL); err != nil {
 			return err
 		}
 	} else if blockerStep.ID != "" {
@@ -230,8 +241,17 @@ func buildChecklist(report core.IterationReport) ([]checklistRow, core.EnsureSte
 	}
 
 	blockerIndex := indexOfStep(steps, blockerStep.ID)
-	rows := make([]checklistRow, 0, len(steps))
-	for i, step := range steps {
+	if blockerIndex < 0 {
+		rows := make([]checklistRow, 0, len(steps))
+		for _, step := range steps {
+			rows = append(rows, checklistRow{Step: step, State: checklistPending})
+		}
+		return rows, blockerStep, issuesForStep(report.Validation.Issues, blockerStep.ID), false
+	}
+
+	rows := make([]checklistRow, 0, blockerIndex+1)
+	for i := 0; i <= blockerIndex; i++ {
+		step := steps[i]
 		state := checklistPending
 		if i < blockerIndex {
 			state = checklistPassed

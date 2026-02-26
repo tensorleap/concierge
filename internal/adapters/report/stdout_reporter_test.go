@@ -46,6 +46,36 @@ func TestReporterWritesSingleLineSummary(t *testing.T) {
 			t.Fatalf("expected output to contain %q, got %q", snippet, output)
 		}
 	}
+	if strings.Contains(output, "Check model compatibility") {
+		t.Fatalf("expected output to omit future unchecked checks, got %q", output)
+	}
+}
+
+func TestReporterShowsNextStepsWhenChecksPass(t *testing.T) {
+	var sink strings.Builder
+	reporter := NewStdoutReporter(&sink)
+
+	err := reporter.Report(context.Background(), core.IterationReport{
+		SnapshotID: "snapshot-123",
+		Step:       core.EnsureStep{ID: core.EnsureStepComplete},
+		Validation: core.ValidationResult{Passed: true},
+	})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	output := sink.String()
+	expectedSnippets := []string{
+		"All required checks passed.",
+		"Next steps:",
+		"run `leap push` from the repository root.",
+		tensorleapUploadGuideURL,
+	}
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(output, snippet) {
+			t.Fatalf("expected output to contain %q, got %q", snippet, output)
+		}
+	}
 }
 
 func TestReporterReturnsWriteError(t *testing.T) {

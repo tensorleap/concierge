@@ -68,7 +68,24 @@ func ensureLeapYAML(repoRoot string, step core.EnsureStep) (core.ExecutionResult
 	}
 
 	if beforeState == "missing" {
-		return applyTemplate(repoRoot, step, "leap.yaml", "templates/leap_yaml.tmpl")
+		result, err := applyTemplate(repoRoot, step, "leap.yaml", "templates/leap_yaml.tmpl")
+		if err != nil {
+			return core.ExecutionResult{}, err
+		}
+
+		entryApplied, entryBeforeChecksum, entryAfterChecksum, err := ensureLeapYAMLEntryFile(repoRoot, "leap_binder.py")
+		if err != nil {
+			return core.ExecutionResult{}, core.WrapError(core.KindUnknown, "execute.filesystem.entry_file", err)
+		}
+		if entryApplied {
+			result.Summary = "created leap.yaml and leap_binder.py"
+		}
+		result.Evidence = append(result.Evidence,
+			core.EvidenceItem{Name: "executor.entry_file", Value: "leap_binder.py"},
+			core.EvidenceItem{Name: "executor.entry_file.before_checksum", Value: entryBeforeChecksum},
+			core.EvidenceItem{Name: "executor.entry_file.after_checksum", Value: entryAfterChecksum},
+		)
+		return result, nil
 	}
 
 	raw, err := os.ReadFile(targetPath)
@@ -87,6 +104,16 @@ func ensureLeapYAML(repoRoot string, step core.EnsureStep) (core.ExecutionResult
 		}
 	}
 
+	effectiveContents := raw
+	if changed {
+		effectiveContents = reconciled
+	}
+	entryFile := leapYAMLEntryFileValue(effectiveContents)
+	entryApplied, entryBeforeChecksum, entryAfterChecksum, err := ensureLeapYAMLEntryFile(repoRoot, entryFile)
+	if err != nil {
+		return core.ExecutionResult{}, core.WrapError(core.KindUnknown, "execute.filesystem.entry_file", err)
+	}
+
 	afterChecksum, _, err := checksumForPath(targetPath)
 	if err != nil {
 		return core.ExecutionResult{}, core.WrapError(core.KindUnknown, "execute.filesystem.after_checksum", err)
@@ -96,20 +123,82 @@ func ensureLeapYAML(repoRoot string, step core.EnsureStep) (core.ExecutionResult
 	if changed {
 		summary = reason
 	}
+	if entryApplied {
+		if changed {
+			summary = fmt.Sprintf("%s and created %s", summary, entryFile)
+		} else {
+			summary = fmt.Sprintf("created %s to satisfy leap.yaml entryFile", entryFile)
+		}
+	}
 
 	result := core.ExecutionResult{
 		Step:    step,
-		Applied: changed,
+		Applied: changed || entryApplied,
 		Summary: summary,
 		Evidence: []core.EvidenceItem{
 			{Name: "executor.mode", Value: "filesystem"},
 			{Name: "executor.target_path", Value: "leap.yaml"},
 			{Name: "executor.before_checksum", Value: beforeChecksum},
 			{Name: "executor.after_checksum", Value: afterChecksum},
+			{Name: "executor.entry_file", Value: entryFile},
+			{Name: "executor.entry_file.before_checksum", Value: entryBeforeChecksum},
+			{Name: "executor.entry_file.after_checksum", Value: entryAfterChecksum},
 		},
 	}
 
 	return result, nil
+}
+
+func leapYAMLEntryFileValue(contents []byte) string {
+	var contract struct {
+		EntryFile string `yaml:"entryFile"`
+	}
+	if err := yaml.Unmarshal(contents, &contract); err != nil {
+		return "leap_binder.py"
+	}
+
+	entryFile := normalizeUploadPath(contract.EntryFile)
+	if entryFile == "" {
+		return "leap_binder.py"
+	}
+	return entryFile
+}
+
+func ensureLeapYAMLEntryFile(repoRoot string, entryFile string) (bool, string, string, error) {
+	normalizedEntry := normalizeUploadPath(entryFile)
+	if normalizedEntry == "" {
+		normalizedEntry = "leap_binder.py"
+	}
+
+	entryPath := filepath.Join(repoRoot, filepath.FromSlash(normalizedEntry))
+	beforeChecksum, beforeState, err := checksumForPath(entryPath)
+	if err != nil {
+		return false, "", "", err
+	}
+	if beforeState != "missing" {
+		return false, beforeChecksum, beforeChecksum, nil
+	}
+	if normalizedEntry != "leap_binder.py" {
+		return false, beforeChecksum, beforeChecksum, nil
+	}
+
+	templateContents, err := templateFS.ReadFile("templates/leap_binder.py.tmpl")
+	if err != nil {
+		return false, "", "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(entryPath), 0o755); err != nil {
+		return false, "", "", err
+	}
+	if err := os.WriteFile(entryPath, templateContents, 0o644); err != nil {
+		return false, "", "", err
+	}
+
+	afterChecksum, _, err := checksumForPath(entryPath)
+	if err != nil {
+		return false, "", "", err
+	}
+
+	return true, beforeChecksum, afterChecksum, nil
 }
 
 func reconcileLeapYAML(contents []byte, repoRoot string) ([]byte, bool, string, error) {

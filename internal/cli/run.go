@@ -26,6 +26,16 @@ import (
 
 var runLogoProvider = defaultCLILogo
 
+const (
+	stepGuideLeapYAMLURL           = "https://docs.tensorleap.ai/tensorleap-integration/leap.yaml"
+	stepGuideModelIntegrationURL   = "https://docs.tensorleap.ai/tensorleap-integration/model-integration"
+	stepGuideWritingIntegrationURL = "https://docs.tensorleap.ai/tensorleap-integration/writing-integration-code"
+	stepGuidePreprocessURL         = "https://docs.tensorleap.ai/tensorleap-integration/writing-integration-code/preprocess-function"
+	stepGuideInputEncoderURL       = "https://docs.tensorleap.ai/tensorleap-integration/writing-integration-code/input-encoder"
+	stepGuideGroundTruthURL        = "https://docs.tensorleap.ai/tensorleap-integration/writing-integration-code/ground-truth-encoder"
+	stepGuideIntegrationTestURL    = "https://docs.tensorleap.ai/tensorleap-integration/integration-test"
+)
+
 func newRunCommand() *cobra.Command {
 	var dryRun bool
 	var maxIterations int
@@ -212,54 +222,48 @@ func newRunCommand() *cobra.Command {
 }
 
 func stepApprovalMessage(step core.EnsureStep, status core.IntegrationStatus, hasStatus bool) string {
-	checklist := make([]string, 0, 32)
-	checklist = append(checklist, "Integration checks:")
+	checklist := checklistRowsForPrompt(step)
 
-	steps := checklistStepsForPrompt()
-	blockingIndex := -1
-	for i, knownStep := range steps {
-		if knownStep.ID == step.ID {
-			blockingIndex = i
-			break
-		}
-	}
-
-	for i, knownStep := range steps {
-		prefix := "☐"
-		label := core.HumanEnsureStepLabel(knownStep.ID)
-		if blockingIndex >= 0 && i < blockingIndex {
-			prefix = "☑"
-		}
-		if knownStep.ID == step.ID {
-			label += " (blocking)"
-		}
-		checklist = append(checklist, fmt.Sprintf("%s %s", prefix, label))
-	}
-
+	blockers := []core.Issue(nil)
 	if hasStatus {
-		blockers := blockingIssuesForStep(status.Issues, step.ID)
-		if len(blockers) > 0 {
-			checklist = append(checklist, "", "Missing or failing requirements:")
-			for i, issue := range blockers {
-				if i >= 3 {
-					checklist = append(checklist, "- Additional blocking details were omitted for brevity.")
-					break
-				}
-				message := strings.TrimSpace(issue.Message)
-				if message == "" {
-					message = "A required check is failing."
-				}
-				checklist = append(checklist, "- "+message)
+		blockers = blockingIssuesForStep(status.Issues, step.ID)
+	}
+
+	checkLabel := core.HumanEnsureStepLabel(step.ID)
+	checkHeading := "Current check"
+	if len(blockers) > 0 {
+		checkHeading = "Current blocker"
+	}
+	checklist = append(checklist, "", fmt.Sprintf("%s: %s", checkHeading, checkLabel))
+
+	guidance := approvalGuidanceForStep(step.ID)
+	if guidance.Explanation != "" {
+		checklist = append(checklist, "Why it matters: "+guidance.Explanation)
+	}
+	if guidance.DocsURL != "" {
+		checklist = append(checklist, "Docs: "+guidance.DocsURL)
+	}
+
+	if len(blockers) > 0 {
+		checklist = append(checklist, "What failed:")
+		for i, issue := range blockers {
+			if i >= 3 {
+				checklist = append(checklist, "- Additional blocking details were omitted for brevity.")
+				break
 			}
+			message := strings.TrimSpace(issue.Message)
+			if message == "" {
+				message = "A required check is failing."
+			}
+			checklist = append(checklist, "- "+message)
 		}
 	}
 
 	checklist = append(
 		checklist,
 		"",
-		fmt.Sprintf("Next required check: %s", core.HumanEnsureStepLabel(step.ID)),
-		"Concierge can help with this interactively.",
-		"Allow Concierge to make changes for this check now? (No changes will be made before approval.)",
+		"Concierge can help fix this now.",
+		"Allow Concierge to make changes for this check now?",
 	)
 	return strings.Join(checklist, "\n")
 }
@@ -342,6 +346,126 @@ func checklistStepsForPrompt() []core.EnsureStep {
 		steps = append(steps, step)
 	}
 	return steps
+}
+
+func checklistRowsForPrompt(step core.EnsureStep) []string {
+	checklist := []string{"Integration checks:"}
+
+	steps := checklistStepsForPrompt()
+	blockingIndex := -1
+	for i, knownStep := range steps {
+		if knownStep.ID == step.ID {
+			blockingIndex = i
+			break
+		}
+	}
+
+	if blockingIndex < 0 {
+		checklist = append(checklist, fmt.Sprintf("☐ %s (blocking)", core.HumanEnsureStepLabel(step.ID)))
+		return checklist
+	}
+
+	for i := 0; i <= blockingIndex; i++ {
+		knownStep := steps[i]
+		label := core.HumanEnsureStepLabel(knownStep.ID)
+		if i == blockingIndex {
+			checklist = append(checklist, fmt.Sprintf("☐ %s (blocking)", label))
+			continue
+		}
+		checklist = append(checklist, fmt.Sprintf("☑ %s", label))
+	}
+
+	return checklist
+}
+
+type stepApprovalGuidance struct {
+	Explanation string
+	DocsURL     string
+}
+
+func approvalGuidanceForStep(stepID core.EnsureStepID) stepApprovalGuidance {
+	switch stepID {
+	case core.EnsureStepRepositoryContext:
+		return stepApprovalGuidance{
+			Explanation: "Concierge needs a valid Git project root and a safe working branch before applying fixes.",
+		}
+	case core.EnsureStepPythonRuntime:
+		return stepApprovalGuidance{
+			Explanation: "Python and dependencies are required to run integration code and validation checks.",
+			DocsURL:     stepGuideWritingIntegrationURL,
+		}
+	case core.EnsureStepLeapCLIAuth:
+		return stepApprovalGuidance{
+			Explanation: "Concierge needs a working and authenticated leap CLI to validate and upload integrations.",
+			DocsURL:     leapCLIInstallGuideURL,
+		}
+	case core.EnsureStepServerConnectivity:
+		return stepApprovalGuidance{
+			Explanation: "The Tensorleap server must be reachable so Concierge can verify mounts and run upload readiness checks.",
+			DocsURL:     tensorleapUploadGuideURL,
+		}
+	case core.EnsureStepSecretsContext:
+		return stepApprovalGuidance{
+			Explanation: "Required secrets must be configured so integration code can access protected assets safely.",
+			DocsURL:     tensorleapSecretsGuideURL,
+		}
+	case core.EnsureStepLeapYAML:
+		return stepApprovalGuidance{
+			Explanation: "leap.yaml defines the upload boundary and entry point that Tensorleap uses to run your integration.",
+			DocsURL:     stepGuideLeapYAMLURL,
+		}
+	case core.EnsureStepModelContract:
+		return stepApprovalGuidance{
+			Explanation: "Tensorleap requires model artifacts and tensor shapes to follow supported integration contracts.",
+			DocsURL:     stepGuideModelIntegrationURL,
+		}
+	case core.EnsureStepIntegrationScript:
+		return stepApprovalGuidance{
+			Explanation: "The integration script is where preprocess and encoder interfaces are defined for Tensorleap.",
+			DocsURL:     stepGuideWritingIntegrationURL,
+		}
+	case core.EnsureStepPreprocessContract:
+		return stepApprovalGuidance{
+			Explanation: "Preprocess must return valid dataset subsets so Tensorleap can iterate samples correctly.",
+			DocsURL:     stepGuidePreprocessURL,
+		}
+	case core.EnsureStepInputEncoders:
+		return stepApprovalGuidance{
+			Explanation: "Input encoders provide model-ready tensors for each sample and must run reliably.",
+			DocsURL:     stepGuideInputEncoderURL,
+		}
+	case core.EnsureStepGroundTruthEncoders:
+		return stepApprovalGuidance{
+			Explanation: "Ground-truth encoders provide labels and are required for labeled-set validation and analysis.",
+			DocsURL:     stepGuideGroundTruthURL,
+		}
+	case core.EnsureStepIntegrationTestContract:
+		return stepApprovalGuidance{
+			Explanation: "The integration test defines which interfaces Tensorleap actually executes during analysis.",
+			DocsURL:     stepGuideIntegrationTestURL,
+		}
+	case core.EnsureStepOptionalHooks:
+		return stepApprovalGuidance{
+			Explanation: "Optional hooks like metadata, metrics, and visualizers should execute cleanly when enabled.",
+			DocsURL:     stepGuideWritingIntegrationURL,
+		}
+	case core.EnsureStepHarnessValidation:
+		return stepApprovalGuidance{
+			Explanation: "Runtime checks confirm that integration behavior is valid across real sample execution, not just static wiring.",
+			DocsURL:     stepGuideIntegrationTestURL,
+		}
+	case core.EnsureStepUploadReadiness, core.EnsureStepUploadPush:
+		return stepApprovalGuidance{
+			Explanation: "Upload readiness checks prevent failed pushes by verifying required files, mounts, and CLI prerequisites.",
+			DocsURL:     tensorleapUploadGuideURL,
+		}
+	case core.EnsureStepInvestigate:
+		return stepApprovalGuidance{
+			Explanation: "Concierge found an unmapped blocker and needs to inspect it before suggesting the next deterministic fix.",
+		}
+	default:
+		return stepApprovalGuidance{}
+	}
 }
 
 func blockingIssuesForStep(issues []core.Issue, stepID core.EnsureStepID) []core.Issue {

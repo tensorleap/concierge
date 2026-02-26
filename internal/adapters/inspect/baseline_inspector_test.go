@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/tensorleap/concierge/internal/core"
@@ -152,6 +153,97 @@ func TestInspectorLeapYAMLEntryFileNotFoundEmitsIssue(t *testing.T) {
 	}
 	if !hasIssueCode(status.Issues, core.IssueCodeLeapYAMLEntryFileNotFound) {
 		t.Fatalf("expected %q issue, got %+v", core.IssueCodeLeapYAMLEntryFileNotFound, status.Issues)
+	}
+}
+
+func TestInspectorDetectsEntryFileExcludedByLeapYAML(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
+		"entryFile: leap_binder.py",
+		"include:",
+		"  - leap.yaml",
+		"  - leap_binder.py",
+		"  - leap_custom_test.py",
+		"exclude:",
+		"  - leap_binder.py",
+		"",
+	}, "\n"))
+	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_custom_test.py", "print('test')\n")
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if !hasIssueCode(status.Issues, core.IssueCodeLeapYAMLEntryFileExcluded) {
+		t.Fatalf("expected %q issue, got %+v", core.IssueCodeLeapYAMLEntryFileExcluded, status.Issues)
+	}
+}
+
+func TestInspectorDetectsUnsupportedModelFormat(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
+		"entryFile: leap_binder.py",
+		"modelPath: model.pt",
+		"",
+	}, "\n"))
+	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_custom_test.py", "print('test')\n")
+	writeFixtureFile(t, root, "model.pt", "binary\n")
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if !hasIssueCode(status.Issues, core.IssueCodeModelFormatUnsupported) {
+		t.Fatalf("expected %q issue, got %+v", core.IssueCodeModelFormatUnsupported, status.Issues)
+	}
+}
+
+func TestInspectorDetectsMissingLeapCLI(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_binder.py\n")
+	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_custom_test.py", "print('test')\n")
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), core.WorkspaceSnapshot{
+		Repository: core.RepositoryState{Root: root},
+		LeapCLI:    core.LeapCLIState{ProbeRan: true, Available: false},
+	})
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if !hasIssueCode(status.Issues, core.IssueCodeLeapCLINotFound) {
+		t.Fatalf("expected %q issue, got %+v", core.IssueCodeLeapCLINotFound, status.Issues)
+	}
+}
+
+func TestInspectorDetectsServerInfoFailures(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_binder.py\n")
+	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_custom_test.py", "print('test')\n")
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), core.WorkspaceSnapshot{
+		Repository: core.RepositoryState{Root: root},
+		LeapCLI: core.LeapCLIState{
+			ProbeRan:            true,
+			Available:           true,
+			Version:             "leap v0.2.0",
+			Authenticated:       true,
+			ServerInfoReachable: false,
+			ServerInfoError:     "connection refused",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if !hasIssueCode(status.Issues, core.IssueCodeLeapServerUnreachable) {
+		t.Fatalf("expected %q issue, got %+v", core.IssueCodeLeapServerUnreachable, status.Issues)
 	}
 }
 

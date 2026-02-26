@@ -3,12 +3,9 @@ package inspect
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 
 	"github.com/tensorleap/concierge/internal/core"
 )
@@ -21,11 +18,7 @@ func NewBaselineInspector() *BaselineInspector {
 	return &BaselineInspector{}
 }
 
-type leapYAMLDocument struct {
-	EntryFile string `yaml:"entryFile"`
-}
-
-// Inspect validates the baseline integration artifacts for the given snapshot.
+// Inspect validates baseline integration artifacts and readiness probes for the given snapshot.
 func (i *BaselineInspector) Inspect(ctx context.Context, snapshot core.WorkspaceSnapshot) (core.IntegrationStatus, error) {
 	_ = ctx
 
@@ -41,6 +34,8 @@ func (i *BaselineInspector) Inspect(ctx context.Context, snapshot core.Workspace
 	if err != nil {
 		return core.IntegrationStatus{}, core.WrapError(core.KindUnknown, "inspect.baseline.leap_yaml_exists", err)
 	}
+
+	var contract *leapYAMLContract
 	if !hasLeapYAML {
 		status.Missing = append(status.Missing, "leap.yaml")
 		status.Issues = append(status.Issues, requiredArtifactIssue(
@@ -49,7 +44,8 @@ func (i *BaselineInspector) Inspect(ctx context.Context, snapshot core.Workspace
 			core.IssueScopeLeapYAML,
 		))
 	} else {
-		if err := inspectLeapYAML(repoRoot, leapYAMLPath, &status); err != nil {
+		contract, err = inspectLeapYAMLContract(repoRoot, leapYAMLPath, &status)
+		if err != nil {
 			return core.IntegrationStatus{}, err
 		}
 	}
@@ -85,57 +81,13 @@ func (i *BaselineInspector) Inspect(ctx context.Context, snapshot core.Workspace
 		))
 	}
 
+	if err := inspectModelContract(repoRoot, contract, &status); err != nil {
+		return core.IntegrationStatus{}, err
+	}
+	inspectRuntimeContract(snapshot, &status)
+	inspectLeapCLIContract(snapshot, &status)
+
 	return status, nil
-}
-
-func inspectLeapYAML(repoRoot string, leapYAMLPath string, status *core.IntegrationStatus) error {
-	contents, err := os.ReadFile(leapYAMLPath)
-	if err != nil {
-		return core.WrapError(core.KindUnknown, "inspect.baseline.leap_yaml_read", err)
-	}
-
-	var document leapYAMLDocument
-	if err := yaml.Unmarshal(contents, &document); err != nil {
-		status.Issues = append(status.Issues, requiredArtifactIssue(
-			core.IssueCodeLeapYAMLUnparseable,
-			fmt.Sprintf("leap.yaml is not parseable: %v", err),
-			core.IssueScopeLeapYAML,
-		))
-		return nil
-	}
-
-	entryFile := strings.TrimSpace(document.EntryFile)
-	if entryFile == "" {
-		status.Issues = append(status.Issues, requiredArtifactIssue(
-			core.IssueCodeLeapYAMLEntryFileMissing,
-			"leap.yaml must define a non-empty entryFile",
-			core.IssueScopeLeapYAML,
-		))
-		return nil
-	}
-
-	entryPath := filepath.Join(repoRoot, filepath.FromSlash(entryFile))
-	entryInfo, err := os.Stat(entryPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			status.Issues = append(status.Issues, requiredArtifactIssue(
-				core.IssueCodeLeapYAMLEntryFileNotFound,
-				fmt.Sprintf("leap.yaml entryFile %q was not found", entryFile),
-				core.IssueScopeLeapYAML,
-			))
-			return nil
-		}
-		return core.WrapError(core.KindUnknown, "inspect.baseline.entry_file_stat", err)
-	}
-	if entryInfo.IsDir() {
-		status.Issues = append(status.Issues, requiredArtifactIssue(
-			core.IssueCodeLeapYAMLEntryFileNotFound,
-			fmt.Sprintf("leap.yaml entryFile %q must reference a file", entryFile),
-			core.IssueScopeLeapYAML,
-		))
-	}
-
-	return nil
 }
 
 func requiredArtifactIssue(code core.IssueCode, message string, scope core.IssueScope) core.Issue {

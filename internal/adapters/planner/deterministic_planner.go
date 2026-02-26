@@ -19,18 +19,16 @@ func (p *DeterministicPlanner) Plan(ctx context.Context, snapshot core.Workspace
 	_ = ctx
 	_ = snapshot
 
-	steps := core.PreferredEnsureStepsForIssues(status.Issues)
-	if len(steps) == 0 {
-		completeStep, ok := core.EnsureStepByID(core.EnsureStepComplete)
-		if !ok {
-			return core.ExecutionPlan{}, core.NewError(core.KindUnknown, "planner.deterministic.complete_step", "ensure.complete step is not registered")
-		}
-		return core.ExecutionPlan{Primary: completeStep}, nil
+	policy := newPlanningPolicy()
+	primary, additional, complete := policy.build(status)
+
+	if primary.ID == "" {
+		return core.ExecutionPlan{}, core.NewError(core.KindUnknown, "planner.deterministic.primary", "planner produced an empty primary step")
 	}
 
-	plan := core.ExecutionPlan{Primary: steps[0]}
-	if len(steps) > 1 {
-		plan.Additional = append([]core.EnsureStep(nil), steps[1:]...)
+	plan := core.ExecutionPlan{Primary: primary}
+	if !complete && len(additional) > 0 {
+		plan.Additional = append([]core.EnsureStep(nil), additional...)
 	}
 
 	return plan, nil

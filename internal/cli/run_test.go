@@ -61,7 +61,7 @@ func TestRunNonDryRunHonorsMaxIterationsFlag(t *testing.T) {
 	repo := initRunTestRepo(t, false)
 	withWorkingDir(t, repo)
 
-	output, err := executeCLI(t, "run", "--max-iterations=2")
+	output, err := executeCLI(t, "run", "--max-iterations=2", "--yes")
 	if err == nil {
 		t.Fatal("expected max-iterations stop to return error")
 	}
@@ -78,12 +78,87 @@ func TestRunNonDryRunReturnsErrorOnMaxIterationsStop(t *testing.T) {
 	repo := initRunTestRepo(t, false)
 	withWorkingDir(t, repo)
 
-	_, err := executeCLI(t, "run")
+	_, err := executeCLI(t, "run", "--yes")
 	if err == nil {
 		t.Fatal("expected run to fail on max-iterations stop")
 	}
 	if !strings.Contains(err.Error(), "max_iterations") {
 		t.Fatalf("expected max_iterations stop reason, got: %v", err)
+	}
+}
+
+func TestRunPromptsForProjectRootWhenAmbiguous(t *testing.T) {
+	disableHarness(t)
+
+	workspace := t.TempDir()
+	initRunTestRepoAtPath(t, filepath.Join(workspace, "repo-a"), true)
+	initRunTestRepoAtPath(t, filepath.Join(workspace, "repo-b"), true)
+	withWorkingDir(t, workspace)
+
+	output, err := executeCLIWithInput(t, "2\n", "run", "--max-iterations=1")
+	if err != nil {
+		t.Fatalf("expected run to succeed, got error: %v\noutput=%q", err, output)
+	}
+	if !strings.Contains(output, "Multiple project roots detected. Select one:") {
+		t.Fatalf("expected project root prompt, got output: %q", output)
+	}
+}
+
+func TestRunNonInteractiveFailsWithoutApprovalOverride(t *testing.T) {
+	disableHarness(t)
+	repo := initRunTestRepo(t, false)
+	withWorkingDir(t, repo)
+
+	_, err := executeCLI(t, "run", "--non-interactive", "--max-iterations=1")
+	if err == nil {
+		t.Fatal("expected non-interactive run to fail without --yes")
+	}
+	if !strings.Contains(err.Error(), "requires --yes") {
+		t.Fatalf("expected --yes guidance in error, got: %v", err)
+	}
+
+	status := runGit(t, repo, "status", "--porcelain")
+	if strings.TrimSpace(status) != "" {
+		t.Fatalf("expected clean worktree after failed approval gate, got %q", status)
+	}
+}
+
+func TestRunYesSkipsApprovalPrompts(t *testing.T) {
+	disableHarness(t)
+	repo := initRunTestRepo(t, false)
+	withWorkingDir(t, repo)
+
+	output, err := executeCLI(t, "run", "--yes", "--max-iterations=1")
+	if err == nil {
+		t.Fatal("expected max-iterations stop to return error")
+	}
+	if !strings.Contains(err.Error(), "max_iterations") {
+		t.Fatalf("expected max_iterations stop reason, got: %v", err)
+	}
+	if strings.Contains(output, "[y/N]:") {
+		t.Fatalf("expected --yes to skip approval prompts, got output: %q", output)
+	}
+}
+
+func TestRunFlowPromptsBeforeCommit(t *testing.T) {
+	disableHarness(t)
+	repo := initRunTestRepo(t, false)
+	withWorkingDir(t, repo)
+
+	output, err := executeCLIWithInput(t, "y\n", "run", "--max-iterations=1")
+	if err == nil {
+		t.Fatal("expected max-iterations stop to return error")
+	}
+	if !strings.Contains(output, "Approve commit for ensure.leap_yaml?") {
+		t.Fatalf("expected commit approval prompt, got output: %q", output)
+	}
+	if !strings.Contains(err.Error(), "max_iterations") {
+		t.Fatalf("expected max_iterations stop reason, got: %v", err)
+	}
+
+	latestMessage := runGit(t, repo, "log", "-1", "--pretty=%s")
+	if !strings.HasPrefix(latestMessage, "concierge(ensure.leap_yaml):") {
+		t.Fatalf("expected structured commit message, got %q", latestMessage)
 	}
 }
 
@@ -154,6 +229,13 @@ func initRunTestRepo(t *testing.T, complete bool) string {
 	t.Helper()
 
 	repo := filepath.Join(t.TempDir(), "repo")
+	initRunTestRepoAtPath(t, repo, complete)
+	return repo
+}
+
+func initRunTestRepoAtPath(t *testing.T, repo string, complete bool) {
+	t.Helper()
+
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
@@ -173,8 +255,7 @@ func initRunTestRepo(t *testing.T, complete bool) string {
 
 	runGit(t, repo, "add", ".")
 	runGit(t, repo, "commit", "-m", "initial commit")
-
-	return repo
+	runGit(t, repo, "checkout", "-B", "feature/test")
 }
 
 func withWorkingDir(t *testing.T, dir string) {

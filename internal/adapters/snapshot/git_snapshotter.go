@@ -5,10 +5,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,12 +18,16 @@ import (
 )
 
 type gitRunner func(ctx context.Context, dir string, args ...string) ([]byte, []byte, error)
+type commandRunner func(ctx context.Context, dir string, name string, args ...string) ([]byte, []byte, error)
+type pathLookup func(file string) (string, error)
 
 // GitSnapshotter captures workspace identity from git metadata and working-tree state.
 type GitSnapshotter struct {
-	clock  func() time.Time
-	getwd  func() (string, error)
-	runGit gitRunner
+	clock      func() time.Time
+	getwd      func() (string, error)
+	runGit     gitRunner
+	runCommand commandRunner
+	lookPath   pathLookup
 }
 
 // NewGitSnapshotter returns a snapshotter backed by the local git CLI.
@@ -30,8 +36,10 @@ func NewGitSnapshotter() *GitSnapshotter {
 		clock: func() time.Time {
 			return time.Now().UTC()
 		},
-		getwd:  os.Getwd,
-		runGit: runGitCommand,
+		getwd:      os.Getwd,
+		runGit:     runGitCommand,
+		runCommand: runCommandInDir,
+		lookPath:   exec.LookPath,
 	}
 }
 
@@ -73,6 +81,10 @@ func (g *GitSnapshotter) Snapshot(ctx context.Context, request core.SnapshotRequ
 		worktreeFingerprint,
 	}, "|")))
 
+	fileHashes := captureFileHashes(root)
+	runtimeState := g.captureRuntimeState(ctx, root)
+	leapCLIState := g.captureLeapCLIState(ctx, root)
+
 	return core.WorkspaceSnapshot{
 		ID:                  snapshotID,
 		CapturedAt:          g.clock(),
@@ -84,6 +96,9 @@ func (g *GitSnapshotter) Snapshot(ctx context.Context, request core.SnapshotRequ
 			Head:    head,
 			Dirty:   len(porcelain) > 0,
 		},
+		FileHashes: fileHashes,
+		Runtime:    runtimeState,
+		LeapCLI:    leapCLIState,
 	}, nil
 }
 
@@ -98,6 +113,12 @@ func (g *GitSnapshotter) ensureDefaults() {
 	}
 	if g.runGit == nil {
 		g.runGit = runGitCommand
+	}
+	if g.runCommand == nil {
+		g.runCommand = runCommandInDir
+	}
+	if g.lookPath == nil {
+		g.lookPath = exec.LookPath
 	}
 }
 
@@ -176,7 +197,154 @@ func runGitCommand(ctx context.Context, dir string, args ...string) ([]byte, []b
 	return stdout.Bytes(), stderr.Bytes(), err
 }
 
+func runCommandInDir(ctx context.Context, dir string, name string, args ...string) ([]byte, []byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	return stdout.Bytes(), stderr.Bytes(), err
+}
+
 func sha256Hex(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+func captureFileHashes(repoRoot string) map[string]string {
+	files := []string{
+		"leap.yaml",
+		"leap_binder.py",
+		"leap_custom_test.py",
+		"integration_test.py",
+		"requirements.txt",
+		"pyproject.toml",
+	}
+
+	hashes := make(map[string]string, len(files))
+	for _, relativePath := range files {
+		absolutePath := filepath.Join(repoRoot, relativePath)
+		info, err := os.Stat(absolutePath)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		contents, err := os.ReadFile(absolutePath)
+		if err != nil {
+			continue
+		}
+		hashes[relativePath] = sha256Hex(contents)
+	}
+
+	if len(hashes) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(hashes))
+	for key := range hashes {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	ordered := make(map[string]string, len(hashes))
+	for _, key := range keys {
+		ordered[key] = hashes[key]
+	}
+
+	return ordered
+}
+
+func (g *GitSnapshotter) captureRuntimeState(ctx context.Context, repoRoot string) core.RuntimeState {
+	state := core.RuntimeState{
+		ProbeRan:          true,
+		RequirementsFiles: detectRequirementsFiles(repoRoot),
+	}
+
+	pythonCandidates := []string{"python3", "python"}
+	for _, executable := range pythonCandidates {
+		if _, err := g.lookPath(executable); err != nil {
+			continue
+		}
+
+		output, err := g.commandOutput(ctx, repoRoot, executable, "--version")
+		if err != nil {
+			continue
+		}
+
+		state.PythonFound = true
+		state.PythonExecutable = executable
+		state.PythonVersion = strings.TrimSpace(output)
+		break
+	}
+
+	return state
+}
+
+func detectRequirementsFiles(repoRoot string) []string {
+	candidates := []string{"requirements.txt", "pyproject.toml"}
+	found := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		path := filepath.Join(repoRoot, candidate)
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		found = append(found, candidate)
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	return found
+}
+
+func (g *GitSnapshotter) captureLeapCLIState(ctx context.Context, repoRoot string) core.LeapCLIState {
+	state := core.LeapCLIState{ProbeRan: true}
+	if _, err := g.lookPath("leap"); err != nil {
+		return state
+	}
+
+	state.Available = true
+
+	if output, err := g.commandOutput(ctx, repoRoot, "leap", "version"); err == nil {
+		state.Version = strings.TrimSpace(output)
+	}
+
+	if _, err := g.commandOutput(ctx, repoRoot, "leap", "auth", "whoami"); err == nil {
+		state.Authenticated = true
+	}
+
+	if _, err := g.commandOutput(ctx, repoRoot, "leap", "server", "info"); err == nil {
+		state.ServerInfoReachable = true
+	} else {
+		state.ServerInfoError = strings.TrimSpace(err.Error())
+	}
+
+	return state
+}
+
+func (g *GitSnapshotter) commandOutput(ctx context.Context, dir string, name string, args ...string) (string, error) {
+	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	stdout, stderr, err := g.runCommand(probeCtx, dir, name, args...)
+	output := strings.TrimSpace(strings.TrimSpace(string(stdout)) + "\n" + strings.TrimSpace(string(stderr)))
+	output = strings.TrimSpace(output)
+
+	if err != nil {
+		if errors.Is(probeCtx.Err(), context.DeadlineExceeded) {
+			return "", fmt.Errorf("%s timed out", name)
+		}
+		if output == "" {
+			return "", err
+		}
+		return "", fmt.Errorf("%s", output)
+	}
+	if output == "" {
+		return "", nil
+	}
+
+	lines := strings.Split(output, "\n")
+	return strings.TrimSpace(lines[0]), nil
 }

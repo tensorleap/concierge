@@ -38,3 +38,35 @@ func (e *StubExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnaps
 		},
 	}, nil
 }
+
+// DispatcherExecutor routes supported deterministic steps to filesystem executor and
+// falls back to the stub executor for unsupported ensure-steps.
+type DispatcherExecutor struct {
+	filesystem *FilesystemExecutor
+	fallback   *StubExecutor
+}
+
+// NewDispatcherExecutor creates an executor that applies deterministic mutations where available.
+func NewDispatcherExecutor() *DispatcherExecutor {
+	return &DispatcherExecutor{
+		filesystem: NewFilesystemExecutor(),
+		fallback:   NewStubExecutor(),
+	}
+}
+
+// Execute dispatches supported ensure-steps to filesystem mode and uses stub mode for the rest.
+func (d *DispatcherExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnapshot, step core.EnsureStep) (core.ExecutionResult, error) {
+	if isFilesystemStep(step.ID) {
+		return d.filesystem.Execute(ctx, snapshot, step)
+	}
+	return d.fallback.Execute(ctx, snapshot, step)
+}
+
+func isFilesystemStep(stepID core.EnsureStepID) bool {
+	switch stepID {
+	case core.EnsureStepLeapYAML, core.EnsureStepIntegrationScript, core.EnsureStepIntegrationTestContract:
+		return true
+	default:
+		return false
+	}
+}

@@ -29,8 +29,8 @@ This repository is implemented step by step.
 
 ## Branch Safety (Mandatory, Hard Stop)
 
-- Never commit directly to `main` or `master`.
-- Never push directly to `main` or `master`.
+- Never commit directly to `main` or `master` unless specifically instructed to do so by the user.
+- Never push directly to `main` or `master` unless specifically instructed to do so by the user.
 - All implementation work must be done on a feature branch and merged via PR.
 
 ### Required pre-implementation git checks
@@ -57,10 +57,11 @@ If branch is `main` or `master`, stop and do not commit.
 After finishing one step:
 
 1. Request and receive explicit user approval after local review.
-2. Commit on feature branch.
-3. Push feature branch.
-4. Open PR to `main`.
-5. Monitor CI for that PR branch and fix failures in step scope.
+2. Build the CLI binary locally: `go build -o bin/concierge ./cmd/concierge`.
+3. Commit on feature branch.
+4. Push feature branch.
+5. Open PR to `main`.
+6. Monitor CI for that PR branch and fix failures in step scope.
 
 Only then update step status to `DONE`.
 

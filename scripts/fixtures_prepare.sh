@@ -23,7 +23,7 @@ require_cmd() {
 assert_clean_git_tree() {
   local dir="$1"
   local label="$2"
-  if [[ -n "$(git_no_lfs -C "${dir}" status --porcelain)" ]]; then
+  if [[ -n "$(git -C "${dir}" status --porcelain)" ]]; then
     fail "${label} is not a clean git tree: ${dir}"
   fi
 }
@@ -35,14 +35,8 @@ require_cmd jq
 jq -e '.fixtures and (.fixtures | type == "array")' "${MANIFEST_PATH}" >/dev/null \
   || fail "invalid manifest schema in ${MANIFEST_PATH}"
 
-git_no_lfs() {
-  git \
-    -c core.attributesfile=/dev/null \
-    -c filter.lfs.process= \
-    -c filter.lfs.smudge= \
-    -c filter.lfs.clean= \
-    -c filter.lfs.required=false \
-    "$@"
+git_fixture() {
+  GIT_LFS_SKIP_SMUDGE=1 git "$@"
 }
 
 mkdir -p "${FIXTURES_ROOT}"
@@ -77,8 +71,8 @@ while IFS= read -r fixture_json; do
   mkdir -p "${fixture_root}"
 
   log "  Cloning post variant and checking out pinned commit"
-  git_no_lfs clone --quiet --no-checkout "${repo}" "${post_dir}"
-  git_no_lfs -C "${post_dir}" checkout --quiet "${post_ref}"
+  git_fixture clone --quiet --no-checkout --filter=blob:none "${repo}" "${post_dir}"
+  git_fixture -C "${post_dir}" checkout --quiet "${post_ref}"
 
   log "  Verifying required integration files exist in post variant"
   for rel_path in "${strip_files[@]}"; do
@@ -87,9 +81,9 @@ while IFS= read -r fixture_json; do
 
   assert_clean_git_tree "${post_dir}" "post variant for fixture '${id}'"
 
-  log "  Creating pre variant from post checkout"
-  git_no_lfs clone --quiet --no-checkout --no-local "${post_dir}" "${pre_dir}"
-  git_no_lfs -C "${pre_dir}" checkout --quiet "${post_ref}"
+  log "  Creating pre variant from source repository"
+  git_fixture clone --quiet --no-checkout --filter=blob:none "${repo}" "${pre_dir}"
+  git_fixture -C "${pre_dir}" checkout --quiet "${post_ref}"
 
   log "  Stripping pre-integration files from pre variant"
   for rel_path in "${strip_files[@]}"; do
@@ -97,8 +91,8 @@ while IFS= read -r fixture_json; do
   done
 
   log "  Committing stripped pre variant so git tree remains clean"
-  git_no_lfs -C "${pre_dir}" add -A
-  git_no_lfs -C "${pre_dir}" diff --cached --quiet \
+  git -C "${pre_dir}" add -A
+  git -C "${pre_dir}" diff --cached --quiet \
     && fail "fixture '${id}' had no changes after stripping files"
 
   GIT_AUTHOR_NAME="Concierge Fixture Bot" \
@@ -107,7 +101,7 @@ while IFS= read -r fixture_json; do
   GIT_COMMITTER_NAME="Concierge Fixture Bot" \
   GIT_COMMITTER_EMAIL="concierge-fixtures@local" \
   GIT_COMMITTER_DATE="2000-01-01T00:00:00Z" \
-    git_no_lfs -C "${pre_dir}" commit --quiet -m "Create pre-integration fixture variant"
+    git -C "${pre_dir}" commit --quiet -m "Create pre-integration fixture variant"
 
   assert_clean_git_tree "${pre_dir}" "pre variant for fixture '${id}'"
 

@@ -23,19 +23,9 @@ require_cmd() {
 assert_clean_git_tree() {
   local dir="$1"
   local label="$2"
-  if [[ -n "$(git_no_lfs -C "${dir}" status --porcelain)" ]]; then
+  if [[ -n "$(git -C "${dir}" status --porcelain)" ]]; then
     fail "${label} is not a clean git tree: ${dir}"
   fi
-}
-
-git_no_lfs() {
-  git \
-    -c core.attributesfile=/dev/null \
-    -c filter.lfs.process= \
-    -c filter.lfs.smudge= \
-    -c filter.lfs.clean= \
-    -c filter.lfs.required=false \
-    "$@"
 }
 
 require_cmd git
@@ -74,9 +64,9 @@ while IFS= read -r fixture_json; do
   done
 
   log "  Validating post_ref presence and pre ancestry"
-  git_no_lfs -C "${post_dir}" rev-parse --verify "${post_ref}^{commit}" >/dev/null 2>&1 \
+  git -C "${post_dir}" rev-parse --verify "${post_ref}^{commit}" >/dev/null 2>&1 \
     || fail "fixture '${id}': post_ref '${post_ref}' is missing in post variant"
-  git_no_lfs -C "${pre_dir}" merge-base --is-ancestor "${post_ref}" HEAD >/dev/null 2>&1 \
+  git -C "${pre_dir}" merge-base --is-ancestor "${post_ref}" HEAD >/dev/null 2>&1 \
     || fail "fixture '${id}': pre variant does not derive from post_ref '${post_ref}'"
 
   log "  Validating both repos are clean"

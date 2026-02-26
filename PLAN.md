@@ -4,6 +4,7 @@ This ExecPlan is a living document. Keep `Progress`, `Gap Analysis`, `Surprises 
 
 ## Revision Notes
 
+- 2026-02-26: Merged `feature/step-doctor-ui-polish` to `main`; accepted Steps `7A`, `7B`, `8A`, `8B`, `9A`, and `9B`.
 - 2026-02-26: Re-baselined remaining work after a full README/PLAN/code audit. Added explicit gap analysis and replaced the old two-step tail (`Step 7`, `Step 8`) with a detailed operational completion plan (`Steps 7A-12B`).
 - 2026-02-26: Verified current baseline is green locally: `go test ./...`, `bash scripts/fixtures_prepare.sh`, `bash scripts/fixtures_verify.sh`, `bash scripts/fixtures_run_checks.sh`.
 - 2026-02-26: Confirmed current implementation is still scaffold-first (stub executor, optional harness gate, no real `leap push` path, no git approval/commit loop in product runtime).
@@ -60,12 +61,12 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 6C: Harness invocation baseline | `ACCEPTED` | 2026-02-26 (`main`) | Added env-gated harness runner/parser contract and tests. |
 | Step 6D: Anti-stub heuristics baseline | `ACCEPTED` | 2026-02-26 (`main`) | Added deterministic heuristic issue derivation from harness events. |
 | Step 6E: Fixture pre-vs-post baseline tests | `ACCEPTED` | 2026-02-26 (`main`) | Added fixture delta/planner/persistence E2E assertions. |
-| Step 7A: Persistent run state + invalidation engine | `PENDING` | — | Implement `.concierge/state/state.json` lifecycle and invalidation reasons across iterations. |
-| Step 7B: Interactive run session UX (project-root + approvals) | `PENDING` | — | Add prompt-driven flow and non-interactive guard rails for deterministic execution. |
-| Step 8A: Snapshot/Inspector expansion to readiness checks | `PENDING` | — | Extend snapshot/inspect to cover env, include/exclude, model, CLI/auth/server findings. |
-| Step 8B: Planner policy hardening and gate-aware ordering | `PENDING` | — | Deterministic priority rules aware of blocker severity and push/mutation gates. |
-| Step 9A: Deterministic executor implementations (non-agent) | `PENDING` | — | Implement real ensure-step mutations for scaffoldable contracts. |
-| Step 9B: GitManager runtime integration (diff/approve/reject/commit) | `PENDING` | — | Add audited branch-safe change-control loop in product runtime. |
+| Step 7A: Persistent run state + invalidation engine | `ACCEPTED` | 2026-02-26 (`main`) | Implemented `.concierge/state/state.json` lifecycle and deterministic invalidation reasons across iterations. |
+| Step 7B: Interactive run session UX (project-root + approvals) | `ACCEPTED` | 2026-02-26 (`main`) | Added prompt-driven flow with project-root selection and explicit approval gating semantics. |
+| Step 8A: Snapshot/Inspector expansion to readiness checks | `ACCEPTED` | 2026-02-26 (`main`) | Expanded snapshot/inspect coverage for runtime, model, and CLI/auth/server readiness signals. |
+| Step 8B: Planner policy hardening and gate-aware ordering | `ACCEPTED` | 2026-02-26 (`main`) | Added deterministic planner policy with severity ordering and upload gate behavior. |
+| Step 9A: Deterministic executor implementations (non-agent) | `ACCEPTED` | 2026-02-26 (`main`) | Implemented deterministic filesystem-backed ensure-step fixes for scaffoldable contracts. |
+| Step 9B: GitManager runtime integration (diff/approve/reject/commit) | `ACCEPTED` | 2026-02-26 (`main`) | Added audited branch-safe diff review, approval/reject handling, and commit flow in runtime. |
 | Step 9C: AgentRunner integration for complex ensure-steps | `PENDING` | — | Add task-scoped coding-agent collaboration path and transcript evidence. |
 | Step 10A: Real runtime harness (Layer 2) | `PENDING` | — | Replace stub with executable Python harness producing semantic coverage evidence. |
 | Step 10B: Integration-test wiring checks + advanced anti-stub rules | `PENDING` | — | Enforce decorator call coverage and strengthen heuristics against skeleton integrations. |
@@ -91,9 +92,9 @@ Out of scope for this release train:
 2. Full backend enforcement sandbox outside local trust model.
 3. Automatic Tensorleap server installation/provisioning.
 
-## Detailed Step Specifications (Active Pending Steps)
+## Detailed Step Specifications
 
-### Step 7A: Persistent run state + invalidation engine (`PENDING`)
+### Step 7A: Persistent run state + invalidation engine (`ACCEPTED`)
 
 Objective:
 
@@ -146,7 +147,7 @@ Rollback boundary:
 
 ---
 
-### Step 7B: Interactive run session UX (project-root + approvals) (`PENDING`)
+### Step 7B: Interactive run session UX (project-root + approvals) (`ACCEPTED`)
 
 Objective:
 
@@ -198,7 +199,7 @@ Rollback boundary:
 
 ---
 
-### Step 8A: Snapshot/Inspector expansion to readiness checks (`PENDING`)
+### Step 8A: Snapshot/Inspector expansion to readiness checks (`ACCEPTED`)
 
 Objective:
 
@@ -256,7 +257,7 @@ Rollback boundary:
 
 ---
 
-### Step 8B: Planner policy hardening and gate-aware ordering (`PENDING`)
+### Step 8B: Planner policy hardening and gate-aware ordering (`ACCEPTED`)
 
 Objective:
 
@@ -301,7 +302,7 @@ Rollback boundary:
 
 ---
 
-### Step 9A: Deterministic executor implementations (non-agent) (`PENDING`)
+### Step 9A: Deterministic executor implementations (non-agent) (`ACCEPTED`)
 
 Objective:
 
@@ -352,7 +353,7 @@ Rollback boundary:
 
 ---
 
-### Step 9B: GitManager runtime integration (diff/approve/reject/commit) (`PENDING`)
+### Step 9B: GitManager runtime integration (diff/approve/reject/commit) (`ACCEPTED`)
 
 Objective:
 

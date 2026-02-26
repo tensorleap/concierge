@@ -18,9 +18,19 @@ func CommitMessage(step core.EnsureStep, summary string) string {
 
 // ApprovalMessage is the prompt text shown before commit approval.
 func ApprovalMessage(step core.EnsureStep, diffSummary string) string {
+	stepSummary := strings.TrimSpace(step.Description)
+	if stepSummary == "" {
+		stepSummary = "Apply the planned change"
+	}
+
 	trimmedDiff := strings.TrimSpace(diffSummary)
 	if trimmedDiff == "" {
-		trimmedDiff = "(no diff summary available)"
+		trimmedDiff = "No diff summary is available."
 	}
-	return fmt.Sprintf("Approve commit for %s?\n%s", step.ID, trimmedDiff)
+
+	return fmt.Sprintf(
+		"Review proposed changes\nStep: %s\nDiff summary:\n%s\nCreate a commit for these changes?",
+		stepSummary,
+		trimmedDiff,
+	)
 }

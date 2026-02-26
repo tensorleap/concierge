@@ -17,13 +17,11 @@ func TestRunDryRunPrintsExecutionStages(t *testing.T) {
 		t.Fatalf("run --dry-run failed: %v", err)
 	}
 
-	if !strings.Contains(output, "dry-run plan:") {
-		t.Fatalf("expected dry-run plan prefix in output, got: %q", output)
+	if !strings.Contains(output, "Concierge Run (Dry Run)") {
+		t.Fatalf("expected dry-run title in output, got: %q", output)
 	}
-
-	expected := expectedStageChainFromCore()
-	if !strings.Contains(output, expected) {
-		t.Fatalf("expected dry-run stages in output, got: %q", output)
+	if !strings.Contains(output, "Planned Workflow") {
+		t.Fatalf("expected planned workflow section in output, got: %q", output)
 	}
 }
 
@@ -33,9 +31,11 @@ func TestRunDryRunUsesCoreDefaultStages(t *testing.T) {
 		t.Fatalf("run --dry-run failed: %v", err)
 	}
 
-	expected := expectedStageChainFromCore()
-	if !strings.Contains(output, expected) {
-		t.Fatalf("expected output to contain core stage chain %q, got: %q", expected, output)
+	for _, stage := range core.DefaultStages() {
+		label := runStageLabel(stage)
+		if !strings.Contains(output, label) {
+			t.Fatalf("expected output to contain stage label %q, got: %q", label, output)
+		}
 	}
 }
 
@@ -48,11 +48,11 @@ func TestRunNonDryRunExecutesSingleIterationByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected run to succeed in complete repo, got: %v\noutput=%q", err, output)
 	}
-	if strings.Count(output, "snapshot=") != 1 {
+	if strings.Count(output, "Iteration Update") != 1 {
 		t.Fatalf("expected one reporter line, got output: %q", output)
 	}
-	if !strings.Contains(output, "step=ensure.complete") {
-		t.Fatalf("expected complete step in output, got: %q", output)
+	if !strings.Contains(output, "Integration is currently complete.") {
+		t.Fatalf("expected complete step description in output, got: %q", output)
 	}
 }
 
@@ -65,11 +65,11 @@ func TestRunNonDryRunHonorsMaxIterationsFlag(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected max-iterations stop to return error")
 	}
-	if strings.Count(output, "snapshot=") != 2 {
+	if strings.Count(output, "Iteration Update") != 2 {
 		t.Fatalf("expected two reporter lines, got output: %q", output)
 	}
-	if !strings.Contains(err.Error(), "max_iterations") {
-		t.Fatalf("expected max_iterations error, got: %v", err)
+	if !strings.Contains(strings.ToLower(err.Error()), "more work is needed") {
+		t.Fatalf("expected user-facing max-iterations message, got: %v", err)
 	}
 }
 
@@ -82,8 +82,8 @@ func TestRunNonDryRunReturnsErrorOnMaxIterationsStop(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected run to fail on max-iterations stop")
 	}
-	if !strings.Contains(err.Error(), "max_iterations") {
-		t.Fatalf("expected max_iterations stop reason, got: %v", err)
+	if !strings.Contains(strings.ToLower(err.Error()), "more work is needed") {
+		t.Fatalf("expected user-facing max-iterations message, got: %v", err)
 	}
 }
 
@@ -99,7 +99,7 @@ func TestRunPromptsForProjectRootWhenAmbiguous(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected run to succeed, got error: %v\noutput=%q", err, output)
 	}
-	if !strings.Contains(output, "Multiple project roots detected. Select one:") {
+	if !strings.Contains(output, "Project Selection") {
 		t.Fatalf("expected project root prompt, got output: %q", output)
 	}
 }
@@ -113,7 +113,7 @@ func TestRunNonInteractiveFailsWithoutApprovalOverride(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected non-interactive run to fail without --yes")
 	}
-	if !strings.Contains(err.Error(), "requires --yes") {
+	if !strings.Contains(err.Error(), "--yes") {
 		t.Fatalf("expected --yes guidance in error, got: %v", err)
 	}
 
@@ -132,8 +132,8 @@ func TestRunYesSkipsApprovalPrompts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected max-iterations stop to return error")
 	}
-	if !strings.Contains(err.Error(), "max_iterations") {
-		t.Fatalf("expected max_iterations stop reason, got: %v", err)
+	if !strings.Contains(strings.ToLower(err.Error()), "more work is needed") {
+		t.Fatalf("expected user-facing max-iterations message, got: %v", err)
 	}
 	if strings.Contains(output, "[y/N]:") {
 		t.Fatalf("expected --yes to skip approval prompts, got output: %q", output)
@@ -149,11 +149,11 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected max-iterations stop to return error")
 	}
-	if !strings.Contains(output, "Approve commit for ensure.leap_yaml?") {
+	if !strings.Contains(output, "Review proposed changes") {
 		t.Fatalf("expected commit approval prompt, got output: %q", output)
 	}
-	if !strings.Contains(err.Error(), "max_iterations") {
-		t.Fatalf("expected max_iterations stop reason, got: %v", err)
+	if !strings.Contains(strings.ToLower(err.Error()), "more work is needed") {
+		t.Fatalf("expected user-facing max-iterations message, got: %v", err)
 	}
 
 	latestMessage := runGit(t, repo, "log", "-1", "--pretty=%s")
@@ -171,7 +171,7 @@ func TestRunWithPersistWritesConciergeArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run --persist failed: %v\noutput=%q", err, output)
 	}
-	if !strings.Contains(output, "snapshot=") {
+	if !strings.Contains(output, "Iteration Update") {
 		t.Fatalf("expected reporter summary in output, got: %q", output)
 	}
 
@@ -214,15 +214,6 @@ func TestRunWithPersistWritesConciergeArtifacts(t *testing.T) {
 	if len(reportFiles) != 1 {
 		t.Fatalf("expected one report file after overwrite, got %d: %v", len(reportFiles), reportFiles)
 	}
-}
-
-func expectedStageChainFromCore() string {
-	stages := core.DefaultStages()
-	names := make([]string, 0, len(stages))
-	for _, stage := range stages {
-		names = append(names, string(stage))
-	}
-	return strings.Join(names, " -> ")
 }
 
 func initRunTestRepo(t *testing.T, complete bool) string {

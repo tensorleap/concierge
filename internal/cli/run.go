@@ -21,6 +21,8 @@ import (
 	"github.com/tensorleap/concierge/internal/state"
 )
 
+var runLogoProvider = defaultCLILogo
+
 func newRunCommand() *cobra.Command {
 	var dryRun bool
 	var maxIterations int
@@ -28,19 +30,22 @@ func newRunCommand() *cobra.Command {
 	var projectRootFlag string
 	var nonInteractive bool
 	var yes bool
+	var noColor bool
+	var debugOutput bool
 
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run Concierge orchestration",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			writer := cmd.OutOrStdout()
+			renderOptions := runRenderOptions{
+				EnableColor: cliColorEnabled(writer, noColor),
+				Logo:        runLogoProvider(),
+			}
+
 			if dryRun {
 				stages := core.DefaultStages()
-				stageNames := make([]string, 0, len(stages))
-				for _, stage := range stages {
-					stageNames = append(stageNames, string(stage))
-				}
-				_, err := fmt.Fprintf(cmd.OutOrStdout(), "dry-run plan: %s\n", strings.Join(stageNames, " -> "))
-				return err
+				return renderRunDryPlan(writer, stages, renderOptions)
 			}
 
 			cwd, err := os.Getwd()
@@ -48,8 +53,12 @@ func newRunCommand() *cobra.Command {
 				return err
 			}
 
-			repoRoot, projectRootNote, err := resolveProjectRoot(projectRootFlag, cwd, nonInteractive, cmd.InOrStdin(), cmd.OutOrStdout())
+			repoRoot, _, err := resolveProjectRoot(projectRootFlag, cwd, nonInteractive, cmd.InOrStdin(), cmd.OutOrStdout())
 			if err != nil {
+				return err
+			}
+
+			if err := renderRunSessionStart(writer, repoRoot, persist, nonInteractive, debugOutput, renderOptions); err != nil {
 				return err
 			}
 
@@ -58,9 +67,22 @@ func newRunCommand() *cobra.Command {
 				return err
 			}
 
-			var iterationReporter ports.Reporter = report.NewStdoutReporter(cmd.OutOrStdout())
+			var iterationReporter ports.Reporter = report.NewStdoutReporterWithOptions(
+				writer,
+				report.OutputOptions{
+					NoColor: noColor,
+					Debug:   debugOutput,
+				},
+			)
 			if persist {
-				iterationReporter, err = report.NewFileReporter(repoRoot, cmd.OutOrStdout())
+				iterationReporter, err = report.NewFileReporterWithOptions(
+					repoRoot,
+					writer,
+					report.OutputOptions{
+						NoColor: noColor,
+						Debug:   debugOutput,
+					},
+				)
 				if err != nil {
 					return err
 				}
@@ -74,7 +96,7 @@ func newRunCommand() *cobra.Command {
 					return false, core.NewError(
 						core.KindUnknown,
 						"cli.run.non_interactive.approval_required",
-						"non-interactive mode requires --yes when mutation approval is needed",
+						"this run requires approval to commit changes; rerun with --yes to auto-approve in non-interactive mode",
 					)
 				}
 				return promptApproval(cmd.InOrStdin(), cmd.OutOrStdout(), gitmanager.ApprovalMessage(step, diffSummary))
@@ -95,7 +117,6 @@ func newRunCommand() *cobra.Command {
 
 			initialState := loadedState
 			currentState := loadedState
-			sessionNotes := []string{projectRootNote}
 			initializedStateNotes := false
 			invalidationReasons := []string(nil)
 
@@ -107,12 +128,14 @@ func newRunCommand() *cobra.Command {
 					BeforeReport: func(snapshotValue core.WorkspaceSnapshot, report *core.IterationReport) error {
 						if !initializedStateNotes {
 							invalidationReasons = state.ComputeInvalidationReasons(initialState, snapshotValue, repoRoot)
-							report.Notes = append(report.Notes, sessionNotes...)
 							if len(invalidationReasons) > 0 {
-								report.Notes = append(
-									report.Notes,
-									fmt.Sprintf("state invalidation: %s", strings.Join(invalidationReasons, ", ")),
-								)
+								report.Notes = append(report.Notes, humanInvalidationSummary(invalidationReasons))
+								if debugOutput {
+									report.Notes = append(
+										report.Notes,
+										fmt.Sprintf("Debug details: invalidation reasons = %s", strings.Join(invalidationReasons, ", ")),
+									)
+								}
 								for i, reason := range invalidationReasons {
 									report.Evidence = append(report.Evidence, core.EvidenceItem{
 										Name:  fmt.Sprintf("state.invalidation_reason.%d", i+1),
@@ -140,18 +163,14 @@ func newRunCommand() *cobra.Command {
 			case orchestrator.RunStopReasonSuccess:
 				return nil
 			case orchestrator.RunStopReasonMaxIterations:
-				return fmt.Errorf(
-					"run stopped with stop reason %q after %d iteration(s)",
-					runResult.StopReason,
-					len(runResult.Reports),
-				)
+				return fmt.Errorf("more work is needed. run `concierge run` again to continue.\ntip: use `--max-iterations 3` to run multiple passes in one command")
 			case orchestrator.RunStopReasonCancelled:
 				if ctxErr := cmd.Context().Err(); ctxErr != nil {
 					return ctxErr
 				}
 				return context.Canceled
 			default:
-				return errors.New("run stopped with an unknown reason")
+				return errors.New("run stopped unexpectedly; please rerun and review the latest output")
 			}
 		},
 	}
@@ -162,5 +181,29 @@ func newRunCommand() *cobra.Command {
 	cmd.Flags().StringVar(&projectRootFlag, "project-root", "", "Project root to operate on")
 	cmd.Flags().BoolVar(&nonInteractive, "non-interactive", false, "Fail instead of prompting for interactive decisions")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Auto-approve mutation/push prompts")
+	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colorized output")
+	cmd.Flags().BoolVar(&debugOutput, "debug-output", false, "Show internal debug details in run output")
 	return cmd
+}
+
+func humanInvalidationSummary(reasons []string) string {
+	if len(reasons) == 0 {
+		return ""
+	}
+
+	labels := make([]string, 0, len(reasons))
+	for _, reason := range reasons {
+		switch reason {
+		case state.InvalidationReasonProjectRootChanged:
+			labels = append(labels, "project folder changed")
+		case state.InvalidationReasonGitHeadChanged:
+			labels = append(labels, "Git commit changed")
+		case state.InvalidationReasonWorktreeFingerprintDiff:
+			labels = append(labels, "files changed")
+		default:
+			labels = append(labels, "workspace changed")
+		}
+	}
+
+	return fmt.Sprintf("Your workspace changed since the previous run (%s), so Concierge re-checked everything.", strings.Join(labels, ", "))
 }

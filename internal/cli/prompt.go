@@ -19,15 +19,18 @@ func promptProjectRootSelection(in io.Reader, out io.Writer, candidates []string
 	if out == nil {
 		out = io.Discard
 	}
-	if _, err := fmt.Fprintln(out, "Multiple project roots detected. Select one:"); err != nil {
+	if _, err := fmt.Fprintln(out, "Project Selection"); err != nil {
+		return "", err
+	}
+	if _, err := fmt.Fprintln(out, "Choose where Concierge should run:"); err != nil {
 		return "", err
 	}
 	for i, candidate := range candidates {
-		if _, err := fmt.Fprintf(out, "%d) %s\n", i+1, candidate); err != nil {
+		if _, err := fmt.Fprintf(out, "  %d. %s\n", i+1, candidate); err != nil {
 			return "", err
 		}
 	}
-	if _, err := fmt.Fprint(out, "Enter selection [1-", len(candidates), "]: "); err != nil {
+	if _, err := fmt.Fprint(out, "Selection [1-", len(candidates), "]: "); err != nil {
 		return "", err
 	}
 
@@ -48,7 +51,11 @@ func promptApproval(in io.Reader, out io.Writer, message string) (bool, error) {
 	if out == nil {
 		out = io.Discard
 	}
-	if _, err := fmt.Fprintf(out, "%s [y/N]: ", strings.TrimSpace(message)); err != nil {
+	trimmedMessage := strings.TrimSpace(message)
+	if trimmedMessage == "" {
+		trimmedMessage = "Approve these changes?"
+	}
+	if _, err := fmt.Fprintf(out, "%s\nProceed? [y/N]: ", trimmedMessage); err != nil {
 		return false, err
 	}
 

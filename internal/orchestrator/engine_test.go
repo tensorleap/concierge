@@ -164,8 +164,9 @@ func TestRunIterationSuccessCallsStagesInOrder(t *testing.T) {
 	if report.Step.ID != harness.result.Step.ID {
 		t.Fatalf("expected report step %q, got %q", harness.result.Step.ID, report.Step.ID)
 	}
-	if report.Validation.Passed != harness.validation.Passed {
-		t.Fatalf("expected validation passed=%t, got %t", harness.validation.Passed, report.Validation.Passed)
+	expectedValidation := mergeBlockingInspectIssues(harness.validation, harness.status)
+	if !reflect.DeepEqual(report.Validation, expectedValidation) {
+		t.Fatalf("expected validation %+v, got %+v", expectedValidation, report.Validation)
 	}
 	if !reflect.DeepEqual(report, harness.reported) {
 		t.Fatalf("expected reporter to receive returned report, got %+v want %+v", harness.reported, report)

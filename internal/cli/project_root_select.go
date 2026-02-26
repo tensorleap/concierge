@@ -21,7 +21,7 @@ func resolveProjectRoot(explicitProjectRoot string, cwd string, nonInteractive b
 		if err != nil {
 			return "", "", core.WrapError(core.KindUnknown, "cli.run.project_root_explicit", err)
 		}
-		return resolved, fmt.Sprintf("project root: %s (flag)", resolved), nil
+		return resolved, fmt.Sprintf("Project root: %s", resolved), nil
 	}
 
 	candidates, err := detectProjectRootCandidatesFunc(cwd)
@@ -33,10 +33,10 @@ func resolveProjectRoot(explicitProjectRoot string, cwd string, nonInteractive b
 		if err != nil {
 			return "", "", err
 		}
-		return resolved, fmt.Sprintf("project root: %s (cwd)", resolved), nil
+		return resolved, fmt.Sprintf("Project root: %s", resolved), nil
 	}
 	if len(candidates) == 1 {
-		return candidates[0], fmt.Sprintf("project root: %s (auto)", candidates[0]), nil
+		return candidates[0], fmt.Sprintf("Project root: %s", candidates[0]), nil
 	}
 
 	if nonInteractive {
@@ -51,7 +51,7 @@ func resolveProjectRoot(explicitProjectRoot string, cwd string, nonInteractive b
 	if err != nil {
 		return "", "", core.WrapError(core.KindUnknown, "cli.run.project_root_prompt", err)
 	}
-	return selected, fmt.Sprintf("project root: %s (prompt)", selected), nil
+	return selected, fmt.Sprintf("Project root: %s", selected), nil
 }
 
 func detectProjectRootCandidates(cwd string) ([]string, error) {

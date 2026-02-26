@@ -121,6 +121,7 @@ func (e *Engine) runIteration(
 	if err != nil {
 		return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StageValidate, Err: err}
 	}
+	validation = mergeBlockingInspectIssues(validation, status)
 
 	evidence := append([]core.EvidenceItem(nil), finalResult.Evidence...)
 	evidence = append(evidence, decision.Evidence...)
@@ -147,6 +148,41 @@ func (e *Engine) runIteration(
 	}
 
 	return report, snapshot, nil
+}
+
+func mergeBlockingInspectIssues(validation core.ValidationResult, status core.IntegrationStatus) core.ValidationResult {
+	merged := validation
+	if len(status.Issues) == 0 {
+		return merged
+	}
+
+	seen := make(map[string]struct{}, len(merged.Issues))
+	for _, issue := range merged.Issues {
+		key := string(issue.Code) + "|" + issue.Message + "|" + string(issue.Scope)
+		seen[key] = struct{}{}
+	}
+
+	for _, issue := range status.Issues {
+		if issue.Severity != core.SeverityError {
+			continue
+		}
+		key := string(issue.Code) + "|" + issue.Message + "|" + string(issue.Scope)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		merged.Issues = append(merged.Issues, issue)
+		seen[key] = struct{}{}
+	}
+
+	merged.Passed = true
+	for _, issue := range merged.Issues {
+		if issue.Severity == core.SeverityError {
+			merged.Passed = false
+			break
+		}
+	}
+
+	return merged
 }
 
 func missingDependencyError(name string) error {

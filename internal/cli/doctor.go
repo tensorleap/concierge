@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"runtime"
 	"strings"
 
@@ -13,9 +12,7 @@ import (
 )
 
 var leapCLIDiagnosticsProvider = detectLeapCLIDiagnostics
-var doctorLogoProvider = defaultDoctorLogo
-var doctorGetenv = os.Getenv
-var doctorIsTerminalWriter = isTerminalWriter
+var doctorLogoProvider = defaultCLILogo
 
 func newDoctorCommand() *cobra.Command {
 	var format string
@@ -44,7 +41,7 @@ func newDoctorCommand() *cobra.Command {
 				return renderDoctorHuman(
 					cmd.OutOrStdout(),
 					output,
-					doctorRenderOptions{EnableColor: doctorColorEnabled(cmd.OutOrStdout(), noColor)},
+					doctorRenderOptions{EnableColor: cliColorEnabled(cmd.OutOrStdout(), noColor)},
 				)
 			case doctorFormatJSON:
 				return renderDoctorJSON(cmd.OutOrStdout(), output)
@@ -57,16 +54,6 @@ func newDoctorCommand() *cobra.Command {
 	cmd.Flags().StringVar(&format, "format", doctorFormatHuman, "Output format: human|json")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colorized output")
 	return cmd
-}
-
-func doctorColorEnabled(writer io.Writer, noColor bool) bool {
-	if noColor {
-		return false
-	}
-	if strings.TrimSpace(doctorGetenv("NO_COLOR")) != "" {
-		return false
-	}
-	return doctorIsTerminalWriter(writer)
 }
 
 func init() {
@@ -91,12 +78,5 @@ func setDoctorLogoProviderForTest(provider func() string) func() {
 }
 
 func setDoctorColorDepsForTest(getenv func(string) string, isTerminal func(io.Writer) bool) func() {
-	previousGetenv := doctorGetenv
-	previousIsTerminal := doctorIsTerminalWriter
-	doctorGetenv = getenv
-	doctorIsTerminalWriter = isTerminal
-	return func() {
-		doctorGetenv = previousGetenv
-		doctorIsTerminalWriter = previousIsTerminal
-	}
+	return setCLIColorDepsForTest(getenv, isTerminal)
 }

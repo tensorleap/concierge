@@ -22,9 +22,17 @@ func TestReporterWritesSingleLineSummary(t *testing.T) {
 		t.Fatalf("Report returned error: %v", err)
 	}
 
-	expected := "snapshot=snapshot-123 step=ensure.leap_yaml validation=passed\n"
-	if sink.String() != expected {
-		t.Fatalf("expected output %q, got %q", expected, sink.String())
+	output := sink.String()
+	expectedSnippets := []string{
+		"Iteration Update",
+		"Step: Check leap.yaml setup",
+		"Changes: No repository changes applied",
+		"Validation: Passed",
+	}
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(strings.ToLower(output), strings.ToLower(snippet)) {
+			t.Fatalf("expected output to contain %q, got %q", snippet, output)
+		}
 	}
 }
 

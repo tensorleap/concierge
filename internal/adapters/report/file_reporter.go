@@ -12,12 +12,18 @@ import (
 
 // FileReporter persists iteration artifacts to .concierge and prints a one-line summary.
 type FileReporter struct {
-	writer io.Writer
-	paths  *persistence.Paths
+	writer  io.Writer
+	paths   *persistence.Paths
+	options OutputOptions
 }
 
 // NewFileReporter creates a reporter that writes report/evidence artifacts to .concierge.
 func NewFileReporter(projectRoot string, writer io.Writer) (*FileReporter, error) {
+	return NewFileReporterWithOptions(projectRoot, writer, OutputOptions{})
+}
+
+// NewFileReporterWithOptions creates a reporter that writes report/evidence artifacts to .concierge.
+func NewFileReporterWithOptions(projectRoot string, writer io.Writer, options OutputOptions) (*FileReporter, error) {
 	paths, err := persistence.NewPaths(projectRoot)
 	if err != nil {
 		return nil, err
@@ -28,8 +34,9 @@ func NewFileReporter(projectRoot string, writer io.Writer) (*FileReporter, error
 	}
 
 	return &FileReporter{
-		writer: writer,
-		paths:  paths,
+		writer:  writer,
+		paths:   paths,
+		options: options,
 	}, nil
 }
 
@@ -55,7 +62,7 @@ func (r *FileReporter) Report(ctx context.Context, report core.IterationReport) 
 	if writer == nil {
 		writer = os.Stdout
 	}
-	if err := writeSummaryLine(writer, report); err != nil {
+	if err := writeSummaryLine(writer, report, r.options); err != nil {
 		return core.WrapError(core.KindUnknown, "report.file.summary", err)
 	}
 

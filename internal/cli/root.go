@@ -20,6 +20,8 @@ func NewRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "concierge",
 		Short:         "Tensorleap integration assistant",
+		Long:          "Concierge helps you diagnose and guide Tensorleap integration work from the terminal.",
+		Example:       "  concierge doctor\n  concierge run --dry-run\n  concierge version --format json",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {

@@ -120,7 +120,6 @@ func renderDoctorHuman(writer io.Writer, output doctorOutput, options doctorRend
 		{"Build commit", nonEmptyValue(output.Commit, "unknown")},
 		{"Build date", nonEmptyValue(output.Date, "unknown")},
 		{"Operating system", fmt.Sprintf("%s/%s", nonEmptyValue(output.OS, "unknown"), nonEmptyValue(output.Arch, "unknown"))},
-		{"Go runtime", nonEmptyValue(output.GoVersion, "unknown")},
 	}
 	if err := writeDoctorRows(writer, systemRows); err != nil {
 		return err
@@ -266,7 +265,7 @@ func yesNoValue(value bool) string {
 	return "No"
 }
 
-func defaultDoctorLogo() string {
+func defaultCLILogo() string {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return ""

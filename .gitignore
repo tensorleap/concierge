@@ -19,3 +19,4 @@ tmp.benchmarks/
 .docker_bash_history
 bin/
 .fixtures/
+.concierge/

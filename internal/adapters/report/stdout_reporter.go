@@ -31,15 +31,27 @@ func (r *StdoutReporter) Report(ctx context.Context, report core.IterationReport
 		writer = os.Stdout
 	}
 
-	validation := "failed"
-	if report.Validation.Passed {
-		validation = "passed"
-	}
-
-	line := fmt.Sprintf("snapshot=%s step=%s validation=%s\n", report.SnapshotID, report.Step.ID, validation)
-	if _, err := io.WriteString(writer, line); err != nil {
+	if err := writeSummaryLine(writer, report); err != nil {
 		return core.WrapError(core.KindUnknown, "report.stdout.write", err)
 	}
 
 	return nil
+}
+
+func writeSummaryLine(writer io.Writer, report core.IterationReport) error {
+	line := fmt.Sprintf(
+		"snapshot=%s step=%s validation=%s\n",
+		report.SnapshotID,
+		report.Step.ID,
+		validationState(report.Validation),
+	)
+	_, err := io.WriteString(writer, line)
+	return err
+}
+
+func validationState(result core.ValidationResult) string {
+	if result.Passed {
+		return "passed"
+	}
+	return "failed"
 }

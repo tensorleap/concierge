@@ -2,6 +2,7 @@ package validate
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 )
 
 func TestValidatorFailsOnEmptyStepID(t *testing.T) {
+	t.Setenv(HarnessEnableEnvVar, "0")
 	validator := NewBaselineValidator()
 
 	result, err := validator.Validate(context.Background(), core.WorkspaceSnapshot{}, core.ExecutionResult{})
@@ -27,6 +29,7 @@ func TestValidatorFailsOnEmptyStepID(t *testing.T) {
 }
 
 func TestValidatorPassesForStubExecution(t *testing.T) {
+	t.Setenv(HarnessEnableEnvVar, "0")
 	validator := NewBaselineValidator()
 
 	validation, err := validator.Validate(context.Background(), core.WorkspaceSnapshot{}, core.ExecutionResult{
@@ -52,6 +55,7 @@ func TestValidatorPassesForStubExecution(t *testing.T) {
 }
 
 func TestValidatorDeterministicOutput(t *testing.T) {
+	t.Setenv(HarnessEnableEnvVar, "0")
 	validator := NewBaselineValidator()
 	execution := core.ExecutionResult{
 		Step:    core.EnsureStep{ID: core.EnsureStepIntegrationScript},
@@ -70,4 +74,73 @@ func TestValidatorDeterministicOutput(t *testing.T) {
 	if !reflect.DeepEqual(first, second) {
 		t.Fatalf("expected deterministic output, got first=%+v second=%+v", first, second)
 	}
+}
+
+func TestValidatorIngestsHarnessIssuesAndHeuristics(t *testing.T) {
+	validator := newBaselineValidatorWithHarness(fakeHarnessRunner{
+		result: HarnessRunResult{
+			Enabled: true,
+			Events: []HarnessEvent{
+				{Event: "input_fingerprint", Name: "image", Fingerprint: "same"},
+				{Event: "input_fingerprint", Name: "image", Fingerprint: "same"},
+			},
+			Issues: []core.Issue{
+				{
+					Code:     core.IssueCodeHarnessValidationFailed,
+					Message:  "harness failed",
+					Severity: core.SeverityError,
+					Scope:    core.IssueScopeValidation,
+				},
+			},
+		},
+	})
+
+	validation, err := validator.Validate(context.Background(), core.WorkspaceSnapshot{}, core.ExecutionResult{
+		Step: core.EnsureStep{ID: core.EnsureStepHarnessValidation},
+	})
+	if err != nil {
+		t.Fatalf("Validate returned error: %v", err)
+	}
+	if validation.Passed {
+		t.Fatalf("expected validation to fail when harness returns error issues, got %+v", validation)
+	}
+	if !containsIssueCode(validation.Issues, core.IssueCodeHarnessValidationFailed) {
+		t.Fatalf("expected harness issue in %+v", validation.Issues)
+	}
+	if !containsIssueCode(validation.Issues, core.IssueCodeSuspiciousConstantInputs) {
+		t.Fatalf("expected heuristic issue in %+v", validation.Issues)
+	}
+}
+
+func TestValidatorReturnsErrorWhenHarnessFails(t *testing.T) {
+	validator := newBaselineValidatorWithHarness(fakeHarnessRunner{
+		err: errors.New("harness crashed"),
+	})
+
+	_, err := validator.Validate(context.Background(), core.WorkspaceSnapshot{}, core.ExecutionResult{
+		Step: core.EnsureStep{ID: core.EnsureStepHarnessValidation},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+type fakeHarnessRunner struct {
+	result HarnessRunResult
+	err    error
+}
+
+func (f fakeHarnessRunner) Run(ctx context.Context, snapshot core.WorkspaceSnapshot) (HarnessRunResult, error) {
+	_ = ctx
+	_ = snapshot
+	return f.result, f.err
+}
+
+func containsIssueCode(issues []core.Issue, code core.IssueCode) bool {
+	for _, issue := range issues {
+		if issue.Code == code {
+			return true
+		}
+	}
+	return false
 }

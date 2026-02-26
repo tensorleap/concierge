@@ -4,6 +4,8 @@ This ExecPlan is a living document. Keep `Progress`, `Surprises & Discoveries`, 
 
 ## Revision Notes
 
+- 2026-02-26 06:15Z: Per explicit user direction, marked Step 5H and Steps 6A-6E as `ACCEPTED` and prepared direct commit to `main`.
+- 2026-02-26 06:09Z: Implemented Steps 6A-6E together on `feature/step-6a-6e`; local validation is green (`go test ./...`, fixture prep/verify, and opt-in fixture E2E checks). Step statuses remain `PENDING` until explicit user approval plus commit/push/PR/CI per workflow.
 - 2026-02-25 17:06Z: Verified merged state on `main` through PR #6 and updated step statuses so Steps 4C through 5G are `ACCEPTED`.
 - 2026-02-25 16:17Z: Implemented Steps 5B-5F adapters and tests on `feature/step-5b-5f-baseline-adapters`; local validation (`go test ./...`) is green. Step statuses remain `PENDING` until explicit user approval plus commit/push/PR/CI per workflow.
 - 2026-02-25 16:06Z: Completed Step 5A on `feature/step-5a-snapshot-adapter` and opened PR #4 with green branch CI; updated progress/status to advance next actionable step to 5B.
@@ -39,12 +41,12 @@ The desired outcome is that another engineer can implement each step with no add
 | Step 5E: Validator adapter baseline | `ACCEPTED` | 2026-02-25 16:24Z (`main`, PR #5) | Add deterministic validation checks over execution results (without Python harness yet). |
 | Step 5F: Reporter adapter baseline | `ACCEPTED` | 2026-02-25 16:24Z (`main`, PR #5) | Add reporter that emits human-readable summary and machine-readable in-memory report payload. |
 | Step 5G: Fixture corpus preparation | `ACCEPTED` | 2026-02-25 16:51Z (`main`, PR #6) | Add fixture manifest and scripts that materialize post-integration and pre-integration working copies locally. |
-| Step 5H: CLI `run` (non-dry-run) wiring | `PENDING` | — | Wire CLI `run` to default adapters + orchestrator multi-iteration loop with `--max-iterations`; no repo mutation beyond reporting in this phase. |
-| Step 6A: `.concierge` persistence primitives | `PENDING` | — | Add atomic JSON writer and stable path layout for state/reports/evidence artifacts. |
-| Step 6B: Persist reports and evidence from pipeline | `PENDING` | — | Wire reporter/executor outputs to `.concierge/reports` and `.concierge/evidence`; add CLI switch to enable persistence output. |
-| Step 6C: Runtime harness baseline (Layer 2) | `PENDING` | — | Add initial Python harness invocation contract and deterministic parsing of harness outputs into `IssueCode`s. |
-| Step 6D: Anti-stub heuristics baseline (Layer 3) | `PENDING` | — | Add constant-output and empty-subset heuristics as deterministic validator findings. |
-| Step 6E: Fixture-backed pre-vs-post behavior tests | `PENDING` | — | Execute Concierge against prepared fixtures and assert behavior/contract deltas between pre and post variants. |
+| Step 5H: CLI `run` (non-dry-run) wiring | `ACCEPTED` | 2026-02-26 06:15Z (`main`) | Wire CLI `run` to default adapters + orchestrator multi-iteration loop with `--max-iterations`; no repo mutation beyond reporting in this phase. |
+| Step 6A: `.concierge` persistence primitives | `ACCEPTED` | 2026-02-26 06:15Z (`main`) | Add atomic JSON writer and stable path layout for state/reports/evidence artifacts. |
+| Step 6B: Persist reports and evidence from pipeline | `ACCEPTED` | 2026-02-26 06:15Z (`main`) | Wire reporter/executor outputs to `.concierge/reports` and `.concierge/evidence`; add CLI switch to enable persistence output. |
+| Step 6C: Runtime harness baseline (Layer 2) | `ACCEPTED` | 2026-02-26 06:15Z (`main`) | Add initial Python harness invocation contract and deterministic parsing of harness outputs into `IssueCode`s. |
+| Step 6D: Anti-stub heuristics baseline (Layer 3) | `ACCEPTED` | 2026-02-26 06:15Z (`main`) | Add constant-output and empty-subset heuristics as deterministic validator findings. |
+| Step 6E: Fixture-backed pre-vs-post behavior tests | `ACCEPTED` | 2026-02-26 06:15Z (`main`) | Execute Concierge against prepared fixtures and assert behavior/contract deltas between pre and post variants. |
 | Step 7: Developer tooling and CI expansion | `PENDING` | — | Add lint/test/build gates and fixture-test strategy in CI with safe defaults. |
 | Step 8: Documentation sync | `PENDING` | — | Update architecture/dev setup/README to match actual implementation and fixture workflow. |
 
@@ -627,7 +629,7 @@ Rollback boundary:
 
 ---
 
-### Step 5H: CLI `run` (non-dry-run) wiring (`PENDING`)
+### Step 5H: CLI `run` (non-dry-run) wiring (`ACCEPTED`)
 
 Objective:
 
@@ -689,7 +691,7 @@ Rollback boundary:
 
 ---
 
-### Step 6A: `.concierge` persistence primitives (`PENDING`)
+### Step 6A: `.concierge` persistence primitives (`ACCEPTED`)
 
 Objective:
 
@@ -740,7 +742,7 @@ Rollback boundary:
 
 ---
 
-### Step 6B: Persist reports and evidence (`PENDING`)
+### Step 6B: Persist reports and evidence (`ACCEPTED`)
 
 Objective:
 
@@ -794,7 +796,7 @@ Rollback boundary:
 
 ---
 
-### Step 6C: Runtime harness baseline (Layer 2) (`PENDING`)
+### Step 6C: Runtime harness baseline (Layer 2) (`ACCEPTED`)
 
 Objective:
 
@@ -847,7 +849,7 @@ Rollback boundary:
 
 ---
 
-### Step 6D: Anti-stub heuristics baseline (Layer 3) (`PENDING`)
+### Step 6D: Anti-stub heuristics baseline (Layer 3) (`ACCEPTED`)
 
 Objective:
 
@@ -890,7 +892,7 @@ Rollback boundary:
 
 ---
 
-### Step 6E: Fixture-backed pre-vs-post behavior tests (`PENDING`)
+### Step 6E: Fixture-backed pre-vs-post behavior tests (`ACCEPTED`)
 
 Objective:
 
@@ -1029,16 +1031,10 @@ Rollback boundary:
 
 ## Concrete Step Execution Order
 
-Note: Steps 1 through 5G are already `ACCEPTED`. The list below is the intended order for remaining `PENDING` steps.
+Note: Steps 1 through 6E are now `ACCEPTED`. The list below is the intended order for remaining `PENDING` steps.
 
-1. Implement Step 5H and commit.
-2. Implement Step 6A and commit.
-3. Implement Step 6B and commit.
-4. Implement Step 6C and commit.
-5. Implement Step 6D and commit.
-6. Implement Step 6E and commit.
-7. Implement Step 7 and commit.
-8. Implement Step 8 and commit.
+1. Implement Step 7 and commit.
+2. Implement Step 8 and commit.
 
 Each step follows this gate:
 
@@ -1097,7 +1093,7 @@ Phase acceptance condition:
 
 ## Outcomes & Retrospective
 
-Current status: steps 1 through 5G are `ACCEPTED` on `main`. Pending work remains specified at implementation depth. The next executable atomic step is Step 5H.
+Current status: steps 1 through 6E are `ACCEPTED` on `main`. Pending work remains specified at implementation depth. The next executable atomic step is Step 7.
 
 Residual risk: runtime harness behavior (Step 6C) may reveal additional Python environment assumptions.
 

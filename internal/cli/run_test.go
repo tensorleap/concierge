@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +40,7 @@ func TestRunDryRunUsesCoreDefaultStages(t *testing.T) {
 }
 
 func TestRunNonDryRunExecutesSingleIterationByDefault(t *testing.T) {
+	disableHarness(t)
 	repo := initRunTestRepo(t, true)
 	withWorkingDir(t, repo)
 
@@ -55,6 +57,7 @@ func TestRunNonDryRunExecutesSingleIterationByDefault(t *testing.T) {
 }
 
 func TestRunNonDryRunHonorsMaxIterationsFlag(t *testing.T) {
+	disableHarness(t)
 	repo := initRunTestRepo(t, false)
 	withWorkingDir(t, repo)
 
@@ -71,6 +74,7 @@ func TestRunNonDryRunHonorsMaxIterationsFlag(t *testing.T) {
 }
 
 func TestRunNonDryRunReturnsErrorOnMaxIterationsStop(t *testing.T) {
+	disableHarness(t)
 	repo := initRunTestRepo(t, false)
 	withWorkingDir(t, repo)
 
@@ -80,6 +84,60 @@ func TestRunNonDryRunReturnsErrorOnMaxIterationsStop(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "max_iterations") {
 		t.Fatalf("expected max_iterations stop reason, got: %v", err)
+	}
+}
+
+func TestRunWithPersistWritesConciergeArtifacts(t *testing.T) {
+	disableHarness(t)
+	repo := initRunTestRepo(t, true)
+	withWorkingDir(t, repo)
+
+	output, err := executeCLI(t, "run", "--persist")
+	if err != nil {
+		t.Fatalf("run --persist failed: %v\noutput=%q", err, output)
+	}
+	if !strings.Contains(output, "snapshot=") {
+		t.Fatalf("expected reporter summary in output, got: %q", output)
+	}
+
+	reportFiles, err := filepath.Glob(filepath.Join(repo, ".concierge", "reports", "*.json"))
+	if err != nil {
+		t.Fatalf("Glob report files failed: %v", err)
+	}
+	if len(reportFiles) != 1 {
+		t.Fatalf("expected one report file, got %d: %v", len(reportFiles), reportFiles)
+	}
+
+	rawReport, err := os.ReadFile(reportFiles[0])
+	if err != nil {
+		t.Fatalf("ReadFile failed for report file: %v", err)
+	}
+	var report core.IterationReport
+	if err := json.Unmarshal(rawReport, &report); err != nil {
+		t.Fatalf("Unmarshal report failed: %v", err)
+	}
+	if report.SnapshotID == "" {
+		t.Fatal("expected snapshot ID in persisted report")
+	}
+
+	evidenceFiles, err := filepath.Glob(filepath.Join(repo, ".concierge", "evidence", "*", "executor.mode.log"))
+	if err != nil {
+		t.Fatalf("Glob evidence files failed: %v", err)
+	}
+	if len(evidenceFiles) != 1 {
+		t.Fatalf("expected one evidence file, got %d: %v", len(evidenceFiles), evidenceFiles)
+	}
+
+	output, err = executeCLI(t, "run", "--persist")
+	if err != nil {
+		t.Fatalf("second run --persist failed: %v\noutput=%q", err, output)
+	}
+	reportFiles, err = filepath.Glob(filepath.Join(repo, ".concierge", "reports", "*.json"))
+	if err != nil {
+		t.Fatalf("Glob report files failed after second run: %v", err)
+	}
+	if len(reportFiles) != 1 {
+		t.Fatalf("expected one report file after overwrite, got %d: %v", len(reportFiles), reportFiles)
 	}
 }
 
@@ -106,6 +164,7 @@ func initRunTestRepo(t *testing.T, complete bool) string {
 	runGit(t, repo, "config", "commit.gpgsign", "false")
 
 	writeFile(t, filepath.Join(repo, "README.md"), "test repo\n")
+	writeFile(t, filepath.Join(repo, ".gitignore"), ".concierge/\n")
 	if complete {
 		writeFile(t, filepath.Join(repo, "leap.yaml"), "entryFile: leap_binder.py\n")
 		writeFile(t, filepath.Join(repo, "leap_binder.py"), "def noop():\n    return None\n")
@@ -154,4 +213,9 @@ func writeFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile failed for %q: %v", path, err)
 	}
+}
+
+func disableHarness(t *testing.T) {
+	t.Helper()
+	t.Setenv("CONCIERGE_ENABLE_HARNESS", "0")
 }

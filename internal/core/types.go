@@ -127,6 +127,7 @@ type IterationReport struct {
 	GeneratedAt time.Time        `json:"generatedAt"`
 	SnapshotID  string           `json:"snapshotId"`
 	Step        EnsureStep       `json:"step"`
+	Evidence    []EvidenceItem   `json:"evidence,omitempty"`
 	Validation  ValidationResult `json:"validation"`
 	Notes       []string         `json:"notes,omitempty"`
 }

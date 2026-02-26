@@ -101,6 +101,7 @@ func (e *Engine) RunIteration(ctx context.Context, req core.SnapshotRequest) (co
 		GeneratedAt: e.clock(),
 		SnapshotID:  snapshot.ID,
 		Step:        result.Step,
+		Evidence:    result.Evidence,
 		Validation:  validation,
 	}
 

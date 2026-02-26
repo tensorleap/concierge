@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -14,12 +15,14 @@ import (
 	"github.com/tensorleap/concierge/internal/adapters/snapshot"
 	"github.com/tensorleap/concierge/internal/adapters/validate"
 	"github.com/tensorleap/concierge/internal/core"
+	"github.com/tensorleap/concierge/internal/core/ports"
 	"github.com/tensorleap/concierge/internal/orchestrator"
 )
 
 func newRunCommand() *cobra.Command {
 	var dryRun bool
 	var maxIterations int
+	var persist bool
 
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -35,13 +38,26 @@ func newRunCommand() *cobra.Command {
 				return err
 			}
 
+			repoRoot, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+
+			var iterationReporter ports.Reporter = report.NewStdoutReporter(cmd.OutOrStdout())
+			if persist {
+				iterationReporter, err = report.NewFileReporter(repoRoot, cmd.OutOrStdout())
+				if err != nil {
+					return err
+				}
+			}
+
 			engine, err := orchestrator.NewEngine(orchestrator.Dependencies{
 				Snapshotter: snapshot.NewGitSnapshotter(),
 				Inspector:   inspect.NewBaselineInspector(),
 				Planner:     planner.NewDeterministicPlanner(),
 				Executor:    execute.NewStubExecutor(),
 				Validator:   validate.NewBaselineValidator(),
-				Reporter:    report.NewStdoutReporter(cmd.OutOrStdout()),
+				Reporter:    iterationReporter,
 			})
 			if err != nil {
 				return err
@@ -49,7 +65,7 @@ func newRunCommand() *cobra.Command {
 
 			runResult, err := engine.Run(
 				cmd.Context(),
-				core.SnapshotRequest{},
+				core.SnapshotRequest{RepoRoot: repoRoot},
 				orchestrator.RunOptions{MaxIterations: maxIterations},
 			)
 			if err != nil {
@@ -78,5 +94,6 @@ func newRunCommand() *cobra.Command {
 
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview orchestration stages without making changes")
 	cmd.Flags().IntVar(&maxIterations, "max-iterations", 1, "Maximum orchestration iterations before stopping")
+	cmd.Flags().BoolVar(&persist, "persist", false, "Persist reports and evidence under .concierge")
 	return cmd
 }

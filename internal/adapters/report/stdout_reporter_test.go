@@ -16,7 +16,17 @@ func TestReporterWritesSingleLineSummary(t *testing.T) {
 	err := reporter.Report(context.Background(), core.IterationReport{
 		SnapshotID: "snapshot-123",
 		Step:       core.EnsureStep{ID: core.EnsureStepLeapYAML},
-		Validation: core.ValidationResult{Passed: true},
+		Validation: core.ValidationResult{
+			Passed: false,
+			Issues: []core.Issue{
+				{
+					Code:     core.IssueCodeLeapYAMLMissing,
+					Message:  "leap.yaml is required at repository root",
+					Severity: core.SeverityError,
+					Scope:    core.IssueScopeLeapYAML,
+				},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Report returned error: %v", err)
@@ -24,10 +34,12 @@ func TestReporterWritesSingleLineSummary(t *testing.T) {
 
 	output := sink.String()
 	expectedSnippets := []string{
-		"Iteration Update",
-		"Step: Check leap.yaml setup",
-		"Changes: No repository changes applied",
-		"Validation: Passed",
+		"Integration Checklist",
+		"Check leap.yaml setup (blocking)",
+		"Blocked on: Check leap.yaml setup",
+		"leap.yaml is required at repository root",
+		"Concierge can help with this step interactively and will ask before making any changes.",
+		"Changes: No changes were applied.",
 	}
 	for _, snippet := range expectedSnippets {
 		if !strings.Contains(strings.ToLower(output), strings.ToLower(snippet)) {

@@ -48,11 +48,11 @@ func TestRunNonDryRunExecutesSingleIterationByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected run to succeed in complete repo, got: %v\noutput=%q", err, output)
 	}
-	if strings.Count(output, "Iteration Update") != 1 {
+	if strings.Count(output, "Integration Checklist") != 1 {
 		t.Fatalf("expected one reporter line, got output: %q", output)
 	}
-	if !strings.Contains(output, "Integration is currently complete.") {
-		t.Fatalf("expected complete step description in output, got: %q", output)
+	if !strings.Contains(output, "All required checks passed.") {
+		t.Fatalf("expected completed checklist in output, got: %q", output)
 	}
 }
 
@@ -65,10 +65,10 @@ func TestRunNonDryRunHonorsMaxIterationsFlag(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected max-iterations stop to return error")
 	}
-	if strings.Count(output, "Iteration Update") != 2 {
+	if strings.Count(output, "Integration Checklist") != 2 {
 		t.Fatalf("expected two reporter lines, got output: %q", output)
 	}
-	if !strings.Contains(strings.ToLower(err.Error()), "more work is needed") {
+	if !strings.Contains(strings.ToLower(err.Error()), "pending requirements") {
 		t.Fatalf("expected user-facing max-iterations message, got: %v", err)
 	}
 }
@@ -82,7 +82,7 @@ func TestRunNonDryRunReturnsErrorOnMaxIterationsStop(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected run to fail on max-iterations stop")
 	}
-	if !strings.Contains(strings.ToLower(err.Error()), "more work is needed") {
+	if !strings.Contains(strings.ToLower(err.Error()), "pending requirements") {
 		t.Fatalf("expected user-facing max-iterations message, got: %v", err)
 	}
 }
@@ -132,7 +132,7 @@ func TestRunYesSkipsApprovalPrompts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected max-iterations stop to return error")
 	}
-	if !strings.Contains(strings.ToLower(err.Error()), "more work is needed") {
+	if !strings.Contains(strings.ToLower(err.Error()), "pending requirements") {
 		t.Fatalf("expected user-facing max-iterations message, got: %v", err)
 	}
 	if strings.Contains(output, "[y/N]:") {
@@ -145,20 +145,54 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	repo := initRunTestRepo(t, false)
 	withWorkingDir(t, repo)
 
-	output, err := executeCLIWithInput(t, "y\n", "run", "--max-iterations=1")
+	output, err := executeCLIWithInput(t, "y\ny\n", "run", "--max-iterations=1")
 	if err == nil {
 		t.Fatal("expected max-iterations stop to return error")
+	}
+	if !strings.Contains(output, "Integration checks:") {
+		t.Fatalf("expected checklist before approval prompt, got output: %q", output)
+	}
+	if !strings.Contains(output, "☐ Check leap.yaml setup (blocking)") {
+		t.Fatalf("expected blocking checklist row in approval prompt, got output: %q", output)
+	}
+	if !strings.Contains(output, "Allow Concierge to make changes for this check now?") {
+		t.Fatalf("expected pre-change approval prompt, got output: %q", output)
 	}
 	if !strings.Contains(output, "Review proposed changes") {
 		t.Fatalf("expected commit approval prompt, got output: %q", output)
 	}
-	if !strings.Contains(strings.ToLower(err.Error()), "more work is needed") {
+	if !strings.Contains(strings.ToLower(err.Error()), "pending requirements") {
 		t.Fatalf("expected user-facing max-iterations message, got: %v", err)
 	}
 
 	latestMessage := runGit(t, repo, "log", "-1", "--pretty=%s")
 	if !strings.HasPrefix(latestMessage, "concierge(ensure.leap_yaml):") {
 		t.Fatalf("expected structured commit message, got %q", latestMessage)
+	}
+}
+
+func TestRunDeclineStepApprovalLeavesRepoUnchanged(t *testing.T) {
+	disableHarness(t)
+	repo := initRunTestRepo(t, false)
+	withWorkingDir(t, repo)
+
+	output, err := executeCLIWithInput(t, "n\n", "run", "--max-iterations=1")
+	if err == nil {
+		t.Fatal("expected max-iterations stop to return error")
+	}
+	if !strings.Contains(output, "Allow Concierge to make changes for this check now?") {
+		t.Fatalf("expected pre-change approval prompt, got output: %q", output)
+	}
+	if strings.Contains(output, "Review proposed changes") {
+		t.Fatalf("did not expect commit prompt when changes were not approved, got output: %q", output)
+	}
+
+	status := runGit(t, repo, "status", "--porcelain")
+	if strings.TrimSpace(status) != "" {
+		t.Fatalf("expected clean worktree after declining approval, got %q", status)
+	}
+	if _, statErr := os.Stat(filepath.Join(repo, "leap.yaml")); !os.IsNotExist(statErr) {
+		t.Fatalf("expected leap.yaml to stay absent after declining approval, stat err=%v", statErr)
 	}
 }
 
@@ -171,7 +205,7 @@ func TestRunWithPersistWritesConciergeArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run --persist failed: %v\noutput=%q", err, output)
 	}
-	if !strings.Contains(output, "Iteration Update") {
+	if !strings.Contains(output, "Integration Checklist") {
 		t.Fatalf("expected reporter summary in output, got: %q", output)
 	}
 

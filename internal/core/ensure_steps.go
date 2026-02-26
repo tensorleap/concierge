@@ -1,5 +1,7 @@
 package core
 
+import "strings"
+
 // EnsureStepID is a stable machine-readable orchestration step identifier.
 type EnsureStepID string
 
@@ -136,4 +138,54 @@ func KnownEnsureSteps() []EnsureStep {
 		steps = append(steps, step)
 	}
 	return steps
+}
+
+// HumanEnsureStepLabel returns user-facing wording for one ensure-step.
+func HumanEnsureStepLabel(stepID EnsureStepID) string {
+	switch stepID {
+	case EnsureStepComplete:
+		return "Integration complete"
+	case EnsureStepRepositoryContext:
+		return "Check repository setup"
+	case EnsureStepPythonRuntime:
+		return "Check Python setup"
+	case EnsureStepLeapCLIAuth:
+		return "Check Leap CLI installation and login"
+	case EnsureStepServerConnectivity:
+		return "Check Tensorleap server connection"
+	case EnsureStepSecretsContext:
+		return "Check required secrets"
+	case EnsureStepLeapYAML:
+		return "Check leap.yaml setup"
+	case EnsureStepModelContract:
+		return "Check model compatibility"
+	case EnsureStepIntegrationScript:
+		return "Check integration script setup"
+	case EnsureStepPreprocessContract:
+		return "Check preprocess setup"
+	case EnsureStepInputEncoders:
+		return "Check input encoders"
+	case EnsureStepGroundTruthEncoders:
+		return "Check ground-truth encoders"
+	case EnsureStepIntegrationTestContract:
+		return "Check integration test wiring"
+	case EnsureStepOptionalHooks:
+		return "Check optional integration hooks"
+	case EnsureStepHarnessValidation:
+		return "Run runtime checks"
+	case EnsureStepUploadReadiness:
+		return "Check upload readiness"
+	case EnsureStepUploadPush:
+		return "Upload integration to Tensorleap"
+	case EnsureStepInvestigate:
+		return "Investigate remaining issues"
+	default:
+		label := strings.TrimPrefix(string(stepID), "ensure.")
+		label = strings.ReplaceAll(label, "_", " ")
+		label = strings.TrimSpace(label)
+		if label == "" {
+			return "Run the next planned step"
+		}
+		return strings.ToUpper(label[:1]) + label[1:]
+	}
 }

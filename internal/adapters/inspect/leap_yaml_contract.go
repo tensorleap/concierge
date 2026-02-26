@@ -85,54 +85,6 @@ func inspectLeapYAMLContract(repoRoot string, leapYAMLPath string, status *core.
 		return &contract, nil
 	}
 
-	entryRelativePath, err := filepath.Rel(repoRoot, entryAbsPath)
-	if err != nil {
-		return nil, core.WrapError(core.KindUnknown, "inspect.baseline.entry_file_rel", err)
-	}
-	entryRelativePath = filepath.ToSlash(filepath.Clean(entryRelativePath))
-
-	requiredPaths := requiredUploadPaths(repoRoot, entryRelativePath)
-	missingIncludes := make([]string, 0)
-	excludedRequired := make([]string, 0)
-	entryExcluded := false
-	for _, required := range requiredPaths {
-		if len(contract.Include) > 0 && !matchesAnyPattern(required, contract.Include) {
-			missingIncludes = append(missingIncludes, required)
-		}
-		if matchesAnyPattern(required, contract.Exclude) {
-			excludedRequired = append(excludedRequired, required)
-			if required == entryRelativePath {
-				entryExcluded = true
-			}
-		}
-	}
-
-	if len(missingIncludes) > 0 {
-		status.Issues = append(status.Issues, core.Issue{
-			Code:     core.IssueCodeLeapYAMLIncludeMissingRequiredFiles,
-			Message:  fmt.Sprintf("leap.yaml include patterns miss required files: %s", strings.Join(missingIncludes, ", ")),
-			Severity: core.SeverityError,
-			Scope:    core.IssueScopeLeapYAML,
-		})
-	}
-
-	if len(excludedRequired) > 0 {
-		status.Issues = append(status.Issues, core.Issue{
-			Code:     core.IssueCodeLeapYAMLExcludeBlocksRequiredFiles,
-			Message:  fmt.Sprintf("leap.yaml exclude patterns block required files: %s", strings.Join(excludedRequired, ", ")),
-			Severity: core.SeverityError,
-			Scope:    core.IssueScopeLeapYAML,
-		})
-	}
-
-	if entryExcluded {
-		status.Issues = append(status.Issues, requiredArtifactIssue(
-			core.IssueCodeLeapYAMLEntryFileExcluded,
-			fmt.Sprintf("leap.yaml entryFile %q is excluded by upload patterns", entryRelativePath),
-			core.IssueScopeLeapYAML,
-		))
-	}
-
 	if strings.TrimSpace(contract.ProjectID) != "" {
 		status.Issues = append(status.Issues, core.Issue{
 			Code:     core.IssueCodeLeapYAMLProjectIDSetInitialSetup,
@@ -151,19 +103,6 @@ func inspectLeapYAMLContract(repoRoot string, leapYAMLPath string, status *core.
 	}
 
 	return &contract, nil
-}
-
-func requiredUploadPaths(repoRoot string, entryRelativePath string) []string {
-	required := []string{"leap.yaml", entryRelativePath}
-	appendIfExists := func(name string) {
-		if info, err := os.Stat(filepath.Join(repoRoot, name)); err == nil && !info.IsDir() {
-			required = append(required, filepath.ToSlash(name))
-		}
-	}
-	appendIfExists("leap_binder.py")
-	appendIfExists("leap_custom_test.py")
-	appendIfExists("integration_test.py")
-	return dedupeStrings(required)
 }
 
 func matchesAnyPattern(path string, patterns []string) bool {
@@ -220,24 +159,4 @@ func isPathWithinRepo(repoRoot string, path string) bool {
 		return true
 	}
 	return !strings.HasPrefix(rel, "..") && rel != ""
-}
-
-func dedupeStrings(values []string) []string {
-	if len(values) == 0 {
-		return nil
-	}
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		normalized := strings.TrimSpace(value)
-		if normalized == "" {
-			continue
-		}
-		if _, ok := seen[normalized]; ok {
-			continue
-		}
-		seen[normalized] = struct{}{}
-		result = append(result, normalized)
-	}
-	return result
 }

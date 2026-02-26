@@ -45,7 +45,7 @@ func TestFileReporterWritesReportJSON(t *testing.T) {
 	if decoded.Step.ID != core.EnsureStepLeapYAML {
 		t.Fatalf("expected step %q, got %q", core.EnsureStepLeapYAML, decoded.Step.ID)
 	}
-	if !strings.Contains(sink.String(), "Iteration Update") {
+	if !strings.Contains(sink.String(), "Integration Checklist") {
 		t.Fatalf("expected summary line in output, got %q", sink.String())
 	}
 }

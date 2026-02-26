@@ -89,7 +89,7 @@ func runStageLabel(stage core.Stage) string {
 	case core.StageExecute:
 		return "Apply the selected action"
 	case core.StageValidate:
-		return "Run validation checks"
+		return "Run runtime checks"
 	case core.StageReport:
 		return "Show the run report"
 	default:

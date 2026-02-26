@@ -156,7 +156,7 @@ func TestInspectorLeapYAMLEntryFileNotFoundEmitsIssue(t *testing.T) {
 	}
 }
 
-func TestInspectorDetectsEntryFileExcludedByLeapYAML(t *testing.T) {
+func TestInspectorAllowsEntryFileExcludedByLeapYAML(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
 		"entryFile: leap_binder.py",
@@ -176,8 +176,17 @@ func TestInspectorDetectsEntryFileExcludedByLeapYAML(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Inspect returned error: %v", err)
 	}
-	if !hasIssueCode(status.Issues, core.IssueCodeLeapYAMLEntryFileExcluded) {
-		t.Fatalf("expected %q issue, got %+v", core.IssueCodeLeapYAMLEntryFileExcluded, status.Issues)
+	if hasIssueCode(status.Issues, core.IssueCodeLeapYAMLEntryFileExcluded) {
+		t.Fatalf("did not expect %q issue, got %+v", core.IssueCodeLeapYAMLEntryFileExcluded, status.Issues)
+	}
+	if hasIssueCode(status.Issues, core.IssueCodeLeapYAMLIncludeMissingRequiredFiles) {
+		t.Fatalf("did not expect %q issue, got %+v", core.IssueCodeLeapYAMLIncludeMissingRequiredFiles, status.Issues)
+	}
+	if hasIssueCode(status.Issues, core.IssueCodeLeapYAMLExcludeBlocksRequiredFiles) {
+		t.Fatalf("did not expect %q issue, got %+v", core.IssueCodeLeapYAMLExcludeBlocksRequiredFiles, status.Issues)
+	}
+	if !status.Ready() {
+		t.Fatalf("expected ready status, got missing=%v issues=%+v", status.Missing, status.Issues)
 	}
 }
 

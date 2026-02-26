@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 	"github.com/tensorleap/concierge/internal/adapters/execute"
@@ -48,12 +51,14 @@ func newRunCommand() *cobra.Command {
 				return renderRunDryPlan(writer, stages, renderOptions)
 			}
 
+			promptInput := bufio.NewReader(cmd.InOrStdin())
+
 			cwd, err := os.Getwd()
 			if err != nil {
 				return err
 			}
 
-			repoRoot, _, err := resolveProjectRoot(projectRootFlag, cwd, nonInteractive, cmd.InOrStdin(), cmd.OutOrStdout())
+			repoRoot, _, err := resolveProjectRoot(projectRootFlag, cwd, nonInteractive, promptInput, cmd.OutOrStdout())
 			if err != nil {
 				return err
 			}
@@ -88,6 +93,26 @@ func newRunCommand() *cobra.Command {
 				}
 			}
 
+			plannerAdapter := newPlanCapturePlanner(planner.NewDeterministicPlanner())
+
+			stepApproval := func(step core.EnsureStep) (bool, error) {
+				if step.ID == core.EnsureStepComplete {
+					return true, nil
+				}
+				if yes {
+					return true, nil
+				}
+				if nonInteractive {
+					return false, core.NewError(
+						core.KindUnknown,
+						"cli.run.non_interactive.step_approval_required",
+						"this run requires approval before Concierge applies changes; rerun with --yes to auto-approve in non-interactive mode",
+					)
+				}
+				status, hasStatus := plannerAdapter.LastStatus()
+				return promptApproval(promptInput, cmd.OutOrStdout(), stepApprovalMessage(step, status, hasStatus))
+			}
+
 			gitApproval := func(step core.EnsureStep, diffSummary string) (bool, error) {
 				if yes {
 					return true, nil
@@ -99,14 +124,14 @@ func newRunCommand() *cobra.Command {
 						"this run requires approval to commit changes; rerun with --yes to auto-approve in non-interactive mode",
 					)
 				}
-				return promptApproval(cmd.InOrStdin(), cmd.OutOrStdout(), gitmanager.ApprovalMessage(step, diffSummary))
+				return promptApproval(promptInput, cmd.OutOrStdout(), gitmanager.ApprovalMessage(step, diffSummary))
 			}
 
 			engine, err := orchestrator.NewEngine(orchestrator.Dependencies{
 				Snapshotter: snapshot.NewGitSnapshotter(),
 				Inspector:   inspect.NewBaselineInspector(),
-				Planner:     planner.NewDeterministicPlanner(),
-				Executor:    execute.NewDispatcherExecutor(),
+				Planner:     plannerAdapter,
+				Executor:    execute.NewApprovalExecutor(execute.NewDispatcherExecutor(), stepApproval),
 				GitManager:  gitmanager.NewManager(gitApproval),
 				Validator:   validate.NewBaselineValidator(),
 				Reporter:    iterationReporter,
@@ -163,7 +188,7 @@ func newRunCommand() *cobra.Command {
 			case orchestrator.RunStopReasonSuccess:
 				return nil
 			case orchestrator.RunStopReasonMaxIterations:
-				return fmt.Errorf("more work is needed. run `concierge run` again to continue.\ntip: use `--max-iterations 3` to run multiple passes in one command")
+				return fmt.Errorf("integration still has pending requirements. run `concierge run` again to continue guided checks.\ntip: use `--max-iterations 3` to run multiple guided rounds in one command")
 			case orchestrator.RunStopReasonCancelled:
 				if ctxErr := cmd.Context().Err(); ctxErr != nil {
 					return ctxErr
@@ -176,7 +201,7 @@ func newRunCommand() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview orchestration stages without making changes")
-	cmd.Flags().IntVar(&maxIterations, "max-iterations", 1, "Maximum orchestration iterations before stopping")
+	cmd.Flags().IntVar(&maxIterations, "max-iterations", 1, "Maximum guided rounds before stopping")
 	cmd.Flags().BoolVar(&persist, "persist", false, "Persist reports and evidence under .concierge")
 	cmd.Flags().StringVar(&projectRootFlag, "project-root", "", "Project root to operate on")
 	cmd.Flags().BoolVar(&nonInteractive, "non-interactive", false, "Fail instead of prompting for interactive decisions")
@@ -184,6 +209,59 @@ func newRunCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colorized output")
 	cmd.Flags().BoolVar(&debugOutput, "debug-output", false, "Show internal debug details in run output")
 	return cmd
+}
+
+func stepApprovalMessage(step core.EnsureStep, status core.IntegrationStatus, hasStatus bool) string {
+	checklist := make([]string, 0, 32)
+	checklist = append(checklist, "Integration checks:")
+
+	steps := checklistStepsForPrompt()
+	blockingIndex := -1
+	for i, knownStep := range steps {
+		if knownStep.ID == step.ID {
+			blockingIndex = i
+			break
+		}
+	}
+
+	for i, knownStep := range steps {
+		prefix := "☐"
+		label := core.HumanEnsureStepLabel(knownStep.ID)
+		if blockingIndex >= 0 && i < blockingIndex {
+			prefix = "☑"
+		}
+		if knownStep.ID == step.ID {
+			label += " (blocking)"
+		}
+		checklist = append(checklist, fmt.Sprintf("%s %s", prefix, label))
+	}
+
+	if hasStatus {
+		blockers := blockingIssuesForStep(status.Issues, step.ID)
+		if len(blockers) > 0 {
+			checklist = append(checklist, "", "Missing or failing requirements:")
+			for i, issue := range blockers {
+				if i >= 3 {
+					checklist = append(checklist, "- Additional blocking details were omitted for brevity.")
+					break
+				}
+				message := strings.TrimSpace(issue.Message)
+				if message == "" {
+					message = "A required check is failing."
+				}
+				checklist = append(checklist, "- "+message)
+			}
+		}
+	}
+
+	checklist = append(
+		checklist,
+		"",
+		fmt.Sprintf("Next required check: %s", core.HumanEnsureStepLabel(step.ID)),
+		"Concierge can help with this interactively.",
+		"Allow Concierge to make changes for this check now? (No changes will be made before approval.)",
+	)
+	return strings.Join(checklist, "\n")
 }
 
 func humanInvalidationSummary(reasons []string) string {
@@ -206,4 +284,84 @@ func humanInvalidationSummary(reasons []string) string {
 	}
 
 	return fmt.Sprintf("Your workspace changed since the previous run (%s), so Concierge re-checked everything.", strings.Join(labels, ", "))
+}
+
+type planCapturePlanner struct {
+	base ports.Planner
+
+	mu         sync.RWMutex
+	lastStatus core.IntegrationStatus
+	hasStatus  bool
+}
+
+func newPlanCapturePlanner(base ports.Planner) *planCapturePlanner {
+	return &planCapturePlanner{base: base}
+}
+
+func (p *planCapturePlanner) Plan(ctx context.Context, snapshot core.WorkspaceSnapshot, status core.IntegrationStatus) (core.ExecutionPlan, error) {
+	plan, err := p.base.Plan(ctx, snapshot, status)
+	if err != nil {
+		return core.ExecutionPlan{}, err
+	}
+
+	p.mu.Lock()
+	p.lastStatus = cloneIntegrationStatus(status)
+	p.hasStatus = true
+	p.mu.Unlock()
+
+	return plan, nil
+}
+
+func (p *planCapturePlanner) LastStatus() (core.IntegrationStatus, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if !p.hasStatus {
+		return core.IntegrationStatus{}, false
+	}
+	return cloneIntegrationStatus(p.lastStatus), true
+}
+
+func cloneIntegrationStatus(status core.IntegrationStatus) core.IntegrationStatus {
+	cloned := core.IntegrationStatus{}
+	if len(status.Missing) > 0 {
+		cloned.Missing = append([]string(nil), status.Missing...)
+	}
+	if len(status.Issues) > 0 {
+		cloned.Issues = append([]core.Issue(nil), status.Issues...)
+	}
+	return cloned
+}
+
+func checklistStepsForPrompt() []core.EnsureStep {
+	known := core.KnownEnsureSteps()
+	steps := make([]core.EnsureStep, 0, len(known))
+	for _, step := range known {
+		if step.ID == core.EnsureStepComplete || step.ID == core.EnsureStepInvestigate {
+			continue
+		}
+		steps = append(steps, step)
+	}
+	return steps
+}
+
+func blockingIssuesForStep(issues []core.Issue, stepID core.EnsureStepID) []core.Issue {
+	filtered := make([]core.Issue, 0, len(issues))
+	for _, issue := range issues {
+		if issue.Severity != core.SeverityError {
+			continue
+		}
+		step := core.PreferredEnsureStepForIssue(issue)
+		if step.ID != stepID {
+			continue
+		}
+		filtered = append(filtered, issue)
+	}
+
+	sort.SliceStable(filtered, func(i, j int) bool {
+		if filtered[i].Code != filtered[j].Code {
+			return filtered[i].Code < filtered[j].Code
+		}
+		return filtered[i].Message < filtered[j].Message
+	})
+	return filtered
 }

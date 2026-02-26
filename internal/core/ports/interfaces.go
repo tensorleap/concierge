@@ -26,6 +26,11 @@ type Executor interface {
 	Execute(ctx context.Context, snapshot core.WorkspaceSnapshot, step core.EnsureStep) (core.ExecutionResult, error)
 }
 
+// GitManager performs diff review + approval + commit/reject change control.
+type GitManager interface {
+	Handle(ctx context.Context, snapshot core.WorkspaceSnapshot, result core.ExecutionResult) (core.GitDecision, error)
+}
+
 // Validator verifies post-execution acceptance checks.
 type Validator interface {
 	Validate(ctx context.Context, snapshot core.WorkspaceSnapshot, result core.ExecutionResult) (core.ValidationResult, error)

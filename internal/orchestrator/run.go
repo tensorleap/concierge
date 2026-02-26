@@ -9,6 +9,8 @@ import (
 // RunOptions configures the outer orchestration loop.
 type RunOptions struct {
 	MaxIterations int
+	BeforeReport  func(snapshot core.WorkspaceSnapshot, report *core.IterationReport) error
+	AfterReport   func(snapshot core.WorkspaceSnapshot, report core.IterationReport) error
 }
 
 // RunStopReason captures why the orchestration loop stopped.
@@ -42,7 +44,7 @@ func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOpti
 			}, err
 		}
 
-		report, err := e.RunIteration(ctx, req)
+		report, snapshot, err := e.runIteration(ctx, req, opts.BeforeReport)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return RunResult{
@@ -54,6 +56,11 @@ func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOpti
 		}
 
 		reports = append(reports, report)
+		if opts.AfterReport != nil {
+			if err := opts.AfterReport(snapshot, report); err != nil {
+				return RunResult{Reports: reports}, err
+			}
+		}
 		if report.Step.ID == core.EnsureStepComplete {
 			return RunResult{
 				Reports:    reports,

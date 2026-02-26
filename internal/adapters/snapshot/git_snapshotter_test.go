@@ -239,3 +239,72 @@ func TestSnapshotResolveRootErrorIsTyped(t *testing.T) {
 		t.Fatalf("expected kind %q, got %q", core.KindUnknown, kind)
 	}
 }
+
+func TestSnapshotIncludesEnvironmentFingerprints(t *testing.T) {
+	repo := initGitRepo(t)
+	writeFile(t, filepath.Join(repo, "requirements.txt"), "numpy\n")
+
+	snapshotter := NewGitSnapshotter()
+	snapshotter.lookPath = func(file string) (string, error) {
+		switch file {
+		case "python3":
+			return "/usr/bin/python3", nil
+		case "leap":
+			return "/usr/local/bin/leap", nil
+		default:
+			return "", exec.ErrNotFound
+		}
+	}
+	snapshotter.runCommand = func(ctx context.Context, dir string, name string, args ...string) ([]byte, []byte, error) {
+		_ = ctx
+		_ = dir
+		command := name + " " + strings.Join(args, " ")
+		switch command {
+		case "python3 --version":
+			return []byte("Python 3.11.8\n"), nil, nil
+		case "leap version":
+			return []byte("leap v0.2.0\n"), nil, nil
+		case "leap auth whoami":
+			return []byte("concierge@example.com\n"), nil, nil
+		case "leap server info":
+			return []byte("datasetvolumes: []\n"), nil, nil
+		default:
+			return nil, []byte("unknown command"), errors.New("command failed")
+		}
+	}
+
+	snapshotValue, err := snapshotter.Snapshot(context.Background(), core.SnapshotRequest{RepoRoot: repo})
+	if err != nil {
+		t.Fatalf("Snapshot returned error: %v", err)
+	}
+
+	if !snapshotValue.Runtime.PythonFound {
+		t.Fatal("expected Python to be marked as found")
+	}
+	if snapshotValue.Runtime.PythonExecutable != "python3" {
+		t.Fatalf("expected python executable %q, got %q", "python3", snapshotValue.Runtime.PythonExecutable)
+	}
+	if snapshotValue.Runtime.PythonVersion != "Python 3.11.8" {
+		t.Fatalf("expected python version %q, got %q", "Python 3.11.8", snapshotValue.Runtime.PythonVersion)
+	}
+	if len(snapshotValue.Runtime.RequirementsFiles) != 1 || snapshotValue.Runtime.RequirementsFiles[0] != "requirements.txt" {
+		t.Fatalf("expected requirements file detection, got %+v", snapshotValue.Runtime.RequirementsFiles)
+	}
+
+	if !snapshotValue.LeapCLI.Available {
+		t.Fatal("expected leap CLI availability to be true")
+	}
+	if snapshotValue.LeapCLI.Version != "leap v0.2.0" {
+		t.Fatalf("expected leap version %q, got %q", "leap v0.2.0", snapshotValue.LeapCLI.Version)
+	}
+	if !snapshotValue.LeapCLI.Authenticated {
+		t.Fatal("expected leap auth probe to pass")
+	}
+	if !snapshotValue.LeapCLI.ServerInfoReachable {
+		t.Fatal("expected leap server info probe to pass")
+	}
+
+	if snapshotValue.FileHashes["requirements.txt"] == "" {
+		t.Fatalf("expected requirements.txt hash in snapshot, got %+v", snapshotValue.FileHashes)
+	}
+}

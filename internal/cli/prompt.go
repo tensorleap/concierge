@@ -1,0 +1,84 @@
+package cli
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"strconv"
+	"strings"
+)
+
+func promptProjectRootSelection(in io.Reader, out io.Writer, candidates []string) (string, error) {
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("no project root candidates available")
+	}
+	if len(candidates) == 1 {
+		return candidates[0], nil
+	}
+
+	if out == nil {
+		out = io.Discard
+	}
+	if _, err := fmt.Fprintln(out, "Multiple project roots detected. Select one:"); err != nil {
+		return "", err
+	}
+	for i, candidate := range candidates {
+		if _, err := fmt.Fprintf(out, "%d) %s\n", i+1, candidate); err != nil {
+			return "", err
+		}
+	}
+	if _, err := fmt.Fprint(out, "Enter selection [1-", len(candidates), "]: "); err != nil {
+		return "", err
+	}
+
+	line, err := readPromptLine(in)
+	if err != nil {
+		return "", err
+	}
+
+	selected, err := strconv.Atoi(strings.TrimSpace(line))
+	if err != nil || selected < 1 || selected > len(candidates) {
+		return "", fmt.Errorf("invalid project root selection %q", strings.TrimSpace(line))
+	}
+
+	return candidates[selected-1], nil
+}
+
+func promptApproval(in io.Reader, out io.Writer, message string) (bool, error) {
+	if out == nil {
+		out = io.Discard
+	}
+	if _, err := fmt.Fprintf(out, "%s [y/N]: ", strings.TrimSpace(message)); err != nil {
+		return false, err
+	}
+
+	line, err := readPromptLine(in)
+	if err != nil {
+		return false, err
+	}
+
+	normalized := strings.ToLower(strings.TrimSpace(line))
+	switch normalized {
+	case "y", "yes":
+		return true, nil
+	case "", "n", "no":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid confirmation response %q", line)
+	}
+}
+
+func readPromptLine(in io.Reader) (string, error) {
+	if in == nil {
+		return "", io.EOF
+	}
+	reader := bufio.NewReader(in)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		if err == io.EOF {
+			return strings.TrimSpace(line), nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(line), nil
+}

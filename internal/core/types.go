@@ -46,10 +46,32 @@ type RepositoryState struct {
 
 // WorkspaceSnapshot is an immutable iteration input.
 type WorkspaceSnapshot struct {
-	ID                  string          `json:"id"`
-	CapturedAt          time.Time       `json:"capturedAt"`
-	WorktreeFingerprint string          `json:"worktreeFingerprint"`
-	Repository          RepositoryState `json:"repository"`
+	ID                  string            `json:"id"`
+	CapturedAt          time.Time         `json:"capturedAt"`
+	WorktreeFingerprint string            `json:"worktreeFingerprint"`
+	Repository          RepositoryState   `json:"repository"`
+	FileHashes          map[string]string `json:"fileHashes,omitempty"`
+	Runtime             RuntimeState      `json:"runtime,omitempty"`
+	LeapCLI             LeapCLIState      `json:"leapCli,omitempty"`
+}
+
+// RuntimeState captures lightweight runtime/tooling fingerprints.
+type RuntimeState struct {
+	ProbeRan          bool     `json:"probeRan"`
+	PythonFound       bool     `json:"pythonFound"`
+	PythonExecutable  string   `json:"pythonExecutable,omitempty"`
+	PythonVersion     string   `json:"pythonVersion,omitempty"`
+	RequirementsFiles []string `json:"requirementsFiles,omitempty"`
+}
+
+// LeapCLIState captures non-destructive CLI/auth/server readiness probes.
+type LeapCLIState struct {
+	ProbeRan            bool   `json:"probeRan"`
+	Available           bool   `json:"available"`
+	Version             string `json:"version,omitempty"`
+	Authenticated       bool   `json:"authenticated"`
+	ServerInfoReachable bool   `json:"serverInfoReachable"`
+	ServerInfoError     string `json:"serverInfoError,omitempty"`
 }
 
 // Severity represents the importance of an inspection or validation issue.
@@ -116,6 +138,20 @@ type ExecutionResult struct {
 	Evidence []EvidenceItem `json:"evidence,omitempty"`
 }
 
+// CommitMetadata describes an audited git commit created for one iteration.
+type CommitMetadata struct {
+	Hash    string `json:"hash"`
+	Message string `json:"message"`
+}
+
+// GitDecision captures change-control outcomes for one execution result.
+type GitDecision struct {
+	FinalResult ExecutionResult `json:"finalResult"`
+	Commit      *CommitMetadata `json:"commit,omitempty"`
+	Notes       []string        `json:"notes,omitempty"`
+	Evidence    []EvidenceItem  `json:"evidence,omitempty"`
+}
+
 // ValidationResult describes post-execution acceptance checks.
 type ValidationResult struct {
 	Passed bool    `json:"passed"`
@@ -127,7 +163,9 @@ type IterationReport struct {
 	GeneratedAt time.Time        `json:"generatedAt"`
 	SnapshotID  string           `json:"snapshotId"`
 	Step        EnsureStep       `json:"step"`
+	Applied     bool             `json:"applied"`
 	Evidence    []EvidenceItem   `json:"evidence,omitempty"`
 	Validation  ValidationResult `json:"validation"`
+	Commit      *CommitMetadata  `json:"commit,omitempty"`
 	Notes       []string         `json:"notes,omitempty"`
 }

@@ -15,6 +15,7 @@ type Dependencies struct {
 	Inspector   ports.Inspector
 	Planner     ports.Planner
 	Executor    ports.Executor
+	GitManager  ports.GitManager
 	Validator   ports.Validator
 	Reporter    ports.Reporter
 	Clock       func() time.Time
@@ -26,6 +27,7 @@ type Engine struct {
 	inspector   ports.Inspector
 	planner     ports.Planner
 	executor    ports.Executor
+	gitManager  ports.GitManager
 	validator   ports.Validator
 	reporter    ports.Reporter
 	clock       func() time.Time
@@ -64,6 +66,7 @@ func NewEngine(deps Dependencies) (*Engine, error) {
 		inspector:   deps.Inspector,
 		planner:     deps.Planner,
 		executor:    deps.Executor,
+		gitManager:  deps.GitManager,
 		validator:   deps.Validator,
 		reporter:    deps.Reporter,
 		clock:       clock,
@@ -72,44 +75,78 @@ func NewEngine(deps Dependencies) (*Engine, error) {
 
 // RunIteration executes the canonical stage sequence for one orchestration loop.
 func (e *Engine) RunIteration(ctx context.Context, req core.SnapshotRequest) (core.IterationReport, error) {
+	report, _, err := e.runIteration(ctx, req, nil)
+	return report, err
+}
+
+func (e *Engine) runIteration(
+	ctx context.Context,
+	req core.SnapshotRequest,
+	beforeReport func(snapshot core.WorkspaceSnapshot, report *core.IterationReport) error,
+) (core.IterationReport, core.WorkspaceSnapshot, error) {
 	snapshot, err := e.snapshotter.Snapshot(ctx, req)
 	if err != nil {
-		return core.IterationReport{}, &StageError{Stage: core.StageSnapshot, Err: err}
+		return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StageSnapshot, Err: err}
 	}
 
 	status, err := e.inspector.Inspect(ctx, snapshot)
 	if err != nil {
-		return core.IterationReport{}, &StageError{Stage: core.StageInspect, Err: err}
+		return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StageInspect, Err: err}
 	}
 
 	plan, err := e.planner.Plan(ctx, snapshot, status)
 	if err != nil {
-		return core.IterationReport{}, &StageError{Stage: core.StagePlan, Err: err}
+		return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StagePlan, Err: err}
 	}
 
 	result, err := e.executor.Execute(ctx, snapshot, plan.Primary)
 	if err != nil {
-		return core.IterationReport{}, &StageError{Stage: core.StageExecute, Err: err}
+		return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StageExecute, Err: err}
 	}
 
-	validation, err := e.validator.Validate(ctx, snapshot, result)
-	if err != nil {
-		return core.IterationReport{}, &StageError{Stage: core.StageValidate, Err: err}
+	decision := core.GitDecision{FinalResult: result}
+	if e.gitManager != nil {
+		decision, err = e.gitManager.Handle(ctx, snapshot, result)
+		if err != nil {
+			return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StageExecute, Err: err}
+		}
+		if decision.FinalResult.Step.ID == "" {
+			decision.FinalResult = result
+		}
 	}
+
+	finalResult := decision.FinalResult
+
+	validation, err := e.validator.Validate(ctx, snapshot, finalResult)
+	if err != nil {
+		return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StageValidate, Err: err}
+	}
+
+	evidence := append([]core.EvidenceItem(nil), finalResult.Evidence...)
+	evidence = append(evidence, decision.Evidence...)
 
 	report := core.IterationReport{
 		GeneratedAt: e.clock(),
 		SnapshotID:  snapshot.ID,
-		Step:        result.Step,
-		Evidence:    result.Evidence,
+		Step:        finalResult.Step,
+		Applied:     finalResult.Applied,
+		Evidence:    evidence,
 		Validation:  validation,
+		Commit:      decision.Commit,
+		Notes:       append([]string(nil), decision.Notes...),
+	}
+
+	if beforeReport != nil {
+		if err := beforeReport(snapshot, &report); err != nil {
+			return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StageReport, Err: err}
+		}
 	}
 
 	if err := e.reporter.Report(ctx, report); err != nil {
-		return core.IterationReport{}, &StageError{Stage: core.StageReport, Err: err}
+		return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StageReport, Err: err}
 	}
 
-	return report, nil
+	return report, snapshot, nil
 }
 
 func missingDependencyError(name string) error {

@@ -1,161 +1,186 @@
 # Concierge Detailed Implementation Plan (Execution-Ready)
 
-This ExecPlan is a living document. Keep `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` up to date.
+This ExecPlan is a living document. Keep `Progress`, `Gap Analysis`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` up to date.
 
 ## Revision Notes
 
-- 2026-02-26 06:15Z: Per explicit user direction, marked Step 5H and Steps 6A-6E as `ACCEPTED` and prepared direct commit to `main`.
-- 2026-02-26 06:09Z: Implemented Steps 6A-6E together on `feature/step-6a-6e`; local validation is green (`go test ./...`, fixture prep/verify, and opt-in fixture E2E checks). Step statuses remain `PENDING` until explicit user approval plus commit/push/PR/CI per workflow.
-- 2026-02-25 17:06Z: Verified merged state on `main` through PR #6 and updated step statuses so Steps 4C through 5G are `ACCEPTED`.
-- 2026-02-25 16:17Z: Implemented Steps 5B-5F adapters and tests on `feature/step-5b-5f-baseline-adapters`; local validation (`go test ./...`) is green. Step statuses remain `PENDING` until explicit user approval plus commit/push/PR/CI per workflow.
-- 2026-02-25 16:06Z: Completed Step 5A on `feature/step-5a-snapshot-adapter` and opened PR #4 with green branch CI; updated progress/status to advance next actionable step to 5B.
-- 2026-02-25 12:28Z: Updated remaining `PENDING` steps to close design/plan gaps: added explicit Step 4C multi-iteration loop and Step 5H non-dry-run CLI wiring; strengthened Step 5A/5B/5C contracts; normalized all remaining steps with explicit interface changes and rollback boundaries.
-- 2026-02-25 12:10Z: Replaced the coarse pending-step summary with a decision-complete implementation spec. The new plan defines exact interfaces, file-level edits, test cases, validation commands, fixture preparation strategy, and acceptance criteria for every pending step.
+- 2026-02-26: Re-baselined remaining work after a full README/PLAN/code audit. Added explicit gap analysis and replaced the old two-step tail (`Step 7`, `Step 8`) with a detailed operational completion plan (`Steps 7A-12B`).
+- 2026-02-26: Verified current baseline is green locally: `go test ./...`, `bash scripts/fixtures_prepare.sh`, `bash scripts/fixtures_verify.sh`, `bash scripts/fixtures_run_checks.sh`.
+- 2026-02-26: Confirmed current implementation is still scaffold-first (stub executor, optional harness gate, no real `leap push` path, no git approval/commit loop in product runtime).
 
-## Purpose / Big Picture
+## Purpose / Exit Target
 
-Move Concierge from a contract-only foundation to a deterministic, runnable orchestration system with:
+Finish Concierge from deterministic scaffold to fully operational integration assistant that:
 
-1. A strict stage pipeline (`snapshot -> inspect -> plan -> execute -> validate -> report`).
-2. Adapter implementations that can run without external services first.
-3. Persistent state/report/evidence artifacts under `.concierge/`.
-4. Fixture-based pre-integration vs post-integration comparisons using Tensorleap Hub repositories.
+1. Executes real ensure-steps (not stub-only).
+2. Supports user-approved repo mutations and audited commits on feature branches.
+3. Runs Tensorleap readiness checks, harness validation, and guarded upload flow.
+4. Produces persistent state/evidence artifacts under `.concierge/`.
+5. Is validated end-to-end against fixture repos in CI.
 
-The desired outcome is that another engineer can implement each step with no additional product decisions.
+## Gap Analysis (README vs PLAN vs Current Code)
+
+| Gap ID | Requirement Source | Current State | Impact | Closing Step |
+| --- | --- | --- | --- | --- |
+| G1 | README §8/§10: Ensure-step `Fix` must apply real actions | `internal/adapters/execute/stub_executor.go` always returns `Applied=false` + `not implemented` | Concierge cannot remediate integration issues | 9A |
+| G2 | README §10/§11: user approvals + diff review + commit workflow | No runtime git diff approval/accept/reject/commit path in orchestration | Unsafe/non-audited changes; no product commit trail | 9B |
+| G3 | README §10: agent collaboration for focused objectives | No `AgentRunner` implementation or executor integration | Complex integration fixes cannot be delegated | 9C |
+| G4 | README §6.2: persistent mutable state (`.concierge/state.json`) | Paths exist but state is never read/written | No cross-iteration memory or invalidation semantics | 7A |
+| G5 | README §6.1/§8.2: richer snapshot/inspection coverage | Snapshot + inspector only cover baseline files and git identity | Missing critical diagnostics (model/include-exclude/runtime/auth/server) | 8A |
+| G6 | README §8 planner semantics: deterministic next primary action with gate-aware ordering | Planner only maps current issue codes; no gate-aware policy for mutation/push readiness | Suboptimal action ordering and completion semantics | 8B |
+| G7 | README §9: runtime harness is core validation layer | Harness is optional via env and currently stub-script-based | No high-resolution runtime correctness evidence in normal runs | 10A |
+| G8 | README §9.2: integration-test call coverage enforcement | No AST/runtime enforcement of required decorator calls in integration test | False positives possible despite incomplete wiring | 10B |
+| G9 | README §12: real `leap` workflow + upload gating + explicit confirmation | `concierge run` has no `leap` orchestration path and no push gate | Cannot complete actual Tensorleap integration flow | 10C |
+| G10 | README §13.4: fixture behavior fingerprints, not only file presence | Fixture E2E checks only artifact-missing deltas and persistence files | Insufficient confidence for semantic correctness | 11B |
+| G11 | PLAN Step 7: lint/test/build gates | `make lint` and lint config missing; CI lacks lint job | Tooling quality gate gap | 11C |
+| G12 | PLAN Step 8 / README docs requirements | `docs/` package absent; README implementation status stale | Onboarding and operational guidance drift | 12A |
+| G13 | User request: CI against fixture repos | CI prepares/verifies fixtures but does not run fixture E2E suite | No automated proof of repo-level behavior | 11C |
 
 ## Progress
 
 | Item | Status | Updated | Scope |
 | --- | --- | --- | --- |
-| Plan tracking bootstrap | `DONE` | 2026-02-25 07:07Z | Establish `PLAN.md` as the cross-session source of truth. |
-| Step 1: Baseline cleanup | `ACCEPTED` | 2026-02-25 07:28Z (`main`) | Remove inherited Python/aider workflows, add Go module metadata, add minimal Go CI, and add README implementation-status note. |
-| Step 2: Cobra CLI bootstrap + release automation | `ACCEPTED` | 2026-02-25 10:57Z (`main`) | Add `root`/`doctor`/`run --dry-run`/`version` with global `--log-level`; add semver release automation for Linux/macOS amd64+arm64 with release notes. |
-| Step 3: Core deterministic contracts | `ACCEPTED` | 2026-02-25 11:24Z (`main`) | Add `internal/core` types + typed errors and `internal/core/ports` interfaces; seed issue-code catalog and deterministic issue-to-step mapping helpers. |
-| Step 4A: Iteration engine skeleton | `ACCEPTED` | 2026-02-25 11:55Z (`main`) | Add `internal/orchestrator` engine and stage-scoped error handling with strict call order and short-circuit semantics. |
-| Step 4B: CLI dry-run wiring to engine metadata | `ACCEPTED` | 2026-02-25 12:41Z (`main`) | Remove hardcoded stage string in `run --dry-run`; render stage order from orchestrator/core metadata. |
-| Step 4C: Multi-iteration orchestration loop | `ACCEPTED` | 2026-02-25 12:53Z (`main`, PR #3) | Add explicit outer loop with max-iterations + deterministic stop conditions; aggregate per-iteration reports. |
-| Step 5A: Snapshot adapter (git and workspace identity) | `ACCEPTED` | 2026-02-25 16:09Z (`main`, PR #4) | Implement snapshot adapter for repo root/git root/branch/head plus stable worktree fingerprint for change detection and deterministic snapshot IDs. |
-| Step 5B: Inspector adapter (Layer 1 baseline inventory) | `ACCEPTED` | 2026-02-25 16:24Z (`main`, PR #5) | Implement deterministic inventory checks for required integration artifacts, plus minimal `leap.yaml` parse + `entryFile` validation, emitting canonical issues. |
-| Step 5C: Planner adapter | `ACCEPTED` | 2026-02-25 16:24Z (`main`, PR #5) | Implement planner using `IssueCode -> EnsureStep` mapping and deterministic primary/secondary step selection; define terminal "complete" step for no-issue state. |
-| Step 5D: Executor adapter skeleton | `ACCEPTED` | 2026-02-25 16:24Z (`main`, PR #5) | Add ensure-step dispatcher that returns structured execution results and evidence stubs. |
-| Step 5E: Validator adapter baseline | `ACCEPTED` | 2026-02-25 16:24Z (`main`, PR #5) | Add deterministic validation checks over execution results (without Python harness yet). |
-| Step 5F: Reporter adapter baseline | `ACCEPTED` | 2026-02-25 16:24Z (`main`, PR #5) | Add reporter that emits human-readable summary and machine-readable in-memory report payload. |
-| Step 5G: Fixture corpus preparation | `ACCEPTED` | 2026-02-25 16:51Z (`main`, PR #6) | Add fixture manifest and scripts that materialize post-integration and pre-integration working copies locally. |
-| Step 5H: CLI `run` (non-dry-run) wiring | `ACCEPTED` | 2026-02-26 06:15Z (`main`) | Wire CLI `run` to default adapters + orchestrator multi-iteration loop with `--max-iterations`; no repo mutation beyond reporting in this phase. |
-| Step 6A: `.concierge` persistence primitives | `ACCEPTED` | 2026-02-26 06:15Z (`main`) | Add atomic JSON writer and stable path layout for state/reports/evidence artifacts. |
-| Step 6B: Persist reports and evidence from pipeline | `ACCEPTED` | 2026-02-26 06:15Z (`main`) | Wire reporter/executor outputs to `.concierge/reports` and `.concierge/evidence`; add CLI switch to enable persistence output. |
-| Step 6C: Runtime harness baseline (Layer 2) | `ACCEPTED` | 2026-02-26 06:15Z (`main`) | Add initial Python harness invocation contract and deterministic parsing of harness outputs into `IssueCode`s. |
-| Step 6D: Anti-stub heuristics baseline (Layer 3) | `ACCEPTED` | 2026-02-26 06:15Z (`main`) | Add constant-output and empty-subset heuristics as deterministic validator findings. |
-| Step 6E: Fixture-backed pre-vs-post behavior tests | `ACCEPTED` | 2026-02-26 06:15Z (`main`) | Execute Concierge against prepared fixtures and assert behavior/contract deltas between pre and post variants. |
-| Step 7: Developer tooling and CI expansion | `PENDING` | — | Add lint/test/build gates and fixture-test strategy in CI with safe defaults. |
-| Step 8: Documentation sync | `PENDING` | — | Update architecture/dev setup/README to match actual implementation and fixture workflow. |
+| Plan tracking bootstrap | `DONE` | 2026-02-25 | Established `PLAN.md` as the cross-session source of truth. |
+| Step 1: Baseline cleanup | `ACCEPTED` | 2026-02-25 (`main`) | Removed inherited workflows, initialized Go baseline CI. |
+| Step 2: Cobra bootstrap + release automation | `ACCEPTED` | 2026-02-25 (`main`) | Added core CLI commands and semver release pipeline (linux/macos amd64+arm64). |
+| Step 3: Core deterministic contracts | `ACCEPTED` | 2026-02-25 (`main`) | Added core types, errors, ports, issue catalog, and issue->step mapping. |
+| Step 4A: Iteration engine skeleton | `ACCEPTED` | 2026-02-25 (`main`) | Added strict stage-order orchestrator and stage error handling. |
+| Step 4B: Dry-run stage metadata wiring | `ACCEPTED` | 2026-02-25 (`main`) | `run --dry-run` now renders canonical stage list from core metadata. |
+| Step 4C: Multi-iteration loop | `ACCEPTED` | 2026-02-25 (`main`) | Added max-iteration run loop and deterministic stop reasons. |
+| Step 5A: Snapshot adapter baseline | `ACCEPTED` | 2026-02-25 (`main`) | Implemented git identity + worktree fingerprint snapshot. |
+| Step 5B: Inspector adapter baseline | `ACCEPTED` | 2026-02-25 (`main`) | Implemented required artifact inventory + minimal `leap.yaml` entry validation. |
+| Step 5C: Planner adapter baseline | `ACCEPTED` | 2026-02-25 (`main`) | Deterministic issue->step primary/additional planning and `ensure.complete`. |
+| Step 5D: Executor adapter skeleton | `ACCEPTED` | 2026-02-25 (`main`) | Added non-mutating stub executor with deterministic evidence stub. |
+| Step 5E: Validator baseline | `ACCEPTED` | 2026-02-25 (`main`) | Added deterministic baseline validator flow and issue aggregation. |
+| Step 5F: Reporter baseline | `ACCEPTED` | 2026-02-25 (`main`) | Added one-line summary reporter. |
+| Step 5G: Fixture corpus preparation | `ACCEPTED` | 2026-02-25 (`main`) | Added fixture manifest + prepare/verify scripts. |
+| Step 5H: CLI non-dry-run pipeline wiring | `ACCEPTED` | 2026-02-26 (`main`) | Wired default adapters into engine loop with `--max-iterations`. |
+| Step 6A: Persistence primitives | `ACCEPTED` | 2026-02-26 (`main`) | Added atomic JSON writer + `.concierge` path helpers. |
+| Step 6B: Persist reports and evidence | `ACCEPTED` | 2026-02-26 (`main`) | Added file reporter and CLI `--persist` path. |
+| Step 6C: Harness invocation baseline | `ACCEPTED` | 2026-02-26 (`main`) | Added env-gated harness runner/parser contract and tests. |
+| Step 6D: Anti-stub heuristics baseline | `ACCEPTED` | 2026-02-26 (`main`) | Added deterministic heuristic issue derivation from harness events. |
+| Step 6E: Fixture pre-vs-post baseline tests | `ACCEPTED` | 2026-02-26 (`main`) | Added fixture delta/planner/persistence E2E assertions. |
+| Step 7A: Persistent run state + invalidation engine | `PENDING` | — | Implement `.concierge/state/state.json` lifecycle and invalidation reasons across iterations. |
+| Step 7B: Interactive run session UX (project-root + approvals) | `PENDING` | — | Add prompt-driven flow and non-interactive guard rails for deterministic execution. |
+| Step 8A: Snapshot/Inspector expansion to readiness checks | `PENDING` | — | Extend snapshot/inspect to cover env, include/exclude, model, CLI/auth/server findings. |
+| Step 8B: Planner policy hardening and gate-aware ordering | `PENDING` | — | Deterministic priority rules aware of blocker severity and push/mutation gates. |
+| Step 9A: Deterministic executor implementations (non-agent) | `PENDING` | — | Implement real ensure-step mutations for scaffoldable contracts. |
+| Step 9B: GitManager runtime integration (diff/approve/reject/commit) | `PENDING` | — | Add audited branch-safe change-control loop in product runtime. |
+| Step 9C: AgentRunner integration for complex ensure-steps | `PENDING` | — | Add task-scoped coding-agent collaboration path and transcript evidence. |
+| Step 10A: Real runtime harness (Layer 2) | `PENDING` | — | Replace stub with executable Python harness producing semantic coverage evidence. |
+| Step 10B: Integration-test wiring checks + advanced anti-stub rules | `PENDING` | — | Enforce decorator call coverage and strengthen heuristics against skeleton integrations. |
+| Step 10C: Upload readiness + guarded `leap push` execution | `PENDING` | — | Implement full Tensorleap CLI readiness and explicit push confirmation path. |
+| Step 11A: Fixture governance hardening | `PENDING` | — | Encode fixture suitability gate and manifest validation automation. |
+| Step 11B: Fixture behavior-fingerprint E2E suite | `PENDING` | — | Assert pre/post semantic deltas using harness-derived fingerprints, not only missing files. |
+| Step 11C: CI expansion with fixture E2E execution | `PENDING` | — | Add lint/test/build + fixture E2E CI jobs with stable retry/timeouts. |
+| Step 12A: Documentation sync (README + docs/*) | `PENDING` | — | Align all docs with implemented behavior, trust model, and fixture workflows. |
+| Step 12B: Release-readiness hardening | `PENDING` | — | Final polish: deterministic defaults, failure ergonomics, and final acceptance checklist. |
 
-## Scope Boundaries For This Phase
+## Scope Boundaries For Remaining Work
 
 In scope:
 
-1. Deterministic orchestration and adapters in Go.
-2. Local fixture preparation and local fixture validation.
-3. Machine-readable artifacts and deterministic tests.
+1. End-to-end operational run loop from detect->fix->validate->report->commit->optional push.
+2. Deterministic non-agent fixes plus agent-assisted complex fixes.
+3. Fixture-backed semantic validation and CI automation.
+4. Documentation required for maintainers and operators.
 
-Out of scope for this phase:
+Out of scope for this release train:
 
-1. Full live Tensorleap server E2E upload automation in CI.
-2. Production-grade agent mediation boundary enforcement.
-3. Broad Python model execution matrix beyond fixture needs.
+1. Managed cloud brokerage for coding-agent credentials.
+2. Full backend enforcement sandbox outside local trust model.
+3. Automatic Tensorleap server installation/provisioning.
 
-## Detailed Step Specifications
+## Detailed Step Specifications (Active Pending Steps)
 
-### Step 4A: Iteration engine skeleton (`ACCEPTED`)
+### Step 7A: Persistent run state + invalidation engine (`PENDING`)
 
 Objective:
 
-Implement a deterministic orchestration engine that composes existing `ports` and enforces stage ordering and failure semantics.
+Implement durable run state in `.concierge/state/state.json` and deterministic invalidation rules when dependencies change.
 
 Files to add:
 
-1. `internal/orchestrator/engine.go`
-2. `internal/orchestrator/errors.go`
-3. `internal/orchestrator/engine_test.go`
+1. `internal/state/store.go`
+2. `internal/state/types.go`
+3. `internal/state/store_test.go`
 
 Files to modify:
 
-1. `internal/core/types.go` only if a new report field is strictly required (default: no change).
+1. `internal/persistence/paths.go` (if additional deterministic directories are needed)
+2. `internal/orchestrator/run.go`
+3. `internal/cli/run.go`
 
-Public interface and types (locked decisions):
+Interface/API changes:
 
-1. `type Dependencies struct { Snapshotter ports.Snapshotter; Inspector ports.Inspector; Planner ports.Planner; Executor ports.Executor; Validator ports.Validator; Reporter ports.Reporter; Clock func() time.Time }`
-2. `func NewEngine(deps Dependencies) (*Engine, error)`
-3. `func (e *Engine) RunIteration(ctx context.Context, req core.SnapshotRequest) (core.IterationReport, error)`
-4. `type StageError struct { Stage core.Stage; Err error }` with `Error()` and `Unwrap()`.
+1. `type RunState struct { Version int; SelectedProjectRoot string; LastSnapshotID string; LastHead string; LastWorktreeFingerprint string; LastPrimaryStep core.EnsureStepID; LastRunAt time.Time; InvalidationReasons []string }`
+2. `LoadState(projectRoot string) (RunState, error)` and `SaveState(projectRoot string, state RunState) error`.
 
 Implementation tasks:
 
-1. Validate all dependencies in `NewEngine`; return typed missing-dependency errors with operation context.
-2. Provide default clock (`time.Now().UTC`) when `Clock` is nil.
-3. Run stages strictly in this order: snapshot, inspect, plan, execute, validate, report.
-4. On each stage failure, return `*StageError` and do not call later stages.
-5. Build `core.IterationReport` from snapshot ID, selected step, validation result, and generated timestamp.
-6. Call reporter once on success path; reporting errors should also be wrapped as `StageError{Stage: core.StageReport}`.
+1. Load state at run start; initialize defaults if missing.
+2. Compute invalidation reasons based on snapshot deltas (HEAD/worktree/root change).
+3. Persist state after each iteration with atomic write.
+4. Record invalidation reasons in report notes/evidence.
 
-Test cases (exact):
+Tests:
 
-1. `TestRunIterationSuccessCallsStagesInOrder`
-2. `TestRunIterationSnapshotFailureStopsPipeline`
-3. `TestRunIterationInspectFailureStopsPipeline`
-4. `TestRunIterationPlanFailureStopsPipeline`
-5. `TestRunIterationExecuteFailureStopsPipeline`
-6. `TestRunIterationValidateFailureStopsPipeline`
-7. `TestRunIterationReportFailureReturnsStageError`
-8. `TestNewEngineRejectsMissingDependencies`
-9. `TestRunIterationUsesDefaultClock`
+1. `TestLoadStateReturnsDefaultWhenMissing`
+2. `TestSaveStateAtomicRoundTrip`
+3. `TestInvalidationReasonsOnHeadAndWorktreeChange`
+4. `TestStatePersistsAcrossMultipleIterations`
 
 Validation commands:
 
-1. `go test ./internal/orchestrator ./internal/core ./internal/core/ports`
+1. `go test ./internal/state ./internal/orchestrator ./internal/cli`
 2. `go test ./...`
 
 Acceptance criteria:
 
-1. Success path returns a fully populated `core.IterationReport`.
-2. Failure path is stage-specific and short-circuited.
-3. Tests above exist and pass.
+1. `.concierge/state/state.json` is created and updated on run.
+2. Invalidation reasons are deterministic and observable.
 
-Rollback notes:
+Rollback boundary:
 
-1. Revert only files under `internal/orchestrator` if regression appears.
+- Revert only `internal/state/*` and direct wiring changes in `internal/cli/run.go` / `internal/orchestrator/run.go`.
 
 ---
 
-### Step 4B: CLI dry-run wiring to engine metadata (`ACCEPTED`)
+### Step 7B: Interactive run session UX (project-root + approvals) (`PENDING`)
 
 Objective:
 
-Ensure CLI dry-run output reflects canonical stage metadata from orchestrator/core instead of hardcoded text.
+Add interactive gates required by README UX principles: project-root selection, mutation confirmation, and non-interactive safeguards.
+
+Files to add:
+
+1. `internal/cli/prompt.go`
+2. `internal/cli/project_root_select.go`
+3. `internal/cli/prompt_test.go`
 
 Files to modify:
 
 1. `internal/cli/run.go`
 2. `internal/cli/run_test.go`
 
-Optional files to add:
+Interface/API changes:
 
-1. `internal/orchestrator/stages.go` if stage formatting helper is introduced.
+1. New flags:
+   1. `--project-root <path>`
+   2. `--non-interactive`
+   3. `--yes` (auto-approve mutation/push prompts in interactive-equivalent mode)
 
-Interface/API changes (if any):
+Locked behavior:
 
-- None (CLI surface remains the same; internal source-of-truth changes only).
+1. If `--project-root` is unset, detect candidates and prompt user to choose.
+2. If mutations are required and `--non-interactive` without `--yes`, fail with actionable error.
+3. Prompt text and decisions are recorded in iteration notes.
 
-Implementation tasks:
+Tests:
 
-1. Replace hardcoded stage pipeline string in `run --dry-run` with `core.DefaultStages()`-derived rendering.
-2. Keep user-visible order exactly: `snapshot -> inspect -> plan -> execute -> validate -> report`.
-3. Preserve existing guard behavior: `run` without `--dry-run` still returns not-implemented error.
-
-Exact tests to add/update:
-
-1. `TestRunDryRunPrintsExecutionStages` (assert output generated from stage list, not string literal).
-2. `TestRunWithoutDryRunReturnsNotImplementedError` (existing behavior unchanged).
+1. `TestRunPromptsForProjectRootWhenAmbiguous`
+2. `TestRunNonInteractiveFailsWithoutApprovalOverride`
+3. `TestRunYesSkipsApprovalPrompts`
 
 Validation commands:
 
@@ -164,297 +189,152 @@ Validation commands:
 
 Acceptance criteria:
 
-1. No hardcoded stage pipeline literal remains.
-2. Existing CLI UX remains unchanged except implementation source of truth.
+1. Project root and approval behavior is deterministic and test-covered.
+2. No hidden mutation path exists without explicit approval semantics.
 
 Rollback boundary:
 
-- Revert only changes made to `internal/cli/run.go`, `internal/cli/run_test.go`, and any helper file added for stage rendering.
+- Revert `internal/cli` prompt/root-selection additions only.
 
 ---
 
-### Step 4C: Multi-iteration orchestration loop (`ACCEPTED`)
+### Step 8A: Snapshot/Inspector expansion to readiness checks (`PENDING`)
 
 Objective:
 
-Implement the explicit outer runtime loop required by README section 8: repeatedly execute `RunIteration` until success or max iterations, producing an aggregated run result.
+Expand snapshot and inspector beyond artifact existence to cover operational readiness checks defined in README §§6,8,12.
 
 Files to add:
 
-1. `internal/orchestrator/run.go`
-2. `internal/orchestrator/run_test.go`
+1. `internal/adapters/inspect/leap_yaml_contract.go`
+2. `internal/adapters/inspect/model_contract.go`
+3. `internal/adapters/inspect/runtime_contract.go`
+4. `internal/adapters/inspect/leap_cli_contract.go`
 
 Files to modify:
 
-1. `internal/orchestrator/engine.go` (add method receiver/wiring as needed).
-2. `internal/core/ensure_steps.go` (add terminal step ID if missing).
+1. `internal/core/types.go`
+2. `internal/core/issues.go`
+3. `internal/adapters/snapshot/git_snapshotter.go`
+4. `internal/adapters/inspect/baseline_inspector.go`
+5. `internal/adapters/inspect/baseline_inspector_test.go`
 
-Interface/API changes (if any):
+Interface/API changes:
 
-1. Add terminal ensure-step constant in core if missing:
-   - `core.EnsureStepComplete` with stable ID `ensure.complete`.
-2. Add orchestrator run API:
-   - `type RunOptions struct { MaxIterations int }`
-   - `type RunStopReason string` with constants `success`, `max_iterations`, and `cancelled`
-   - `type RunResult struct { Reports []core.IterationReport; StopReason RunStopReason }`
-   - `func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOptions) (RunResult, error)`
+1. Extend `WorkspaceSnapshot` with optional environment/tool fingerprints (python/leap versions, key file hashes).
+2. Add missing issue codes only if not already present in `core/issues.go`.
 
-Locked behavior:
+Locked checks:
 
-1. If `opts.MaxIterations <= 0`, treat as `1`.
-2. Stop conditions:
-   1. Stop with `StopReason=success` when latest iteration selects `core.EnsureStepComplete`.
-   2. Stop with `StopReason=max_iterations` when loop reaches `MaxIterations` without `ensure.complete`; return `nil` error.
-   3. Stop with `StopReason=cancelled` and return `ctx.Err()` on context cancellation.
-3. If `RunIteration` returns an error, return it immediately and do not continue looping.
+1. Validate `leap.yaml` include/exclude contract for required files.
+2. Validate `entryFile` is inside repo and not excluded.
+3. Validate model path + `.onnx`/`.h5` format where model can be resolved.
+4. Inspect runtime prerequisites (python presence/version, requirements file detection).
+5. Inspect `leap` availability/auth/server-info reachability (non-destructive probes).
 
-Exact tests to add/update:
+Tests:
 
-1. `TestEngineRunDefaultsToSingleIterationWhenMaxIterationsZero`
-2. `TestEngineRunStopsOnEnsureStepComplete`
-3. `TestEngineRunStopsAtMaxIterations`
-4. `TestEngineRunPropagatesContextCancellation`
-5. `TestEngineRunReturnsErrorWhenRunIterationErrors`
+1. `TestInspectorDetectsEntryFileExcludedByLeapYAML`
+2. `TestInspectorDetectsUnsupportedModelFormat`
+3. `TestInspectorDetectsMissingLeapCLI`
+4. `TestInspectorDetectsServerInfoFailures`
+5. `TestSnapshotIncludesEnvironmentFingerprints`
 
 Validation commands:
 
-1. `go test ./internal/orchestrator`
+1. `go test ./internal/adapters/snapshot ./internal/adapters/inspect`
 2. `go test ./...`
 
 Acceptance criteria:
 
-1. Multi-iteration behavior exists as a dedicated API and is fully unit-tested.
-2. Stop conditions are deterministic and documented in code and plan.
-3. Step 4A per-iteration stage ordering semantics remain unchanged.
+1. Inspector emits deterministic issue set for readiness blockers beyond missing files.
+2. Planner inputs now include CLI/server/model/runtime signals.
 
 Rollback boundary:
 
-- Revert only changes in `internal/orchestrator/run.go`, `internal/orchestrator/run_test.go`, and any core ensure-step constants added for terminal completion.
+- Revert snapshot/inspector expansions and newly added issue-code mappings for this step.
 
 ---
 
-### Step 5A: Snapshot adapter (git and workspace identity) (`ACCEPTED`)
+### Step 8B: Planner policy hardening and gate-aware ordering (`PENDING`)
 
 Objective:
 
-Create a deterministic snapshot implementation that populates `core.WorkspaceSnapshot` from filesystem and git, including a stable worktree fingerprint suitable for iteration-to-iteration change detection.
+Upgrade planner selection policy to prioritize blockers deterministically and preserve push/mutation gate semantics.
 
 Files to add:
 
-1. `internal/adapters/snapshot/git_snapshotter.go`
-2. `internal/adapters/snapshot/git_snapshotter_test.go`
+1. `internal/adapters/planner/policy.go`
+2. `internal/adapters/planner/policy_test.go`
 
-Files to modify (expected):
-
-1. `internal/core/errors.go` and `internal/core/errors_test.go` (add `KindNotGitRepo`).
-2. `internal/core/types.go` and related tests only if `WorktreeFingerprint` is added to `WorkspaceSnapshot`.
-
-Interface/API changes (if any):
-
-- Add one new snapshot field if core snapshot model supports it cleanly:
-  - `WorktreeFingerprint string` (SHA-256 hex of `git status --porcelain` output)
-- If core snapshot type is not extended, keep fingerprint internal but include it in snapshot ID algorithm.
-
-Locked behavior:
-
-1. Adapter type name: `GitSnapshotter`.
-2. Snapshot request behavior:
-   1. Use `request.RepoRoot` when provided.
-   2. If empty, use current working directory.
-3. Resolve absolute repository root.
-4. Determine git root via `git rev-parse --show-toplevel`.
-5. Determine branch via `git rev-parse --abbrev-ref HEAD`.
-6. Determine HEAD via `git rev-parse HEAD`.
-7. Determine worktree status via `git status --porcelain` raw output.
-8. Worktree fingerprint algorithm:
-   - `worktreeFp = sha256_hex(raw porcelain output bytes)`
-9. Snapshot ID algorithm: SHA-256 of `root|gitRoot|branch|head|worktreeFp` (hex encoded, lowercase).
-10. `CapturedAt` uses injected clock (default UTC now).
-
-Non-git behavior (explicit):
-
-1. If `git rev-parse --show-toplevel` fails, return typed error `KindNotGitRepo` with operation context.
-2. Do not defer non-git classification to inspector, because snapshot-stage errors short-circuit by design.
-
-Error mapping:
-
-1. Command execution failures must include command and stderr in wrapped error message.
-2. Non-git repository failures must use `KindNotGitRepo`.
-
-Exact tests to add/update:
-
-1. `TestSnapshotCapturesGitIdentity`
-2. `TestSnapshotWorktreeFingerprintChangesWhenWorkingTreeChanges`
-3. `TestSnapshotIDStableForSameState`
-4. `TestSnapshotIDChangesOnHeadChange`
-5. `TestSnapshotUsesRequestRepoRoot`
-6. `TestSnapshotErrorsOutsideGitRepo` (assert `KindNotGitRepo`)
-
-Validation commands:
-
-1. `go test ./internal/adapters/snapshot`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. Snapshot IDs change when meaningful git/worktree state changes, including dirty-content changes.
-2. Adapter works on macOS and Linux with standard git CLI.
-
-Rollback boundary:
-
-- Revert only `internal/adapters/snapshot/*` and any core snapshot field additions made for this step.
-
----
-
-### Step 5B: Inspector adapter (Layer 1 baseline inventory) (`ACCEPTED`)
-
-Objective:
-
-Implement first-pass artifact inventory checks aligned with README section 8.2 and section 9 Layer 1, including minimal `leap.yaml` parsing and `entryFile` validation.
-
-Files to add:
-
-1. `internal/adapters/inspect/baseline_inspector.go`
-2. `internal/adapters/inspect/baseline_inspector_test.go`
-
-Files to modify (expected):
-
-1. `internal/core/issues.go` (or equivalent) to add any missing issue codes listed below.
-2. `internal/core/issue_step_map.go` to map new issue codes to ensure steps.
-
-Interface/API changes (if any):
-
-- Add issue codes if missing:
-  1. `IssueCodeLeapYAMLUnparseable`
-  2. `IssueCodeLeapYAMLEntryFileMissing`
-  3. `IssueCodeLeapYAMLEntryFileNotFound`
-
-Locked inspection checks:
-
-1. Required root files: `leap.yaml`, `leap_binder.py`.
-2. Required integration-test file: either `leap_custom_test.py` or `integration_test.py`.
-3. Emit missing artifacts in `IntegrationStatus.Missing` using canonical labels:
-   1. `leap.yaml`
-   2. `leap_binder.py`
-   3. `integration_test`
-4. Emit corresponding issues with these codes:
-   1. `IssueCodeLeapYAMLMissing`
-   2. `IssueCodeIntegrationScriptMissing`
-   3. `IssueCodeIntegrationTestMissing`
-5. `leap.yaml` minimum correctness checks:
-   1. Unparseable `leap.yaml` -> `IssueCodeLeapYAMLUnparseable`
-   2. Missing `entryFile` key -> `IssueCodeLeapYAMLEntryFileMissing`
-   3. `entryFile` does not resolve to an existing repo file -> `IssueCodeLeapYAMLEntryFileNotFound`
-6. Severity for missing/invalid required artifacts: `error`.
-7. Scope mapping:
-   1. `leap.yaml` -> `IssueScopeLeapYAML`
-   2. binder/test -> `IssueScopeIntegrationScript` or `IssueScopeIntegrationTest`
-
-Exact tests to add/update:
-
-1. `TestInspectorReportsAllMissingArtifacts`
-2. `TestInspectorAcceptsEitherIntegrationTestFileName`
-3. `TestInspectorNoIssuesWhenArtifactsExist`
-4. `TestInspectorIssueScopesAndSeverities`
-5. `TestInspectorLeapYAMLUnparseableEmitsIssue`
-6. `TestInspectorLeapYAMLEntryFileMissingEmitsIssue`
-7. `TestInspectorLeapYAMLEntryFileNotFoundEmitsIssue`
-
-Validation commands:
-
-1. `go test ./internal/adapters/inspect`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. Inspector emits deterministic missing/issue output for equivalent directories.
-2. Issue codes align with existing mapping in `internal/core/issue_step_map.go`.
-3. `leap.yaml` parse and `entryFile` validation are enforced.
-
-Rollback boundary:
-
-- Revert only `internal/adapters/inspect/*` plus issue-code and issue-to-step mapping additions made for this step.
-
----
-
-### Step 5C: Planner adapter (`ACCEPTED`)
-
-Objective:
-
-Implement planner adapter that converts inspection issues into deterministic `ExecutionPlan`, including a terminal "complete" step when no issues exist.
-
-Files to add:
+Files to modify:
 
 1. `internal/adapters/planner/deterministic_planner.go`
-2. `internal/adapters/planner/deterministic_planner_test.go`
-
-Files to modify (expected):
-
-1. `internal/core/ensure_steps.go` to ensure `core.EnsureStepComplete` exists with ID `ensure.complete`.
-
-Interface/API changes (if any):
-
-- Ensure presence of `core.EnsureStepComplete` with stable ID `ensure.complete`.
+2. `internal/core/issue_step_map.go`
+3. `internal/core/ensure_steps.go`
 
 Locked behavior:
 
-1. Planner uses `core.PreferredEnsureStepsForIssues(status.Issues)`.
-2. If no issues exist or no steps are returned, planner returns:
-   1. `Primary = core.EnsureStepComplete`
-   2. `Additional = nil`
-3. Primary step = highest-priority step in returned list.
-4. Additional steps = remaining returned steps in priority order.
-5. Planner does not mutate or reorder issue list except through deterministic priority rules.
+1. Primary step selection honors blocker severity (`error` > `warning` > `info`) then canonical step priority.
+2. Planner must not select `ensure.upload_push` unless upload-readiness issues are clear.
+3. `ensure.complete` is returned only when no blocking issues remain.
 
-Exact tests to add/update:
+Tests:
 
-1. `TestPlannerChoosesPrimaryByPriority`
-2. `TestPlannerReturnsAdditionalSteps`
-3. `TestPlannerReturnsCompleteWhenNoIssues`
-4. `TestPlannerDeterministicAcrossRepeatedCalls`
+1. `TestPlannerPrioritizesErrorSeverity`
+2. `TestPlannerDefersUploadPushUntilReadinessClear`
+3. `TestPlannerReturnsCompleteOnlyWhenNoBlockingIssues`
 
 Validation commands:
 
-1. `go test ./internal/adapters/planner`
+1. `go test ./internal/adapters/planner ./internal/core`
 2. `go test ./...`
 
 Acceptance criteria:
 
-1. Planner output is deterministic and fully covered by unit tests.
-2. A no-issue state yields an explicit terminal step compatible with Step 4C loop semantics.
+1. Planner decisions are deterministic and policy-explicit.
+2. Push step cannot be selected prematurely.
 
 Rollback boundary:
 
-- Revert only `internal/adapters/planner/*` and any `core.EnsureStepComplete` additions.
+- Revert planner policy files and mapping changes only.
 
 ---
 
-### Step 5D: Executor adapter skeleton (`ACCEPTED`)
+### Step 9A: Deterministic executor implementations (non-agent) (`PENDING`)
 
 Objective:
 
-Provide a safe executor skeleton that accepts ensure-step requests and returns structured evidence without mutating user repos.
+Replace stub-only execution with deterministic, idempotent implementations for scaffoldable ensure-steps.
 
 Files to add:
 
-1. `internal/adapters/execute/stub_executor.go`
-2. `internal/adapters/execute/stub_executor_test.go`
+1. `internal/adapters/execute/filesystem_executor.go`
+2. `internal/adapters/execute/templates/leap_yaml.tmpl`
+3. `internal/adapters/execute/templates/leap_binder.py.tmpl`
+4. `internal/adapters/execute/templates/leap_custom_test.py.tmpl`
+5. `internal/adapters/execute/filesystem_executor_test.go`
 
-Interface/API changes (if any):
+Files to modify:
 
-- None (implements existing `ports.Executor` contract).
+1. `internal/adapters/execute/stub_executor.go` (split into dispatcher + fallback)
+2. `internal/cli/run.go` (wire configurable executor mode)
 
 Locked behavior:
 
-1. For any known step ID, return `ExecutionResult{Applied:false, Summary:"not implemented"}`.
-2. Include one evidence item with key `executor.mode` and value `stub`.
-3. Unknown step IDs return `KindStepNotApplicable` typed errors.
+1. Implement concrete actions for:
+   1. `ensure.leap_yaml`
+   2. `ensure.integration_script`
+   3. `ensure.integration_test_contract`
+2. Actions must be idempotent and include evidence files with before/after checksums.
+3. Unknown or unsupported step IDs still return typed `KindStepNotApplicable`.
 
-Exact tests to add/update:
+Tests:
 
-1. `TestExecutorReturnsStubResultForKnownStep`
-2. `TestExecutorRejectsUnknownStep`
-3. `TestExecutorReturnsEvidenceStub`
+1. `TestExecutorCreatesLeapYAMLWhenMissing`
+2. `TestExecutorCreatesIntegrationScriptTemplate`
+3. `TestExecutorCreatesIntegrationTestTemplate`
+4. `TestExecutorIdempotentOnSecondRun`
 
 Validation commands:
 
@@ -463,40 +343,147 @@ Validation commands:
 
 Acceptance criteria:
 
-1. Orchestrator can run end-to-end with deterministic non-mutating executor behavior.
+1. At least three ensure-steps perform real repo-local fixes.
+2. Execution evidence proves applied mutations.
 
 Rollback boundary:
 
-- Revert only `internal/adapters/execute/*`.
+- Revert execute adapter/template additions only.
 
 ---
 
-### Step 5E: Validator adapter baseline (`ACCEPTED`)
+### Step 9B: GitManager runtime integration (diff/approve/reject/commit) (`PENDING`)
 
 Objective:
 
-Add deterministic validator baseline for execution-level consistency checks before Python harness exists.
+Add product-grade branch safety and audited commit flow for approved changes.
 
 Files to add:
 
-1. `internal/adapters/validate/baseline_validator.go`
-2. `internal/adapters/validate/baseline_validator_test.go`
+1. `internal/gitmanager/manager.go`
+2. `internal/gitmanager/manager_test.go`
+3. `internal/gitmanager/messages.go`
 
-Interface/API changes (if any):
+Files to modify:
 
-- None (implements existing `ports.Validator` contract).
+1. `internal/orchestrator/engine.go`
+2. `internal/cli/run.go`
+3. `internal/core/types.go` (add commit metadata in report if needed)
 
 Locked behavior:
 
-1. If `ExecutionResult.Step.ID` is empty, return failed validation with `IssueCodeHarnessValidationFailed`.
-2. If `ExecutionResult.Applied` is false and summary contains `not implemented`, return passed=true with warning note issue `IssueCodeUnknown` severity `info`.
-3. If execution returned explicit error upstream, validator is not called (covered by orchestrator tests in Step 4A).
+1. Never commit on `main`/`master`.
+2. Show diff summary before commit and require explicit approval.
+3. Reject path restores pre-step working tree state.
+4. Approved path commits with structured message: `concierge(<step-id>): <summary>`.
 
-Exact tests to add/update:
+Tests:
 
-1. `TestValidatorFailsOnEmptyStepID`
-2. `TestValidatorPassesForStubExecution`
-3. `TestValidatorDeterministicOutput`
+1. `TestGitManagerRejectsMainBranchCommit`
+2. `TestGitManagerApproveCreatesCommit`
+3. `TestGitManagerRejectRestoresTree`
+4. `TestRunFlowPromptsBeforeCommit`
+
+Validation commands:
+
+1. `go test ./internal/gitmanager ./internal/orchestrator ./internal/cli`
+2. `go test ./...`
+
+Acceptance criteria:
+
+1. Repo mutation path is auditable with explicit approval and commit hash evidence.
+2. Reject path is deterministic and safe.
+
+Rollback boundary:
+
+- Revert `internal/gitmanager/*` and direct orchestrator/CLI wiring for commit flow.
+
+---
+
+### Step 9C: AgentRunner integration for complex ensure-steps (`PENDING`)
+
+Objective:
+
+Add task-scoped coding-agent delegation for steps that cannot be safely templated.
+
+Files to add:
+
+1. `internal/agent/runner.go`
+2. `internal/agent/types.go`
+3. `internal/agent/runner_test.go`
+4. `internal/adapters/execute/agent_executor.go`
+
+Files to modify:
+
+1. `internal/adapters/execute/filesystem_executor.go` (dispatcher fallback to agent runner)
+2. `internal/cli/run.go` (feature-flag/availability checks)
+
+Interface/API changes:
+
+1. `type AgentTask struct { Objective string; Constraints []string; RepoRoot string }`
+2. `type AgentResult struct { Applied bool; TranscriptPath string; Summary string; Evidence []core.EvidenceItem }`
+
+Locked behavior:
+
+1. One objective per session.
+2. Capture transcript path under `.concierge/evidence/<snapshot-id>/agent.transcript.log`.
+3. Failure to invoke agent returns deterministic issue and does not silently pass.
+
+Tests:
+
+1. `TestAgentExecutorDispatchesSupportedSteps`
+2. `TestAgentExecutorReturnsDeterministicErrorWhenUnavailable`
+3. `TestAgentTranscriptPersistedAsEvidence`
+
+Validation commands:
+
+1. `go test ./internal/agent ./internal/adapters/execute`
+2. `go test ./...`
+
+Acceptance criteria:
+
+1. Executor can delegate complex steps with deterministic reporting.
+2. Agent evidence is persisted and reviewable.
+
+Rollback boundary:
+
+- Revert `internal/agent/*` and agent-executor wiring only.
+
+---
+
+### Step 10A: Real runtime harness (Layer 2) (`PENDING`)
+
+Objective:
+
+Implement a real Python harness that produces semantic validation signals (preprocess subset checks, encoder execution coverage, shape/dtype/finite checks).
+
+Files to add:
+
+1. `scripts/harness_runtime.py`
+2. `scripts/harness_lib/__init__.py`
+3. `scripts/harness_lib/runner.py`
+4. `scripts/harness_lib/events.py`
+5. `internal/adapters/validate/harness_runtime_test.go`
+
+Files to modify:
+
+1. `internal/adapters/validate/harness_runner.go`
+2. `internal/adapters/validate/harness_parser.go`
+3. `internal/adapters/validate/baseline_validator.go`
+
+Locked behavior:
+
+1. Keep timeout default at 120s with CLI override.
+2. Emit NDJSON event schema version field (e.g., `schemaVersion: 1`).
+3. Map runtime failures to existing issue codes (`harness_preprocess_failed`, `harness_encoder_coverage_incomplete`, `harness_validation_failed`).
+4. Harness is enabled by default for non-dry-run unless explicitly disabled (`--disable-harness`).
+
+Tests:
+
+1. `TestHarnessRunnerInvokesRuntimeScriptByDefault`
+2. `TestHarnessParserAcceptsSchemaV1Events`
+3. `TestValidatorFailsWhenHarnessReportsErrors`
+4. `TestValidatorPassesOnCleanHarnessRun`
 
 Validation commands:
 
@@ -505,628 +492,412 @@ Validation commands:
 
 Acceptance criteria:
 
-1. Validator behavior is explicit and deterministic for stub execution phase.
+1. Validator consumes real runtime evidence, not stub-only events.
+2. Harness failures deterministically fail validation.
 
 Rollback boundary:
 
-- Revert only `internal/adapters/validate/baseline_validator*`.
+- Revert harness runtime additions and validator wiring for this step.
 
 ---
 
-### Step 5F: Reporter adapter baseline (`ACCEPTED`)
+### Step 10B: Integration-test wiring checks + advanced anti-stub rules (`PENDING`)
 
 Objective:
 
-Add baseline reporter that can print concise human summary and keep machine report payload intact.
+Enforce integration-test decorator call contract and strengthen anti-stub detection rules.
 
 Files to add:
 
-1. `internal/adapters/report/stdout_reporter.go`
-2. `internal/adapters/report/stdout_reporter_test.go`
+1. `internal/adapters/validate/integration_test_ast.go`
+2. `internal/adapters/validate/integration_test_ast_test.go`
+3. `internal/adapters/validate/heuristics_advanced.go`
+4. `internal/adapters/validate/heuristics_advanced_test.go`
 
-Interface/API changes (if any):
+Files to modify:
 
-- None (implements existing `ports.Reporter` contract).
+1. `internal/adapters/validate/heuristics.go`
+2. `internal/adapters/validate/baseline_validator.go`
 
 Locked behavior:
 
-1. Reporter outputs one line: `snapshot=<id> step=<step-id> validation=<passed|failed>`.
-2. Reporter does not write files in this step.
-3. Reporter returns error on write failure.
+1. Detect decorators defined but not called in `@tensorleap_integration_test` path.
+2. Emit deterministic issue codes for missing required calls.
+3. Add prediction-variation heuristic (`IssueCodeSuspiciousConstantPredictions`) when events exist.
 
-Exact tests to add/update:
+Tests:
 
-1. `TestReporterWritesSingleLineSummary`
-2. `TestReporterReturnsWriteError`
+1. `TestIntegrationTestAnalyzerDetectsMissingDecoratorCalls`
+2. `TestHeuristicsDetectConstantPredictions`
+3. `TestHeuristicsNoFalsePositiveOnVaryingPredictions`
 
 Validation commands:
 
-1. `go test ./internal/adapters/report`
+1. `go test ./internal/adapters/validate`
 2. `go test ./...`
 
 Acceptance criteria:
 
-1. End-to-end pipeline can run with baseline adapters without persistence.
+1. Integration-test coverage is enforced as a first-class correctness dimension.
+2. Heuristic suite catches common skeleton-pattern failures.
 
 Rollback boundary:
 
-- Revert only `internal/adapters/report/stdout_reporter*`.
+- Revert integration-test analyzer and advanced heuristic files only.
 
 ---
 
-### Step 5G: Fixture corpus preparation (`ACCEPTED`)
+### Step 10C: Upload readiness + guarded `leap push` execution (`PENDING`)
 
 Objective:
 
-Create reproducible local fixture preparation that provides paired pre-integration and post-integration states.
-
-Locked fixture set for initial coverage:
-
-1. `Tensorleap-hub/mnist` @ `1c4c6f0d5c4254cc4ae5c2df5ae8ef9f0a61212b`
-2. `Tensorleap-hub/cifar10_resnet` @ `5dd3611ca9efdf34c28279e036a7bb90638dda4d`
-3. `Tensorleap-hub/IMDb` @ `b4ce7cf109c89402147cc2e7f071165fc143d1d8`
-
-Important decision:
-
-1. We do not require write access to upstream repos.
-2. Pre-integration variants are generated locally from pinned post-integration commits by stripping integration artifacts.
+Implement operational Tensorleap CLI flow with explicit upload confirmation.
 
 Files to add:
 
-1. `fixtures/manifest.json`
-2. `scripts/fixtures_prepare.sh`
-3. `scripts/fixtures_verify.sh`
-4. `fixtures/README.md`
-
-Interface/API changes (if any):
-
-- None (scripts + data only).
-
-Manifest schema (locked):
-
-```json
-{
-  "fixtures": [
-    {
-      "id": "mnist",
-      "repo": "https://github.com/tensorleap-hub/mnist.git",
-      "post_ref": "1c4c6f0d5c4254cc4ae5c2df5ae8ef9f0a61212b",
-      "strip_for_pre": ["leap.yaml", "leap_binder.py", "leap_custom_test.py"]
-    }
-  ]
-}
-```
-
-Preparation behavior (locked):
-
-1. Create `.fixtures/<id>/post` by cloning and checking out `post_ref`.
-2. Create `.fixtures/<id>/pre` by copying `post` and deleting `strip_for_pre` files.
-3. Never modify tracked repository files during fixture materialization.
-
-Verification behavior:
-
-1. Confirm `post` contains all stripped files.
-2. Confirm `pre` is missing all stripped files.
-3. Confirm both working copies are clean git trees.
-
-Exact tests to add/update:
-
-- None (script-validated). Go fixture tests are added in Step 6E.
-
-Validation commands:
-
-1. `bash scripts/fixtures_prepare.sh`
-2. `bash scripts/fixtures_verify.sh`
-
-Acceptance criteria:
-
-1. Fixture pairs are reproducible from manifest only.
-2. Preparation process is idempotent.
-
-Rollback boundary:
-
-- Revert only `fixtures/*` and `scripts/fixtures_*.sh`. Generated `.fixtures/` directories are disposable.
-
----
-
-### Step 5H: CLI `run` (non-dry-run) wiring (`ACCEPTED`)
-
-Objective:
-
-Implement the real `concierge run` path by wiring default adapters into the orchestrator engine and invoking the multi-iteration loop from Step 4C.
-
-Files to add:
-
-- None required (expected to be wiring changes only).
+1. `internal/leap/runner.go`
+2. `internal/leap/runner_test.go`
+3. `internal/adapters/execute/upload_executor.go`
 
 Files to modify:
 
 1. `internal/cli/run.go`
-2. `internal/cli/run_test.go`
-3. `internal/cli/root.go` only if flag plumbing requires it.
-
-Interface/API changes (if any):
-
-1. Add `--max-iterations` (int) to `concierge run`, default `1`.
-2. Keep `run --dry-run` surface unchanged (as completed in Step 4B).
+2. `internal/adapters/inspect/leap_cli_contract.go`
+3. `internal/adapters/execute/filesystem_executor.go` (dispatcher)
 
 Locked behavior:
 
-1. `concierge run` without `--dry-run`:
-   1. Constructs default adapters:
-      - snapshot: `GitSnapshotter`
-      - inspect: `BaselineInspector`
-      - planner: `DeterministicPlanner`
-      - executor: `StubExecutor` (non-mutating)
-      - validator: `BaselineValidator`
-      - reporter: `StdoutReporter`
-   2. Builds engine via `orchestrator.NewEngine(...)`.
-   3. Calls `engine.Run(ctx, core.SnapshotRequest{RepoRoot: <resolved>}, RunOptions{MaxIterations: flag})`.
-2. Exit behavior:
-   - `StopReason=success` -> return nil (exit code 0).
-   - `StopReason=max_iterations` -> return non-nil error (exit code 1) after reporter output.
-   - `StopReason=cancelled` -> return `ctx.Err()`.
+1. Upload push is never implicit.
+2. `ensure.upload_readiness` runs non-destructive probes (`leap version`, auth check, `leap server info`).
+3. `ensure.upload_push` requires explicit user confirmation and `--allow-push` (or equivalent affirmative flag).
+4. Capture command stdout/stderr as evidence logs.
 
-Exact tests to add/update:
+Tests:
 
-1. `TestRunNonDryRunExecutesSingleIterationByDefault`
-2. `TestRunNonDryRunHonorsMaxIterationsFlag`
-3. `TestRunNonDryRunReturnsErrorOnMaxIterationsStop`
+1. `TestUploadExecutorRefusesPushWithoutApproval`
+2. `TestUploadExecutorRunsReadinessChecksBeforePush`
+3. `TestUploadExecutorPersistsCommandEvidence`
 
 Validation commands:
 
-1. `go test ./internal/cli`
-2. `go run ./cmd/concierge run --max-iterations=1`
-3. `go run ./cmd/concierge run --max-iterations=2`
-
-Acceptance criteria:
-
-1. `concierge run` is implemented and exercises full pipeline with default adapters.
-2. Multi-iteration behavior is observable via repeated reporter output.
-3. No repo mutation occurs; executor remains stub.
-
-Rollback boundary:
-
-- Revert only CLI wiring changes for `run` and related tests/flags.
-
----
-
-### Step 6A: `.concierge` persistence primitives (`ACCEPTED`)
-
-Objective:
-
-Implement atomic persistence building blocks used by reporter and state management.
-
-Files to add:
-
-1. `internal/persistence/atomic_json.go`
-2. `internal/persistence/paths.go`
-3. `internal/persistence/atomic_json_test.go`
-4. `internal/persistence/paths_test.go`
-
-Interface/API changes (if any):
-
-- New internal persistence APIs:
-  - `WriteJSONAtomic(path string, v any) error`
-  - path helpers/types for `.concierge` state/report/evidence layout.
-
-Locked behavior:
-
-1. `WriteJSONAtomic(path string, v any) error` writes to temp file in same directory then renames.
-2. Temp filename pattern: `<target>.tmp.<pid>.<nsec>`.
-3. Path builder roots everything under `.concierge/` relative to selected project root.
-4. Directory layout:
-   1. `.concierge/state/state.json` (if changed later to `.concierge/state.json` for README alignment, update this section and Step 8 docs together)
-   2. `.concierge/reports/<snapshot-id>.json`
-   3. `.concierge/evidence/<snapshot-id>/<evidence-name>.log`
-
-Exact tests to add/update:
-
-1. `TestWriteJSONAtomicCreatesFile`
-2. `TestWriteJSONAtomicOverwritesSafely`
-3. `TestWriteJSONAtomicRejectsInvalidPath`
-4. `TestPathsBuilderReturnsExpectedLayout`
-
-Validation commands:
-
-1. `go test ./internal/persistence`
+1. `go test ./internal/leap ./internal/adapters/execute ./internal/cli`
 2. `go test ./...`
 
 Acceptance criteria:
 
-1. Persistence helpers are deterministic and independently tested.
+1. Concierge can run readiness checks and guarded push flow in real environments.
+2. All push attempts are auditable from evidence artifacts.
 
 Rollback boundary:
 
-- Revert only `internal/persistence/*`.
+- Revert leap runner/upload executor and related CLI wiring for this step.
 
 ---
 
-### Step 6B: Persist reports and evidence (`ACCEPTED`)
+### Step 11A: Fixture governance hardening (`PENDING`)
 
 Objective:
 
-Wire orchestration outputs to filesystem artifacts using Step 6A primitives, and expose persistence enablement in CLI.
+Automate fixture suitability gate and manifest validation before adding new fixture entries.
 
 Files to add:
 
-1. `internal/adapters/report/file_reporter.go`
-2. `internal/adapters/report/file_reporter_test.go`
+1. `scripts/fixtures_check_commit.sh`
+2. `scripts/fixtures_manifest_lint.sh`
+3. `fixtures/SCHEMA.md`
 
 Files to modify:
 
-1. `internal/adapters/execute/stub_executor.go` (optional evidence payload enrichment).
-2. `internal/cli/run.go` and `internal/cli/run_test.go` (add persistence flag + wiring).
-3. `internal/orchestrator/engine.go` only if dependency injection requires reporter mode selection.
-
-Interface/API changes (if any):
-
-1. CLI surface:
-   - Add `--persist` (bool) to `concierge run`, default `false` in this phase.
+1. `scripts/fixtures_prepare.sh`
+2. `scripts/fixtures_verify.sh`
+3. `fixtures/README.md`
 
 Locked behavior:
 
-1. Reporter writes `core.IterationReport` JSON to `.concierge/reports/<snapshot-id>.json`.
-2. Evidence items are written as one file per item under `.concierge/evidence/<snapshot-id>/`.
-3. Reporter also prints one-line summary to stdout.
-4. CLI wiring:
-   - `--persist=true`: use file reporter.
-   - `--persist=false`: use stdout reporter.
+1. Validate `post_ref` is a commit SHA and contains required integration files.
+2. Fail fast when manifest entries violate schema or suitability gate.
+3. Keep scripts idempotent.
 
-Exact tests to add/update:
+Tests:
 
-1. `TestFileReporterWritesReportJSON`
-2. `TestFileReporterWritesEvidenceFiles`
-3. `TestFileReporterPreservesExistingEvidenceDirectory`
-4. `TestRunWithPersistWritesConciergeArtifacts`
+1. Script-level tests via shell assertions in CI (or Go test wrappers under `internal/e2e/fixtures`).
 
 Validation commands:
 
-1. `go test ./internal/adapters/report ./internal/persistence ./internal/cli`
-2. `go test ./...`
+1. `bash scripts/fixtures_manifest_lint.sh`
+2. `bash scripts/fixtures_prepare.sh`
+3. `bash scripts/fixtures_verify.sh`
 
 Acceptance criteria:
 
-1. Running one pipeline iteration with `--persist` produces report and evidence artifacts on disk.
-2. Running without `--persist` does not write `.concierge` outputs.
+1. Fixture manifest updates are mechanically validated before E2E runs.
 
 Rollback boundary:
 
-- Revert only `internal/adapters/report/file_reporter*`, CLI persistence wiring, and any optional executor evidence enrichment.
+- Revert fixture governance scripts/docs only.
 
 ---
 
-### Step 6C: Runtime harness baseline (Layer 2) (`ACCEPTED`)
+### Step 11B: Fixture behavior-fingerprint E2E suite (`PENDING`)
 
 Objective:
 
-Add a minimal harness contract invocation path and parser so validator can consume runtime check outputs deterministically.
+Upgrade fixture E2E from artifact existence checks to semantic behavior fingerprints.
 
 Files to add:
 
-1. `internal/adapters/validate/harness_runner.go`
-2. `internal/adapters/validate/harness_parser.go`
-3. `internal/adapters/validate/harness_runner_test.go`
-4. `internal/adapters/validate/harness_parser_test.go`
-5. `scripts/harness_stub.py`
+1. `internal/e2e/fixtures/fingerprint_test.go`
+2. `internal/e2e/fixtures/testdata/fingerprints/README.md`
+3. `internal/e2e/fixtures/testdata/fingerprints/<fixture-id>.golden.json` (initial set for locked fixtures)
 
-Interface/API changes (if any):
-
-- Add deterministic harness gate via env var:
-  - `CONCIERGE_ENABLE_HARNESS=1` enables harness execution.
-
-Locked behavior:
-
-1. Harness invocation is optional and gated by `CONCIERGE_ENABLE_HARNESS=1` (unset/other values disable it).
-2. Harness output format is newline-delimited JSON events.
-3. Parser maps events to issue codes:
-   1. preprocess failure -> `IssueCodeHarnessPreprocessFailed`
-   2. encoder coverage incomplete -> `IssueCodeHarnessEncoderCoverageIncomplete`
-   3. generic validation failure -> `IssueCodeHarnessValidationFailed`
-4. Harness timeout default: 120 seconds.
-
-Exact tests to add/update:
-
-1. `TestHarnessParserMapsKnownEvents`
-2. `TestHarnessParserUnknownEventFallsBackToUnknownIssue`
-3. `TestHarnessRunnerTimeout`
-4. `TestHarnessRunnerSuccessPath`
-5. `TestHarnessRunnerRespectsEnablementEnvVar`
-
-Validation commands:
-
-1. `go test ./internal/adapters/validate`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. Validator can ingest deterministic harness signals into structured issues.
-2. Harness invocation is off by default and deterministic when enabled.
-
-Rollback boundary:
-
-- Revert only `internal/adapters/validate/harness_*` and `scripts/harness_stub.py`.
-
----
-
-### Step 6D: Anti-stub heuristics baseline (Layer 3) (`ACCEPTED`)
-
-Objective:
-
-Detect likely stub integrations with deterministic heuristics and explicit issue codes.
-
-Files to add:
-
-1. `internal/adapters/validate/heuristics.go`
-2. `internal/adapters/validate/heuristics_test.go`
-
-Interface/API changes (if any):
-
-- None (uses existing issue-code model; add missing codes in core if required).
-
-Locked heuristics:
-
-1. Constant input fingerprint across sampled indices -> `IssueCodeSuspiciousConstantInputs`.
-2. Constant label fingerprint across sampled indices -> `IssueCodeSuspiciousConstantLabels`.
-3. Empty train or validation subset in harness report -> `IssueCodePreprocessSubsetEmpty`.
-
-Exact tests to add/update:
-
-1. `TestHeuristicsDetectConstantInputs`
-2. `TestHeuristicsDetectConstantLabels`
-3. `TestHeuristicsDetectEmptySubset`
-4. `TestHeuristicsNoFalsePositiveOnVaryingData`
-
-Validation commands:
-
-1. `go test ./internal/adapters/validate`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. Heuristic issues are deterministic and use existing core issue codes.
-
-Rollback boundary:
-
-- Revert only `internal/adapters/validate/heuristics*`.
-
----
-
-### Step 6E: Fixture-backed pre-vs-post behavior tests (`ACCEPTED`)
-
-Objective:
-
-Use prepared fixture pairs to prove Concierge distinguishes pre-integration and post-integration states.
-
-Files to add:
+Files to modify:
 
 1. `internal/e2e/fixtures/fixtures_test.go`
-2. `internal/e2e/fixtures/testdata/README.md`
-3. `scripts/fixtures_run_checks.sh`
+2. `scripts/fixtures_run_checks.sh`
 
-Interface/API changes (if any):
+Locked assertions:
 
-- None (tests and scripts only).
+1. Pre fixtures: must fail readiness/harness with expected blocking issue families.
+2. Post fixtures: must clear baseline artifact issues and produce non-empty harness events.
+3. Behavior fingerprint deltas (subset counts/encoder coverage/fingerprint variation) must match expected invariants.
 
-Locked assertions per fixture:
+Tests:
 
-1. Pre variant must emit missing-artifact issues (`leap.yaml`, integration script, integration test).
-2. Post variant must not emit those missing-artifact issues.
-3. Planner primary step for pre variant must be one of:
-   1. `ensure.leap_yaml`
-   2. `ensure.integration_script`
-   3. `ensure.integration_test_contract`
-4. Pipeline report files exist for both variants when persistence is enabled.
-
-Execution policy:
-
-1. Fixture E2E tests are opt-in locally and in CI via explicit flag:
-   1. env `CONCIERGE_RUN_FIXTURE_E2E=1`
-2. Default `go test ./...` should skip fixture network/materialization work.
-
-Exact tests to add/update:
-
-1. `TestFixturePreVsPostIssueDeltas` (table-driven over fixtures)
-2. `TestFixturePlannerPrimaryStepPreVariant` (table-driven)
-3. `TestFixturePersistenceArtifactsExistWhenEnabled`
+1. `TestFixtureBehaviorFingerprintsPreVsPost`
+2. `TestFixtureHarnessCoverageThresholds`
+3. `TestFixtureGoldenFingerprintStability`
 
 Validation commands:
 
-1. `CONCIERGE_RUN_FIXTURE_E2E=1 bash scripts/fixtures_prepare.sh`
+1. `CONCIERGE_RUN_FIXTURE_E2E=1 bash scripts/fixtures_run_checks.sh`
 2. `CONCIERGE_RUN_FIXTURE_E2E=1 go test ./internal/e2e/fixtures -v`
 
 Acceptance criteria:
 
-1. At least three fixtures execute with deterministic pass/fail behavior.
-2. Failing fixture output includes actionable issue code diffs.
+1. Fixture suite validates semantic behavior differences, not just file presence.
+2. Failures provide actionable diff output.
 
 Rollback boundary:
 
-- Revert only `internal/e2e/fixtures/*` and `scripts/fixtures_run_checks.sh`.
+- Revert fixture E2E test and golden data additions only.
 
 ---
 
-### Step 7: Developer tooling and CI expansion (`PENDING`)
+### Step 11C: CI expansion with fixture E2E execution (`PENDING`)
 
 Objective:
 
-Codify local and CI quality gates, including optional fixture E2E execution.
+Make CI enforce full quality gates and run fixture repo tests automatically.
 
 Files to add:
 
-1. `Makefile` targets update (if missing targets).
-2. `.golangci.yml` (or equivalent lint config).
-3. `.github/workflows/ci.yml` updates.
+1. `.golangci.yml`
 
-Interface/API changes (if any):
+Files to modify:
 
-- None (tooling and CI only).
+1. `Makefile`
+2. `.github/workflows/ci.yml`
+3. `.github/workflows/release.yml` (only if needed to preserve compatibility)
 
 Locked CI behavior:
 
 1. Required on PR/push:
-   1. `go test ./...`
-   2. cross-platform build checks for configured matrix
-2. Optional scheduled/manual fixture E2E job gated by environment and timeout budget.
-3. Release workflow from Step 2 remains unchanged.
+   1. `make lint`
+   2. `make test`
+   3. binary build matrix (linux/macos amd64+arm64)
+   4. fixture E2E job (`CONCIERGE_RUN_FIXTURE_E2E=1 bash scripts/fixtures_run_checks.sh`)
+2. Fixture job includes retry and timeout budget.
+3. Release workflow remains semver tag-gated.
 
-Exact tests to add/update:
+Make targets (required):
 
-- None (configuration changes only). Existing test suite must remain green.
+1. `lint`
+2. `test`
+3. `test-fixtures`
+4. `build`
 
 Validation commands:
 
-1. `make test`
-2. `make lint`
-3. `make build`
+1. `make lint`
+2. `make test`
+3. `make test-fixtures`
+4. `make build`
 
 Acceptance criteria:
 
-1. CI fails on lint/test/build regressions.
-2. Fixture E2E path is documented and isolated from default fast CI.
+1. CI fails on lint/test/build/fixture regressions.
+2. Fixture repos are validated in automation, not only locally.
 
 Rollback boundary:
 
-- Revert only CI/workflow and lint configuration changes.
+- Revert CI/lint/makefile changes only.
 
 ---
 
-### Step 8: Documentation sync (`PENDING`)
+### Step 12A: Documentation sync (README + docs/*) (`PENDING`)
 
 Objective:
 
-Make docs reflect actual behavior and implementation boundaries.
+Align docs with implemented operational behavior.
 
-Files to add or update:
+Files to add:
+
+1. `docs/architecture.md`
+2. `docs/dev-setup.md`
+3. `docs/fixtures.md`
+4. `docs/operations.md`
+
+Files to modify:
 
 1. `README.md`
-2. `docs/architecture.md`
-3. `docs/dev-setup.md`
-4. `docs/fixtures.md`
+2. `fixtures/README.md`
 
-Interface/API changes (if any):
+Locked documentation requirements:
 
-- None (documentation only).
-
-Locked documentation content:
-
-1. Architecture diagram/text for orchestrator + adapter layers.
-2. Step-by-step developer setup for Go toolchain and fixture preparation.
-3. Exact explanation of `PENDING` / `DONE` / `ACCEPTED` semantics.
-4. Clear statement of what is deterministic now vs planned later.
+1. Update README implementation status to current date and actual feature state.
+2. Document full `concierge run` flow including approvals, harness, and upload gates.
+3. Document fixture lifecycle and CI expectations.
+4. Document trust boundary and security posture (agent + command execution + secrets redaction).
 
 Validation commands:
 
-1. Verify all command snippets in docs execute or are explicitly marked as examples.
-2. `go test ./...` after documentation updates (guard against accidental code drift).
+1. Execute every documented command path or mark as example-only.
+2. `go test ./...` after documentation edits.
 
 Acceptance criteria:
 
-1. README quickstart and docs align with implemented CLI behavior.
-2. Fixture workflow is reproducible from docs only.
+1. New contributor can execute setup + fixture workflow using docs only.
+2. Docs no longer claim capabilities that are not implemented.
 
 Rollback boundary:
 
-- Revert only documentation files.
+- Revert docs/README changes only.
+
+---
+
+### Step 12B: Release-readiness hardening (`PENDING`)
+
+Objective:
+
+Finalize operational polish and lock phase acceptance criteria before first "fully operational" release.
+
+Files to add or modify:
+
+1. `internal/cli/*` (error UX and exit-code consistency)
+2. `internal/core/*` (if error-code normalization is needed)
+3. `README.md` (release checklist section)
+4. `PLAN.md` (mark completed statuses)
+
+Locked tasks:
+
+1. Normalize user-facing failure messages for common blockers.
+2. Ensure every ensure-step emits actionable evidence.
+3. Add final acceptance checklist command block.
+
+Final acceptance checklist commands:
+
+1. `go test ./...`
+2. `make lint`
+3. `make build`
+4. `CONCIERGE_RUN_FIXTURE_E2E=1 make test-fixtures`
+5. Manual smoke: `go run ./cmd/concierge run --max-iterations=3 --persist`
+
+Acceptance criteria:
+
+1. All steps `7A-12B` are `ACCEPTED` after merge to `main`.
+2. CI is green with fixture E2E job included.
+3. README + docs reflect released functionality.
+
+Rollback boundary:
+
+- Revert only hardening/doc updates introduced by this step.
 
 ## Concrete Step Execution Order
 
-Note: Steps 1 through 6E are now `ACCEPTED`. The list below is the intended order for remaining `PENDING` steps.
-
-1. Implement Step 7 and commit.
-2. Implement Step 8 and commit.
+1. Implement Step 7A.
+2. Implement Step 7B.
+3. Implement Step 8A.
+4. Implement Step 8B.
+5. Implement Step 9A.
+6. Implement Step 9B.
+7. Implement Step 9C.
+8. Implement Step 10A.
+9. Implement Step 10B.
+10. Implement Step 10C.
+11. Implement Step 11A.
+12. Implement Step 11B.
+13. Implement Step 11C.
+14. Implement Step 12A.
+15. Implement Step 12B.
 
 Each step follows this gate:
 
 1. Implement step scope only.
-2. Run step-specific validation commands.
-3. Update step status to `DONE` after commit/push/CI pass.
-4. Mark step `ACCEPTED` only after merge to `main`.
+2. Run step validation commands.
+3. Stop for explicit user local-review approval before commit/push.
+4. Commit/push PR branch and monitor/fix CI for that step scope.
+5. Mark step `DONE` only after commit/push/PR/green branch CI.
+6. Mark step `ACCEPTED` only after merge to `main`.
 
 ## Validation and Acceptance
 
 Status semantics:
 
-1. `PENDING`: step not implemented.
-2. `DONE`: step implemented, committed, pushed, and branch CI passes.
-3. `ACCEPTED`: step merged to `main`.
+1. `PENDING`: step not implemented yet.
+2. `DONE`: implemented, committed, pushed, PR opened, branch CI green.
+3. `ACCEPTED`: merged to `main`.
 
 Phase acceptance condition:
 
-1. Steps 4A through 8 are all `ACCEPTED`.
-2. Fixture E2E has at least one green run on all three locked fixtures.
+1. Steps `1` through `12B` are `ACCEPTED`.
+2. Fixture E2E job is part of required CI and green.
+3. Concierge can perform user-approved fixes and guarded upload workflow end-to-end.
 
 ## Idempotence and Recovery
 
-1. Keep one commit per step for clean rollback and bisect.
-2. If a step fails CI, fix within that step scope only; do not start next step.
-3. If a step introduces regressions, revert that step commit only.
-4. Fixture preparation scripts must be safe to rerun without manual cleanup.
+1. Keep one commit per step for clean rollback.
+2. If CI fails, fix within current step scope only.
+3. Revert only the failing step commit when rollback is required.
+4. Fixture scripts and `.concierge` persistence paths must remain safe to rerun.
 
 ## Surprises & Discoveries
 
-- Observation: The previous version of this plan was not implementation-complete for pending steps.
-  Evidence: It lacked file-level changes, interface contracts, and test case definitions for each pending item.
-- Observation: Tensorleap Hub repositories suitable for fixture seeding are publicly listable and have stable `main` heads.
-  Evidence: `mnist`, `cifar10_resnet`, and `IMDb` were resolved with concrete commit SHAs.
+- Current codebase is functionally coherent but still a scaffold: executor is stub-based, harness is optional/stub-oriented, and upload flow is not operational.
+- Fixture scripts are stable and deterministic locally; they can support stronger E2E checks with semantic fingerprints.
+- Existing issue catalog and ensure-step map are broad enough to support operationalization without major taxonomy redesign.
 
 ## Decision Log
 
-- Decision: Keep step statuses strictly to `PENDING`, `DONE`, and `ACCEPTED`.
-  Rationale: Required by repository workflow agreement.
-  Date/Author: 2026-02-25 / user + assistant.
-- Decision: Sequence fixture preparation before persistence-enabled fixture assertions.
-  Rationale: Reproducible fixture setup is a dependency for behavior comparison tests.
-  Date/Author: 2026-02-25 / user + assistant.
-- Decision: Define and lock initial fixture repositories and SHAs now.
-  Rationale: Removes ambiguity when implementing Step 5G and Step 6E.
-  Date/Author: 2026-02-25 / assistant.
-- Decision: Keep default `go test ./...` fast by making networked fixture E2E opt-in.
-  Rationale: Prevent default CI from becoming flaky or slow.
-  Date/Author: 2026-02-25 / assistant.
-- Decision: Add a dedicated multi-iteration loop step (4C) and a separate non-dry-run CLI wiring step (5H).
-  Rationale: Align implementation sequencing with README loop semantics and make stop conditions explicit.
-  Date/Author: 2026-02-25 / user + assistant.
-- Decision: Strengthen snapshot identity with a worktree fingerprint instead of a dirty boolean.
-  Rationale: Ensure iteration-to-iteration change detection and avoid persistence artifact key collisions.
-  Date/Author: 2026-02-25 / user + assistant.
+- Decision: Re-baseline remaining work into granular operational steps (`7A-12B`) instead of keeping the old coarse `Step 7` and `Step 8`.
+  Rationale: The old tail was too coarse for safe iterative delivery and missed major README requirements.
+  Date/Author: 2026-02-26 / assistant.
+- Decision: Keep fixture E2E in required CI (not only scheduled/manual).
+  Rationale: User explicitly requested CI validation against fixture repos.
+  Date/Author: 2026-02-26 / user + assistant.
+- Decision: Implement deterministic executor coverage before agent integration.
+  Rationale: Preserve deterministic baseline and reduce dependence on agent availability for core flows.
+  Date/Author: 2026-02-26 / assistant.
 
 ## Outcomes & Retrospective
 
-Current status: steps 1 through 6E are `ACCEPTED` on `main`. Pending work remains specified at implementation depth. The next executable atomic step is Step 7.
+Current state after re-baseline: baseline architecture through Step 6E is accepted; operational completion work is explicitly decomposed and actionable.
 
-Residual risk: runtime harness behavior (Step 6C) may reveal additional Python environment assumptions.
+Primary residual risk: runtime harness implementation may surface environment-specific assumptions across fixture repos.
 
-Mitigation: harness invocation is introduced behind an explicit gate and parser contract before broad E2E rollout.
-
-## Artifacts and Notes
-
-Current working tree snapshot before this plan revision commit:
-
-    ## main...origin/main
-    M PLAN.md
-    ?? bin/
-
-Operational note:
-
-1. Untracked `bin/` remains out of scope for planning commits unless a step explicitly targets release artifact handling.
+Mitigation: introduce harness behavior incrementally (10A then 10B), and keep fixture E2E deterministic and CI-enforced (11B/11C).
 
 ## Interfaces and Dependencies
 
 1. Language/runtime: Go `1.24.x`.
 2. CLI framework: Cobra.
 3. Core contracts: `internal/core`, `internal/core/ports`.
-4. Planned new packages:
-   1. `internal/orchestrator`
-   2. `internal/adapters/snapshot`
-   3. `internal/adapters/inspect`
-   4. `internal/adapters/planner`
-   5. `internal/adapters/execute`
-   6. `internal/adapters/validate`
-   7. `internal/adapters/report`
-   8. `internal/persistence`
-   9. `internal/e2e/fixtures`
-5. External tools used by specific steps:
+4. Runtime dependencies for operational steps:
    1. `git`
-   2. `bash`
-   3. optional Python runtime for harness step
+   2. `python3`
+   3. `jq`
+   4. `leap` CLI (for readiness/upload steps)
+5. Planned package additions:
+   1. `internal/state`
+   2. `internal/gitmanager`
+   3. `internal/agent`
+   4. `internal/leap`

@@ -308,3 +308,91 @@ func TestSnapshotIncludesEnvironmentFingerprints(t *testing.T) {
 		t.Fatalf("expected requirements.txt hash in snapshot, got %+v", snapshotValue.FileHashes)
 	}
 }
+
+func TestSnapshotServerInfoProbeFailsWhenInstallationInfoMissing(t *testing.T) {
+	repo := initGitRepo(t)
+
+	snapshotter := NewGitSnapshotter()
+	snapshotter.lookPath = func(file string) (string, error) {
+		switch file {
+		case "python3":
+			return "/usr/bin/python3", nil
+		case "leap":
+			return "/usr/local/bin/leap", nil
+		default:
+			return "", exec.ErrNotFound
+		}
+	}
+	snapshotter.runCommand = func(ctx context.Context, dir string, name string, args ...string) ([]byte, []byte, error) {
+		_ = ctx
+		_ = dir
+		command := name + " " + strings.Join(args, " ")
+		switch command {
+		case "python3 --version":
+			return []byte("Python 3.11.8\n"), nil, nil
+		case "leap version":
+			return []byte("leap v0.2.0\n"), nil, nil
+		case "leap auth whoami":
+			return []byte("concierge@example.com\n"), nil, nil
+		case "leap server info":
+			return []byte("\x1b[36mINFO\x1b[0m No installation information found\n"), nil, nil
+		default:
+			return nil, []byte("unknown command"), errors.New("command failed")
+		}
+	}
+
+	snapshotValue, err := snapshotter.Snapshot(context.Background(), core.SnapshotRequest{RepoRoot: repo})
+	if err != nil {
+		t.Fatalf("Snapshot returned error: %v", err)
+	}
+	if snapshotValue.LeapCLI.ServerInfoReachable {
+		t.Fatal("expected server info probe to fail when installation info is missing")
+	}
+	if !strings.Contains(strings.ToLower(snapshotValue.LeapCLI.ServerInfoError), "no installation information found") {
+		t.Fatalf("expected missing-installation error details, got %q", snapshotValue.LeapCLI.ServerInfoError)
+	}
+}
+
+func TestSnapshotServerInfoProbeFailsWhenServerNotRunning(t *testing.T) {
+	repo := initGitRepo(t)
+
+	snapshotter := NewGitSnapshotter()
+	snapshotter.lookPath = func(file string) (string, error) {
+		switch file {
+		case "python3":
+			return "/usr/bin/python3", nil
+		case "leap":
+			return "/usr/local/bin/leap", nil
+		default:
+			return "", exec.ErrNotFound
+		}
+	}
+	snapshotter.runCommand = func(ctx context.Context, dir string, name string, args ...string) ([]byte, []byte, error) {
+		_ = ctx
+		_ = dir
+		command := name + " " + strings.Join(args, " ")
+		switch command {
+		case "python3 --version":
+			return []byte("Python 3.11.8\n"), nil, nil
+		case "leap version":
+			return []byte("leap v0.2.0\n"), nil, nil
+		case "leap auth whoami":
+			return []byte("concierge@example.com\n"), nil, nil
+		case "leap server info":
+			return []byte("INFO Installation information:\nINFO Server is not running (cluster not found)\n"), nil, nil
+		default:
+			return nil, []byte("unknown command"), errors.New("command failed")
+		}
+	}
+
+	snapshotValue, err := snapshotter.Snapshot(context.Background(), core.SnapshotRequest{RepoRoot: repo})
+	if err != nil {
+		t.Fatalf("Snapshot returned error: %v", err)
+	}
+	if snapshotValue.LeapCLI.ServerInfoReachable {
+		t.Fatal("expected server info probe to fail when server is not running")
+	}
+	if !strings.Contains(strings.ToLower(snapshotValue.LeapCLI.ServerInfoError), "server is not running") {
+		t.Fatalf("expected server-not-running error details, got %q", snapshotValue.LeapCLI.ServerInfoError)
+	}
+}

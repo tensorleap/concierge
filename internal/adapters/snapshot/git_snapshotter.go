@@ -315,16 +315,31 @@ func (g *GitSnapshotter) captureLeapCLIState(ctx context.Context, repoRoot strin
 		state.Authenticated = true
 	}
 
-	if _, err := g.commandOutput(ctx, repoRoot, "leap", "server", "info"); err == nil {
-		state.ServerInfoReachable = true
-	} else {
+	if output, err := g.commandOutputFull(ctx, repoRoot, "leap", "server", "info"); err != nil {
 		state.ServerInfoError = strings.TrimSpace(err.Error())
+	} else if reason, failed := leapServerInfoFailureReason(output); failed {
+		state.ServerInfoError = reason
+	} else {
+		state.ServerInfoReachable = true
 	}
 
 	return state
 }
 
 func (g *GitSnapshotter) commandOutput(ctx context.Context, dir string, name string, args ...string) (string, error) {
+	output, err := g.commandOutputFull(ctx, dir, name, args...)
+	if err != nil {
+		return "", err
+	}
+	if output == "" {
+		return "", nil
+	}
+
+	lines := strings.Split(output, "\n")
+	return strings.TrimSpace(lines[0]), nil
+}
+
+func (g *GitSnapshotter) commandOutputFull(ctx context.Context, dir string, name string, args ...string) (string, error) {
 	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
@@ -345,6 +360,24 @@ func (g *GitSnapshotter) commandOutput(ctx context.Context, dir string, name str
 		return "", nil
 	}
 
-	lines := strings.Split(output, "\n")
-	return strings.TrimSpace(lines[0]), nil
+	return output, nil
+}
+
+func leapServerInfoFailureReason(output string) (string, bool) {
+	trimmed := strings.TrimSpace(output)
+	if trimmed == "" {
+		return "leap server info returned no output", true
+	}
+
+	lower := strings.ToLower(trimmed)
+	switch {
+	case strings.Contains(lower, "no installation information found"):
+		return "leap server info reported no installation information found", true
+	case strings.Contains(lower, "server is not running"):
+		return "leap server info reported server is not running", true
+	case strings.Contains(lower, "cluster not found"):
+		return "leap server info reported cluster not found", true
+	default:
+		return "", false
+	}
 }

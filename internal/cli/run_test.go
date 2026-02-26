@@ -412,4 +412,48 @@ func writeFile(t *testing.T, path, content string) {
 func disableHarness(t *testing.T) {
 	t.Helper()
 	t.Setenv("CONCIERGE_ENABLE_HARNESS", "0")
+	mockLeapCLIInstalled(t)
+}
+
+func mockLeapCLIInstalled(t *testing.T) {
+	t.Helper()
+
+	binDir := t.TempDir()
+	leapPath := filepath.Join(binDir, "leap")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-}"
+case "$cmd" in
+  version)
+    echo "leap v0.2.0"
+    ;;
+  auth)
+    if [[ "${2:-}" != "whoami" ]]; then
+      echo "unsupported auth subcommand" >&2
+      exit 1
+    fi
+    echo "concierge@example.com"
+    ;;
+  server)
+    if [[ "${2:-}" != "info" ]]; then
+      echo "unsupported server subcommand" >&2
+      exit 1
+    fi
+    cat <<'EOF'
+Installation information:
+datasetvolumes: []
+EOF
+    ;;
+  *)
+    echo "unsupported leap command" >&2
+    exit 1
+    ;;
+esac
+`
+	if err := os.WriteFile(leapPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile failed for mock leap CLI: %v", err)
+	}
+
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }

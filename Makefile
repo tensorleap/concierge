@@ -10,7 +10,7 @@ LDFLAGS := -s -w \
 	-X github.com/tensorleap/concierge/internal/buildinfo.Commit=$(COMMIT) \
 	-X github.com/tensorleap/concierge/internal/buildinfo.Date=$(DATE)
 
-.PHONY: build test clean
+.PHONY: build test clean fixtures-prepare fixtures-verify fixtures-reset
 
 build:
 	@mkdir -p $(BIN_DIR)
@@ -21,3 +21,11 @@ test:
 
 clean:
 	rm -rf $(BIN_DIR)
+
+fixtures-prepare:
+	bash scripts/fixtures_prepare.sh
+
+fixtures-verify:
+	bash scripts/fixtures_verify.sh
+
+fixtures-reset: fixtures-prepare fixtures-verify

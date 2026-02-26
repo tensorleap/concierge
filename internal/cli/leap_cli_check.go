@@ -51,8 +51,8 @@ func detectLeapCLIDiagnostics(ctx context.Context) leapCLIDiagnostics {
 			CurrentVersion: "unknown",
 			LatestVersion:  "unknown",
 			Status:         "unknown",
-			Note:           fmt.Sprintf("failed to parse installed leap version: %v", currentErr),
-			Action:         "Run `leap version` manually and ensure the command is available in PATH.",
+			Note:           "unable to read the installed Leap CLI version",
+			Action:         fmt.Sprintf("Run `leap version` manually. If it fails, reinstall from: %s", leapCLIInstallGuideURL),
 		}
 	}
 
@@ -63,8 +63,8 @@ func detectLeapCLIDiagnostics(ctx context.Context) leapCLIDiagnostics {
 			CurrentVersion: currentVersion,
 			LatestVersion:  "unknown",
 			Status:         "unknown",
-			Note:           fmt.Sprintf("failed to fetch latest leap release: %v", latestErr),
-			Action:         fmt.Sprintf("Check network access, then retry. Install/upgrade guidance: %s", leapCLIInstallGuideURL),
+			Note:           "unable to check the latest Leap CLI release",
+			Action:         fmt.Sprintf("Check network access and rerun `concierge doctor`. Install/upgrade guidance: %s", leapCLIInstallGuideURL),
 		}
 	}
 
@@ -75,7 +75,7 @@ func detectLeapCLIDiagnostics(ctx context.Context) leapCLIDiagnostics {
 			CurrentVersion: currentVersion,
 			LatestVersion:  latestVersion,
 			Status:         "unknown",
-			Note:           fmt.Sprintf("failed to compare leap versions: %v", compareErr),
+			Note:           "installed and latest Leap CLI versions could not be compared",
 			Action:         "Verify installed and latest versions manually, then rerun doctor.",
 		}
 	}

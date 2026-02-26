@@ -27,7 +27,7 @@ func TestLogLevelValidationAcceptsSupportedValues(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected %q to be accepted, got error: %v", level, err)
 		}
-		if !strings.Contains(output, "version:") {
+		if !strings.Contains(output, "Concierge Doctor") {
 			t.Fatalf("expected doctor output for %q, got: %q", level, output)
 		}
 	}

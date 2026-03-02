@@ -309,6 +309,66 @@ func TestSnapshotIncludesEnvironmentFingerprints(t *testing.T) {
 	}
 }
 
+func TestSnapshotServerInfoProbeUsesExtendedTimeout(t *testing.T) {
+	repo := initGitRepo(t)
+
+	snapshotter := NewGitSnapshotter()
+	snapshotter.lookPath = func(file string) (string, error) {
+		switch file {
+		case "python3":
+			return "/usr/bin/python3", nil
+		case "leap":
+			return "/usr/local/bin/leap", nil
+		default:
+			return "", exec.ErrNotFound
+		}
+	}
+
+	var leapVersionTimeout time.Duration
+	var serverInfoTimeout time.Duration
+
+	snapshotter.runCommand = func(ctx context.Context, dir string, name string, args ...string) ([]byte, []byte, error) {
+		_ = dir
+
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			t.Fatal("expected command context to include deadline")
+		}
+
+		timeout := time.Until(deadline)
+		command := name + " " + strings.Join(args, " ")
+		switch command {
+		case "python3 --version":
+			return []byte("Python 3.11.8\n"), nil, nil
+		case "leap --version":
+			leapVersionTimeout = timeout
+			return []byte("leap v0.2.0\n"), nil, nil
+		case "leap auth whoami":
+			return []byte("concierge@example.com\n"), nil, nil
+		case "leap server info":
+			serverInfoTimeout = timeout
+			return []byte("datasetvolumes: []\n"), nil, nil
+		default:
+			return nil, []byte("unknown command"), errors.New("command failed")
+		}
+	}
+
+	_, err := snapshotter.Snapshot(context.Background(), core.SnapshotRequest{RepoRoot: repo})
+	if err != nil {
+		t.Fatalf("Snapshot returned error: %v", err)
+	}
+
+	if serverInfoTimeout <= leapVersionTimeout {
+		t.Fatalf("expected server info timeout (%s) to be longer than leap --version timeout (%s)", serverInfoTimeout, leapVersionTimeout)
+	}
+	if serverInfoTimeout < 5*time.Second {
+		t.Fatalf("expected server info timeout to allow long probe execution, got %s", serverInfoTimeout)
+	}
+	if leapVersionTimeout > 3*time.Second {
+		t.Fatalf("expected leap --version timeout to remain short, got %s", leapVersionTimeout)
+	}
+}
+
 func TestSnapshotLeapVersionProbeDoesNotFallbackToLegacyVersionCommand(t *testing.T) {
 	repo := initGitRepo(t)
 

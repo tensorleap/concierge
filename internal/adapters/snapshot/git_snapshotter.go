@@ -21,6 +21,11 @@ type gitRunner func(ctx context.Context, dir string, args ...string) ([]byte, []
 type commandRunner func(ctx context.Context, dir string, name string, args ...string) ([]byte, []byte, error)
 type pathLookup func(file string) (string, error)
 
+const (
+	defaultProbeTimeout        = 2 * time.Second
+	leapServerInfoProbeTimeout = 6 * time.Second
+)
+
 // GitSnapshotter captures workspace identity from git metadata and working-tree state.
 type GitSnapshotter struct {
 	clock      func() time.Time
@@ -340,7 +345,7 @@ func (g *GitSnapshotter) commandOutput(ctx context.Context, dir string, name str
 }
 
 func (g *GitSnapshotter) commandOutputFull(ctx context.Context, dir string, name string, args ...string) (string, error) {
-	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	probeCtx, cancel := context.WithTimeout(ctx, probeTimeoutForCommand(name, args...))
 	defer cancel()
 
 	stdout, stderr, err := g.runCommand(probeCtx, dir, name, args...)
@@ -349,7 +354,7 @@ func (g *GitSnapshotter) commandOutputFull(ctx context.Context, dir string, name
 
 	if err != nil {
 		if errors.Is(probeCtx.Err(), context.DeadlineExceeded) {
-			return "", fmt.Errorf("%s timed out", name)
+			return "", fmt.Errorf("%s timed out", formatCommand(name, args...))
 		}
 		if output == "" {
 			return "", err
@@ -361,6 +366,22 @@ func (g *GitSnapshotter) commandOutputFull(ctx context.Context, dir string, name
 	}
 
 	return output, nil
+}
+
+func probeTimeoutForCommand(name string, args ...string) time.Duration {
+	if isLeapServerInfoCommand(name, args...) {
+		return leapServerInfoProbeTimeout
+	}
+	return defaultProbeTimeout
+}
+
+func isLeapServerInfoCommand(name string, args ...string) bool {
+	return strings.EqualFold(name, "leap") && len(args) >= 2 && args[0] == "server" && args[1] == "info"
+}
+
+func formatCommand(name string, args ...string) string {
+	parts := append([]string{name}, args...)
+	return strings.TrimSpace(strings.Join(parts, " "))
 }
 
 func leapServerInfoFailureReason(output string) (string, bool) {

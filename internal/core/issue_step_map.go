@@ -38,8 +38,6 @@ var preferredEnsureStepByIssueCode = map[IssueCode]EnsureStepID{
 	IssueCodeLeapYAMLEntryFileExcluded:           EnsureStepLeapYAML,
 	IssueCodeLeapYAMLIncludeMissingRequiredFiles: EnsureStepLeapYAML,
 	IssueCodeLeapYAMLExcludeBlocksRequiredFiles:  EnsureStepLeapYAML,
-	IssueCodeLeapYAMLProjectIDSetInitialSetup:    EnsureStepLeapYAML,
-	IssueCodeLeapYAMLSecretIDSetInitialSetup:     EnsureStepLeapYAML,
 	IssueCodeLeapYAMLPythonVersionMissing:        EnsureStepLeapYAML,
 	IssueCodeLeapYAMLPythonVersionInvalid:        EnsureStepLeapYAML,
 

@@ -156,6 +156,27 @@ func TestInspectorLeapYAMLEntryFileNotFoundEmitsIssue(t *testing.T) {
 	}
 }
 
+func TestInspectorAllowsProjectAndSecretIdentifiersInLeapYAML(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
+		"projectId: demo-project",
+		"secretId: demo-secret",
+		"entryFile: leap_binder.py",
+		"",
+	}, "\n"))
+	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "integration_test.py", "print('test')\n")
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if len(status.Issues) != 0 {
+		t.Fatalf("expected no issues, got %+v", status.Issues)
+	}
+}
+
 func TestInspectorAllowsEntryFileExcludedByLeapYAML(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{

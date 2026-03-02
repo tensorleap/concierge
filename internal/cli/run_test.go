@@ -141,7 +141,7 @@ func TestRunYesSkipsApprovalPrompts(t *testing.T) {
 	if !strings.Contains(strings.ToLower(err.Error()), "pending requirements") {
 		t.Fatalf("expected user-facing max-iterations message, got: %v", err)
 	}
-	if strings.Contains(output, "[y/N]:") {
+	if strings.Contains(output, "[y/N]:") || strings.Contains(output, "[Y/n]:") {
 		t.Fatalf("expected --yes to skip approval prompts, got output: %q", output)
 	}
 }
@@ -155,42 +155,38 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected max-iterations stop to return error")
 	}
-	promptOutput := output
-	if promptEnd := strings.Index(output, "Review proposed changes"); promptEnd >= 0 {
-		promptOutput = output[:promptEnd]
-	}
-	if !strings.Contains(output, "Integration checks:") {
-		t.Fatalf("expected checklist before approval prompt, got output: %q", output)
-	}
-	if !strings.Contains(promptOutput, "☐ leap.yaml should be present and valid (blocking)") {
-		t.Fatalf("expected blocking checklist row in approval prompt, got output: %q", output)
-	}
-	if strings.Contains(promptOutput, "Model artifact is Tensorleap-compatible") {
-		t.Fatalf("expected model check to stay hidden until leap.yaml is present, got output: %q", output)
-	}
-	if strings.Contains(promptOutput, "Upload prerequisites are satisfied") {
-		t.Fatalf("expected upload rows to stay hidden before upload checks are implemented, got output: %q", output)
-	}
-	if !strings.Contains(promptOutput, "Current blocker: leap.yaml should be present and valid") {
-		t.Fatalf("expected blocker heading in approval prompt, got output: %q", output)
-	}
-	if !strings.Contains(promptOutput, "Why it matters: leap.yaml defines the upload boundary and entry point that Tensorleap uses to run your integration.") {
-		t.Fatalf("expected blocker explanation in approval prompt, got output: %q", output)
-	}
-	if !strings.Contains(promptOutput, "Docs: "+stepGuideLeapYAMLURL) {
-		t.Fatalf("expected leap.yaml docs link in approval prompt, got output: %q", output)
-	}
-	if strings.Contains(promptOutput, "Next required check:") {
-		t.Fatalf("expected prompt to avoid next-check phrasing, got output: %q", output)
-	}
-	if strings.Contains(promptOutput, "(No changes will be made before approval.)") {
-		t.Fatalf("expected prompt to avoid redundant parenthetical approval note, got output: %q", output)
+	if !strings.Contains(output, "Integration Checklist") {
+		t.Fatalf("expected checklist in output, got output: %q", output)
 	}
 	if !strings.Contains(output, "Allow Concierge to make changes for this check now?") {
 		t.Fatalf("expected pre-change approval prompt, got output: %q", output)
 	}
-	if !strings.Contains(output, "Review proposed changes") {
-		t.Fatalf("expected commit approval prompt, got output: %q", output)
+	if !strings.Contains(output, "Current blocker: leap.yaml should be present and valid") {
+		t.Fatalf("expected blocker heading in pre-change prompt, got output: %q", output)
+	}
+	if !strings.Contains(output, "Proposed Changes") {
+		t.Fatalf("expected styled change review heading, got output: %q", output)
+	}
+	if !strings.Contains(output, "Fixing: leap.yaml should be present and valid") {
+		t.Fatalf("expected user-facing fixing line, got output: %q", output)
+	}
+	if !strings.Contains(output, "Files changed:") {
+		t.Fatalf("expected changed files section, got output: %q", output)
+	}
+	if !strings.Contains(output, "Patch:") {
+		t.Fatalf("expected patch section, got output: %q", output)
+	}
+	if !strings.Contains(output, "Apply and commit these changes? [Y/n]:") {
+		t.Fatalf("expected single final approval prompt, got output: %q", output)
+	}
+	if strings.Count(output, "[y/N]:") != 1 {
+		t.Fatalf("expected exactly one [y/N] prompt before edits, got output: %q", output)
+	}
+	if strings.Count(output, "[Y/n]:") != 1 {
+		t.Fatalf("expected exactly one [Y/n] prompt, got output: %q", output)
+	}
+	if strings.Contains(output, "Step:") {
+		t.Fatalf("expected internal step label to be omitted, got output: %q", output)
 	}
 	if !strings.Contains(strings.ToLower(err.Error()), "pending requirements") {
 		t.Fatalf("expected user-facing max-iterations message, got: %v", err)
@@ -218,7 +214,7 @@ func TestStepApprovalMessageShowsOnlyChecklistThroughBlockingStep(t *testing.T) 
 	}
 
 	snapshot := core.WorkspaceSnapshot{}
-	message := stepApprovalMessage(step, snapshot, true, status, true)
+	message := stepApprovalMessage(step, snapshot, true, status, true, false)
 	if !strings.Contains(message, "☐ leap.yaml should be present and valid (blocking)") {
 		t.Fatalf("expected blocking check row, got message: %q", message)
 	}
@@ -249,7 +245,7 @@ func TestStepApprovalMessageIncludesBlockerContext(t *testing.T) {
 	}
 
 	snapshot := core.WorkspaceSnapshot{}
-	message := stepApprovalMessage(step, snapshot, true, status, true)
+	message := stepApprovalMessage(step, snapshot, true, status, true, false)
 	if !strings.Contains(message, "Current blocker: leap.yaml should be present and valid") {
 		t.Fatalf("expected blocker heading, got message: %q", message)
 	}
@@ -279,8 +275,8 @@ func TestRunDeclineStepApprovalLeavesRepoUnchanged(t *testing.T) {
 	if !strings.Contains(output, "Allow Concierge to make changes for this check now?") {
 		t.Fatalf("expected pre-change approval prompt, got output: %q", output)
 	}
-	if strings.Contains(output, "Review proposed changes") {
-		t.Fatalf("did not expect commit prompt when changes were not approved, got output: %q", output)
+	if strings.Contains(output, "Apply and commit these changes? [Y/n]:") {
+		t.Fatalf("did not expect commit approval prompt after declining pre-change prompt, got output: %q", output)
 	}
 
 	status := runGit(t, repo, "status", "--porcelain")

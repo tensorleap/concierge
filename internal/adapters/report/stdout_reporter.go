@@ -172,7 +172,8 @@ func writeSummaryLine(writer io.Writer, report core.IterationReport, options Out
 	}
 
 	changeStatus := "No changes were applied."
-	if hasEvidenceValue(report.Evidence, "executor.change_approval", "rejected") {
+	if hasEvidenceValue(report.Evidence, "executor.change_approval", "rejected") ||
+		hasEvidenceValue(report.Evidence, "git.approval", "rejected") {
 		changeStatus = "No changes were made because approval was not granted."
 	} else if report.Applied {
 		changeStatus = "Changes were applied."

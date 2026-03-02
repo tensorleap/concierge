@@ -2,6 +2,7 @@ package gitmanager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,29 +13,41 @@ import (
 )
 
 // ApprovalFunc decides whether to approve committing the current diff.
-type ApprovalFunc func(step core.EnsureStep, diffSummary string) (bool, error)
+type ApprovalFunc func(step core.EnsureStep, review ChangeReview) (bool, error)
+
+// ManagerOptions controls review behavior.
+type ManagerOptions struct {
+	ColorDiff bool
+}
 
 // Manager enforces branch safety and audited commit/reject flow.
 type Manager struct {
 	approve    ApprovalFunc
 	runGit     func(ctx context.Context, dir string, args ...string) (string, error)
 	removePath func(path string) error
+	options    ManagerOptions
 }
 
 // NewManager creates a git manager with approval callback.
-func NewManager(approve ApprovalFunc) *Manager {
+func NewManager(approve ApprovalFunc, opts ...ManagerOptions) *Manager {
 	if approve == nil {
-		approve = func(step core.EnsureStep, diffSummary string) (bool, error) {
+		approve = func(step core.EnsureStep, review ChangeReview) (bool, error) {
 			_ = step
-			_ = diffSummary
+			_ = review
 			return false, nil
 		}
+	}
+
+	options := ManagerOptions{ColorDiff: true}
+	if len(opts) > 0 {
+		options = opts[0]
 	}
 
 	return &Manager{
 		approve:    approve,
 		runGit:     runGitCombined,
 		removePath: os.RemoveAll,
+		options:    options,
 	}
 }
 
@@ -71,15 +84,12 @@ func (m *Manager) Handle(ctx context.Context, snapshot core.WorkspaceSnapshot, r
 		)
 	}
 
-	diffSummary, err := m.runGit(ctx, repoRoot, "diff", "--stat")
+	review, err := m.buildChangeReview(ctx, repoRoot, result.Step, statusPorcelain)
 	if err != nil {
-		diffSummary = statusPorcelain
-	}
-	if strings.TrimSpace(diffSummary) == "" {
-		diffSummary = statusPorcelain
+		return core.GitDecision{}, core.WrapError(core.KindUnknown, "gitmanager.handle.review", err)
 	}
 
-	approved, err := m.approve(result.Step, diffSummary)
+	approved, err := m.approve(result.Step, review)
 	if err != nil {
 		if restoreErr := m.restoreWorkingTree(ctx, repoRoot); restoreErr != nil {
 			return core.GitDecision{}, core.WrapError(core.KindUnknown, "gitmanager.handle.approval_restore", restoreErr)
@@ -88,8 +98,20 @@ func (m *Manager) Handle(ctx context.Context, snapshot core.WorkspaceSnapshot, r
 	}
 
 	decision.Evidence = append(decision.Evidence,
-		core.EvidenceItem{Name: "git.diff_summary", Value: strings.TrimSpace(diffSummary)},
+		core.EvidenceItem{Name: "git.diff_summary", Value: strings.TrimSpace(review.Stat)},
 	)
+	if len(review.Files) > 0 {
+		decision.Evidence = append(decision.Evidence, core.EvidenceItem{
+			Name:  "git.changed_files",
+			Value: strings.Join(review.Files, "\n"),
+		})
+	}
+	if strings.TrimSpace(review.Patch) != "" {
+		decision.Evidence = append(decision.Evidence, core.EvidenceItem{
+			Name:  "git.patch_available",
+			Value: "true",
+		})
+	}
 
 	if !approved {
 		if err := m.restoreWorkingTree(ctx, repoRoot); err != nil {
@@ -155,6 +177,164 @@ func (m *Manager) restoreWorkingTree(ctx context.Context, repoRoot string) error
 	}
 
 	return nil
+}
+
+func (m *Manager) buildChangeReview(
+	ctx context.Context,
+	repoRoot string,
+	step core.EnsureStep,
+	statusPorcelain string,
+) (ChangeReview, error) {
+	review := ChangeReview{
+		Focus: ReviewFocus(step),
+	}
+
+	stat, err := m.runGit(ctx, repoRoot, "diff", "--stat")
+	if err != nil {
+		stat = statusPorcelain
+	}
+	if strings.TrimSpace(stat) == "" {
+		stat = statusPorcelain
+	}
+	review.Stat = strings.TrimSpace(stat)
+
+	review.Files = m.collectChangedFiles(ctx, repoRoot, statusPorcelain)
+
+	patch, err := m.collectPatch(ctx, repoRoot)
+	if err != nil {
+		return ChangeReview{}, err
+	}
+	review.Patch = strings.TrimSpace(patch)
+
+	return review, nil
+}
+
+func (m *Manager) collectChangedFiles(ctx context.Context, repoRoot string, fallback string) []string {
+	merged := make([]string, 0, 8)
+	seen := make(map[string]struct{})
+
+	appendUnique := func(line string) {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			return
+		}
+		if _, ok := seen[trimmed]; ok {
+			return
+		}
+		seen[trimmed] = struct{}{}
+		merged = append(merged, trimmed)
+	}
+
+	nameStatus, err := m.runGit(ctx, repoRoot, "diff", "--name-status")
+	if err == nil {
+		for _, line := range splitNonEmptyLines(nameStatus) {
+			appendUnique(line)
+		}
+	}
+
+	untracked, err := m.runGit(ctx, repoRoot, "ls-files", "--others", "--exclude-standard")
+	if err == nil {
+		for _, file := range splitNonEmptyLines(untracked) {
+			appendUnique("A\t" + file)
+		}
+	}
+
+	if len(merged) == 0 {
+		for _, line := range splitNonEmptyLines(fallback) {
+			appendUnique(line)
+		}
+	}
+
+	return merged
+}
+
+func (m *Manager) collectPatch(ctx context.Context, repoRoot string) (string, error) {
+	args := []string{"diff", "--patch", "--minimal", "--"}
+	if m.options.ColorDiff {
+		args = append([]string{"-c", "color.ui=always"}, args...)
+	} else {
+		args = append([]string{"-c", "color.ui=never"}, args...)
+	}
+
+	sections := make([]string, 0, 4)
+	trackedPatch, err := m.runGit(ctx, repoRoot, args...)
+	if err == nil && strings.TrimSpace(trackedPatch) != "" {
+		sections = append(sections, strings.TrimSpace(trackedPatch))
+	}
+
+	untracked, err := m.runGit(ctx, repoRoot, "ls-files", "--others", "--exclude-standard")
+	if err != nil {
+		return strings.Join(sections, "\n\n"), nil
+	}
+
+	for _, relativePath := range splitNonEmptyLines(untracked) {
+		patch, patchErr := diffUntrackedPath(ctx, repoRoot, relativePath, m.options.ColorDiff)
+		if patchErr != nil {
+			return "", patchErr
+		}
+		if strings.TrimSpace(patch) == "" {
+			continue
+		}
+		sections = append(sections, strings.TrimSpace(patch))
+	}
+
+	return strings.Join(sections, "\n\n"), nil
+}
+
+func diffUntrackedPath(ctx context.Context, repoRoot string, relativePath string, colorDiff bool) (string, error) {
+	rel := filepath.Clean(strings.TrimSpace(relativePath))
+	if rel == "" || rel == "." || strings.HasPrefix(rel, "..") {
+		return "", nil
+	}
+	target := filepath.Join(repoRoot, rel)
+	info, err := os.Stat(target)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", core.WrapError(core.KindUnknown, "gitmanager.diff_untracked.stat", err)
+	}
+	if info.IsDir() {
+		return "", nil
+	}
+
+	args := make([]string, 0, 9)
+	if colorDiff {
+		args = append(args, "-c", "color.ui=always")
+	} else {
+		args = append(args, "-c", "color.ui=never")
+	}
+	args = append(args, "diff", "--patch", "--no-index", "--", "/dev/null", rel)
+
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = repoRoot
+	output, err := cmd.CombinedOutput()
+	trimmed := strings.TrimSpace(string(output))
+	if err == nil {
+		return trimmed, nil
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return trimmed, nil
+	}
+	if trimmed == "" {
+		return "", core.WrapError(core.KindUnknown, "gitmanager.diff_untracked.run", err)
+	}
+	return "", core.NewError(core.KindUnknown, "gitmanager.diff_untracked.run", fmt.Sprintf("git %s failed: %s", strings.Join(args, " "), trimmed))
+}
+
+func splitNonEmptyLines(raw string) []string {
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	result := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		result = append(result, trimmed)
+	}
+	return result
 }
 
 func runGitCombined(ctx context.Context, dir string, args ...string) (string, error) {

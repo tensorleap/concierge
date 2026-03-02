@@ -39,6 +39,16 @@ func TestPromptApprovalParsesYesNo(t *testing.T) {
 	}
 }
 
+func TestPromptYesNoDefaultsToYesWhenConfigured(t *testing.T) {
+	approved, err := promptYesNo(bytes.NewBufferString("\n"), new(bytes.Buffer), "Apply and commit these changes? [Y/n]:", true)
+	if err != nil {
+		t.Fatalf("promptYesNo returned error: %v", err)
+	}
+	if !approved {
+		t.Fatal("expected empty response to use default yes")
+	}
+}
+
 func TestDetectProjectRootCandidatesFindsSiblingGitRepos(t *testing.T) {
 	root := t.TempDir()
 	repoA := filepath.Join(root, "repo-a")

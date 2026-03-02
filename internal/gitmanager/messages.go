@@ -16,21 +16,22 @@ func CommitMessage(step core.EnsureStep, summary string) string {
 	return fmt.Sprintf("concierge(%s): %s", step.ID, normalizedSummary)
 }
 
-// ApprovalMessage is the prompt text shown before commit approval.
-func ApprovalMessage(step core.EnsureStep, diffSummary string) string {
-	stepSummary := strings.TrimSpace(step.Description)
-	if stepSummary == "" {
-		stepSummary = "Apply the planned change"
-	}
+// ChangeReview contains the user-facing review payload before final confirmation.
+type ChangeReview struct {
+	Focus string
+	Files []string
+	Stat  string
+	Patch string
+}
 
-	trimmedDiff := strings.TrimSpace(diffSummary)
-	if trimmedDiff == "" {
-		trimmedDiff = "No diff summary is available."
+// ReviewFocus returns user-facing wording for what Concierge is fixing.
+func ReviewFocus(step core.EnsureStep) string {
+	focus := strings.TrimSpace(core.HumanEnsureStepRequirementLabel(step.ID))
+	if focus == "" {
+		focus = strings.TrimSpace(step.Description)
 	}
-
-	return fmt.Sprintf(
-		"Review proposed changes\nStep: %s\nDiff summary:\n%s\nCreate a commit for these changes?",
-		stepSummary,
-		trimmedDiff,
-	)
+	if focus == "" {
+		focus = "Apply the planned change"
+	}
+	return focus
 }

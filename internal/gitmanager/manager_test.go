@@ -16,9 +16,9 @@ func TestGitManagerRejectsMainBranchCommit(t *testing.T) {
 	runGit(t, repo, "checkout", "-B", "main")
 	writeFile(t, filepath.Join(repo, "tracked.txt"), "changed\n")
 
-	manager := NewManager(func(step core.EnsureStep, diffSummary string) (bool, error) {
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (bool, error) {
 		_ = step
-		_ = diffSummary
+		_ = review
 		return true, nil
 	})
 
@@ -36,10 +36,13 @@ func TestGitManagerApproveCreatesCommit(t *testing.T) {
 	runGit(t, repo, "checkout", "-B", "feature/test")
 	writeFile(t, filepath.Join(repo, "tracked.txt"), "changed\n")
 
-	manager := NewManager(func(step core.EnsureStep, diffSummary string) (bool, error) {
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (bool, error) {
 		_ = step
-		if strings.TrimSpace(diffSummary) == "" {
+		if strings.TrimSpace(review.Stat) == "" {
 			t.Fatalf("expected non-empty diff summary")
+		}
+		if strings.TrimSpace(review.Patch) == "" {
+			t.Fatalf("expected non-empty patch output")
 		}
 		return true, nil
 	})
@@ -75,9 +78,9 @@ func TestGitManagerRejectRestoresTree(t *testing.T) {
 	writeFile(t, filepath.Join(repo, "tracked.txt"), "changed\n")
 	writeFile(t, filepath.Join(repo, "new.txt"), "new\n")
 
-	manager := NewManager(func(step core.EnsureStep, diffSummary string) (bool, error) {
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (bool, error) {
 		_ = step
-		_ = diffSummary
+		_ = review
 		return false, nil
 	})
 

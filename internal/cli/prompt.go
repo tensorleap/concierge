@@ -55,7 +55,26 @@ func promptApproval(in io.Reader, out io.Writer, message string) (bool, error) {
 	if trimmedMessage == "" {
 		trimmedMessage = "Approve these changes?"
 	}
-	if _, err := fmt.Fprintf(out, "%s\nProceed? [y/N]: ", trimmedMessage); err != nil {
+	if _, err := fmt.Fprintf(out, "%s\n", trimmedMessage); err != nil {
+		return false, err
+	}
+	return promptYesNo(in, out, "Proceed? [y/N]:", false)
+}
+
+func promptYesNo(in io.Reader, out io.Writer, prompt string, defaultYes bool) (bool, error) {
+	if out == nil {
+		out = io.Discard
+	}
+
+	promptText := strings.TrimSpace(prompt)
+	if promptText == "" {
+		if defaultYes {
+			promptText = "Proceed? [Y/n]:"
+		} else {
+			promptText = "Proceed? [y/N]:"
+		}
+	}
+	if _, err := fmt.Fprintf(out, "%s ", promptText); err != nil {
 		return false, err
 	}
 
@@ -68,8 +87,10 @@ func promptApproval(in io.Reader, out io.Writer, message string) (bool, error) {
 	switch normalized {
 	case "y", "yes":
 		return true, nil
-	case "", "n", "no":
+	case "n", "no":
 		return false, nil
+	case "":
+		return defaultYes, nil
 	default:
 		return false, fmt.Errorf("invalid confirmation response %q", line)
 	}

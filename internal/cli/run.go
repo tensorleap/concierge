@@ -116,15 +116,19 @@ func newRunCommand() *cobra.Command {
 					return false, core.NewError(
 						core.KindUnknown,
 						"cli.run.non_interactive.step_approval_required",
-						"this run requires approval before Concierge applies changes; rerun with --yes to auto-approve in non-interactive mode",
+						"this run requires approval before Concierge applies and commits changes; rerun with --yes to auto-approve in non-interactive mode",
 					)
 				}
 				snapshotValue, hasSnapshot := plannerAdapter.LastSnapshot()
 				status, hasStatus := plannerAdapter.LastStatus()
-				return promptApproval(promptInput, cmd.OutOrStdout(), stepApprovalMessage(step, snapshotValue, hasSnapshot, status, hasStatus))
+				return promptApproval(
+					promptInput,
+					cmd.OutOrStdout(),
+					stepApprovalMessage(step, snapshotValue, hasSnapshot, status, hasStatus, renderOptions.EnableColor),
+				)
 			}
 
-			gitApproval := func(step core.EnsureStep, diffSummary string) (bool, error) {
+			gitApproval := func(step core.EnsureStep, review gitmanager.ChangeReview) (bool, error) {
 				if yes {
 					return true, nil
 				}
@@ -135,7 +139,13 @@ func newRunCommand() *cobra.Command {
 						"this run requires approval to commit changes; rerun with --yes to auto-approve in non-interactive mode",
 					)
 				}
-				return promptApproval(promptInput, cmd.OutOrStdout(), gitmanager.ApprovalMessage(step, diffSummary))
+				return promptChangeReviewApproval(
+					promptInput,
+					cmd.OutOrStdout(),
+					step,
+					review,
+					changeReviewRenderOptions{EnableColor: renderOptions.EnableColor},
+				)
 			}
 
 			engine, err := orchestrator.NewEngine(orchestrator.Dependencies{
@@ -143,7 +153,7 @@ func newRunCommand() *cobra.Command {
 				Inspector:   inspect.NewBaselineInspector(),
 				Planner:     plannerAdapter,
 				Executor:    execute.NewApprovalExecutor(execute.NewDispatcherExecutor(), stepApproval),
-				GitManager:  gitmanager.NewManager(gitApproval),
+				GitManager:  gitmanager.NewManager(gitApproval, gitmanager.ManagerOptions{ColorDiff: renderOptions.EnableColor}),
 				Validator:   validate.NewBaselineValidator(),
 				Reporter:    iterationReporter,
 			})
@@ -228,8 +238,9 @@ func stepApprovalMessage(
 	hasSnapshot bool,
 	status core.IntegrationStatus,
 	hasStatus bool,
+	enableColor bool,
 ) string {
-	checklist := checklistRowsForPrompt(step, snapshot, hasSnapshot, status, hasStatus)
+	checklist := checklistRowsForPrompt(step, snapshot, hasSnapshot, status, hasStatus, enableColor)
 
 	blockers := []core.Issue(nil)
 	if hasStatus {
@@ -377,6 +388,7 @@ func checklistRowsForPrompt(
 	hasSnapshot bool,
 	status core.IntegrationStatus,
 	hasStatus bool,
+	enableColor bool,
 ) []string {
 	checklist := []string{"Integration checks:"}
 	if !hasSnapshot || !hasStatus {
@@ -385,7 +397,7 @@ func checklistRowsForPrompt(
 
 	checks := core.BuildVerifiedChecks(snapshot, status.Issues, nil, step.ID)
 	for _, check := range core.VisibleChecksForFlow(checks) {
-		icon := promptCheckIcon(check.Status)
+		icon := promptCheckIcon(check.Status, enableColor)
 		label := promptCheckLabel(check)
 		if check.Blocking {
 			label += " (blocking)"
@@ -396,15 +408,20 @@ func checklistRowsForPrompt(
 	return checklist
 }
 
-func promptCheckIcon(status core.CheckStatus) string {
+func promptCheckIcon(status core.CheckStatus, enableColor bool) string {
+	icon := "☐"
+	color := ansiDim
 	switch status {
 	case core.CheckStatusPass:
-		return "☑"
+		icon = "☑"
+		color = ansiGreen
 	case core.CheckStatusWarning:
-		return "⚠"
-	default:
-		return "☐"
+		icon = "⚠"
+		color = ansiYellow
+	case core.CheckStatusFail:
+		color = ansiYellow
 	}
+	return paint(icon, color, enableColor)
 }
 
 func promptCheckLabel(check core.VerifiedCheck) string {

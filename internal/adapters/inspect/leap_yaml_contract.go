@@ -85,23 +85,6 @@ func inspectLeapYAMLContract(repoRoot string, leapYAMLPath string, status *core.
 		return &contract, nil
 	}
 
-	if strings.TrimSpace(contract.ProjectID) != "" {
-		status.Issues = append(status.Issues, core.Issue{
-			Code:     core.IssueCodeLeapYAMLProjectIDSetInitialSetup,
-			Message:  "leap.yaml sets projectId; initial setup typically leaves project identifiers empty",
-			Severity: core.SeverityWarning,
-			Scope:    core.IssueScopeLeapYAML,
-		})
-	}
-	if strings.TrimSpace(contract.SecretID) != "" {
-		status.Issues = append(status.Issues, core.Issue{
-			Code:     core.IssueCodeLeapYAMLSecretIDSetInitialSetup,
-			Message:  "leap.yaml sets secretId; initial setup typically leaves project identifiers empty",
-			Severity: core.SeverityWarning,
-			Scope:    core.IssueScopeLeapYAML,
-		})
-	}
-
 	return &contract, nil
 }
 

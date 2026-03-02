@@ -42,8 +42,6 @@ const (
 	IssueCodeLeapYAMLEntryFileExcluded           IssueCode = "leap_yaml_entry_file_excluded"
 	IssueCodeLeapYAMLIncludeMissingRequiredFiles IssueCode = "leap_yaml_include_missing_required_files"
 	IssueCodeLeapYAMLExcludeBlocksRequiredFiles  IssueCode = "leap_yaml_exclude_blocks_required_files"
-	IssueCodeLeapYAMLProjectIDSetInitialSetup    IssueCode = "leap_yaml_project_id_set_initial_setup"
-	IssueCodeLeapYAMLSecretIDSetInitialSetup     IssueCode = "leap_yaml_secret_id_set_initial_setup"
 	IssueCodeLeapYAMLPythonVersionMissing        IssueCode = "leap_yaml_python_version_missing"
 	IssueCodeLeapYAMLPythonVersionInvalid        IssueCode = "leap_yaml_python_version_invalid"
 
@@ -174,8 +172,6 @@ var knownIssueCodes = []IssueCode{
 	IssueCodeLeapYAMLEntryFileExcluded,
 	IssueCodeLeapYAMLIncludeMissingRequiredFiles,
 	IssueCodeLeapYAMLExcludeBlocksRequiredFiles,
-	IssueCodeLeapYAMLProjectIDSetInitialSetup,
-	IssueCodeLeapYAMLSecretIDSetInitialSetup,
 	IssueCodeLeapYAMLPythonVersionMissing,
 	IssueCodeLeapYAMLPythonVersionInvalid,
 	IssueCodeModelFileMissing,

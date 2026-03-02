@@ -158,6 +158,24 @@ type ValidationResult struct {
 	Issues []Issue `json:"issues,omitempty"`
 }
 
+// CheckStatus is a user-facing verification state for one checked requirement.
+type CheckStatus string
+
+const (
+	CheckStatusPass    CheckStatus = "pass"
+	CheckStatusWarning CheckStatus = "warning"
+	CheckStatusFail    CheckStatus = "fail"
+)
+
+// VerifiedCheck captures one explicitly verified requirement row for UI/report output.
+type VerifiedCheck struct {
+	StepID   EnsureStepID `json:"stepId"`
+	Label    string       `json:"label"`
+	Status   CheckStatus  `json:"status"`
+	Blocking bool         `json:"blocking,omitempty"`
+	Issues   []Issue      `json:"issues,omitempty"`
+}
+
 // IterationReport is the final stage payload for one orchestration loop.
 type IterationReport struct {
 	GeneratedAt time.Time        `json:"generatedAt"`
@@ -165,6 +183,7 @@ type IterationReport struct {
 	Step        EnsureStep       `json:"step"`
 	Applied     bool             `json:"applied"`
 	Evidence    []EvidenceItem   `json:"evidence,omitempty"`
+	Checks      []VerifiedCheck  `json:"checks,omitempty"`
 	Validation  ValidationResult `json:"validation"`
 	Commit      *CommitMetadata  `json:"commit,omitempty"`
 	Notes       []string         `json:"notes,omitempty"`

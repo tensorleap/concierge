@@ -16,6 +16,27 @@ func TestReporterWritesSingleLineSummary(t *testing.T) {
 	err := reporter.Report(context.Background(), core.IterationReport{
 		SnapshotID: "snapshot-123",
 		Step:       core.EnsureStep{ID: core.EnsureStepLeapYAML},
+		Checks: []core.VerifiedCheck{
+			{
+				StepID: core.EnsureStepRepositoryContext,
+				Label:  core.HumanEnsureStepLabel(core.EnsureStepRepositoryContext),
+				Status: core.CheckStatusPass,
+			},
+			{
+				StepID:   core.EnsureStepLeapYAML,
+				Label:    core.HumanEnsureStepLabel(core.EnsureStepLeapYAML),
+				Status:   core.CheckStatusFail,
+				Blocking: true,
+				Issues: []core.Issue{
+					{
+						Code:     core.IssueCodeLeapYAMLMissing,
+						Message:  "leap.yaml is required at repository root",
+						Severity: core.SeverityError,
+						Scope:    core.IssueScopeLeapYAML,
+					},
+				},
+			},
+		},
 		Validation: core.ValidationResult{
 			Passed: false,
 			Issues: []core.Issue{
@@ -35,8 +56,8 @@ func TestReporterWritesSingleLineSummary(t *testing.T) {
 	output := sink.String()
 	expectedSnippets := []string{
 		"Integration Checklist",
-		"Check leap.yaml setup (blocking)",
-		"Blocked on: Check leap.yaml setup",
+		"leap.yaml should be present and valid (blocking)",
+		"Blocked on: leap.yaml should be present and valid",
 		"leap.yaml is required at repository root",
 		"Concierge can help with this step interactively and will ask before making any changes.",
 		"Changes: No changes were applied.",
@@ -46,7 +67,7 @@ func TestReporterWritesSingleLineSummary(t *testing.T) {
 			t.Fatalf("expected output to contain %q, got %q", snippet, output)
 		}
 	}
-	if strings.Contains(output, "Check model compatibility") {
+	if strings.Contains(output, "Upload prerequisites are satisfied") {
 		t.Fatalf("expected output to omit future unchecked checks, got %q", output)
 	}
 }
@@ -58,6 +79,18 @@ func TestReporterShowsNextStepsWhenChecksPass(t *testing.T) {
 	err := reporter.Report(context.Background(), core.IterationReport{
 		SnapshotID: "snapshot-123",
 		Step:       core.EnsureStep{ID: core.EnsureStepComplete},
+		Checks: []core.VerifiedCheck{
+			{
+				StepID: core.EnsureStepRepositoryContext,
+				Label:  core.HumanEnsureStepLabel(core.EnsureStepRepositoryContext),
+				Status: core.CheckStatusPass,
+			},
+			{
+				StepID: core.EnsureStepLeapYAML,
+				Label:  core.HumanEnsureStepLabel(core.EnsureStepLeapYAML),
+				Status: core.CheckStatusPass,
+			},
+		},
 		Validation: core.ValidationResult{Passed: true},
 	})
 	if err != nil {
@@ -66,7 +99,7 @@ func TestReporterShowsNextStepsWhenChecksPass(t *testing.T) {
 
 	output := sink.String()
 	expectedSnippets := []string{
-		"All required checks passed.",
+		"Verified checks passed.",
 		"Next steps:",
 		"run `leap push` from the repository root.",
 		tensorleapUploadGuideURL,
@@ -75,6 +108,151 @@ func TestReporterShowsNextStepsWhenChecksPass(t *testing.T) {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected output to contain %q, got %q", snippet, output)
 		}
+	}
+}
+
+func TestReporterShowsWarningStateWhenChecksHaveWarnings(t *testing.T) {
+	var sink strings.Builder
+	reporter := NewStdoutReporter(&sink)
+
+	err := reporter.Report(context.Background(), core.IterationReport{
+		SnapshotID: "snapshot-123",
+		Step:       core.EnsureStep{ID: core.EnsureStepLeapCLIAuth},
+		Checks: []core.VerifiedCheck{
+			{
+				StepID: core.EnsureStepLeapCLIAuth,
+				Label:  core.HumanEnsureStepLabel(core.EnsureStepLeapCLIAuth),
+				Status: core.CheckStatusWarning,
+			},
+		},
+		Validation: core.ValidationResult{Passed: true},
+	})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	output := sink.String()
+	expectedSnippets := []string{
+		"⚠ Leap CLI should be installed and authenticated",
+		"Warning: Leap CLI should be installed and authenticated",
+		"Concierge can help with this step interactively and will ask before making any changes.",
+	}
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(output, snippet) {
+			t.Fatalf("expected output to contain %q, got %q", snippet, output)
+		}
+	}
+	if strings.Contains(output, "Blocked on:") {
+		t.Fatalf("did not expect blocker heading for warning-only checks, got %q", output)
+	}
+}
+
+func TestReporterStopsAtFirstWarningAndPrintsWarningDetails(t *testing.T) {
+	var sink strings.Builder
+	reporter := NewStdoutReporter(&sink)
+
+	err := reporter.Report(context.Background(), core.IterationReport{
+		SnapshotID: "snapshot-123",
+		Step:       core.EnsureStep{ID: core.EnsureStepComplete},
+		Checks: []core.VerifiedCheck{
+			{
+				StepID: core.EnsureStepRepositoryContext,
+				Label:  core.HumanEnsureStepLabel(core.EnsureStepRepositoryContext),
+				Status: core.CheckStatusPass,
+			},
+			{
+				StepID: core.EnsureStepLeapCLIAuth,
+				Label:  core.HumanEnsureStepLabel(core.EnsureStepLeapCLIAuth),
+				Status: core.CheckStatusWarning,
+				Issues: []core.Issue{
+					{
+						Code:     core.IssueCodeLeapCLINotAuthenticated,
+						Message:  "leap CLI is not authenticated",
+						Severity: core.SeverityWarning,
+						Scope:    core.IssueScopeCLI,
+					},
+				},
+			},
+			{
+				StepID: core.EnsureStepLeapYAML,
+				Label:  core.HumanEnsureStepLabel(core.EnsureStepLeapYAML),
+				Status: core.CheckStatusPass,
+			},
+		},
+		Validation: core.ValidationResult{Passed: true},
+	})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	output := sink.String()
+	expectedSnippets := []string{
+		"☑ Repository context is ready",
+		"⚠ Leap CLI should be installed and authenticated",
+		"Warning: Leap CLI should be installed and authenticated",
+		"Details:",
+		"leap CLI is not authenticated",
+		"This warning is advisory in the current run, so Concierge did not apply a fix automatically.",
+		"Next step: run `leap auth login`, then rerun `concierge run`.",
+	}
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(output, snippet) {
+			t.Fatalf("expected output to contain %q, got %q", snippet, output)
+		}
+	}
+	if strings.Contains(output, "leap.yaml is present and valid") {
+		t.Fatalf("expected output to stop at first warning, got %q", output)
+	}
+	if strings.Contains(output, "Concierge can help with this step interactively and will ask before making any changes.") {
+		t.Fatalf("did not expect interactive-help claim for warning-only completed run, got %q", output)
+	}
+}
+
+func TestReporterShowsManualGuidanceWhenExecutorCannotApplyFix(t *testing.T) {
+	var sink strings.Builder
+	reporter := NewStdoutReporter(&sink)
+
+	err := reporter.Report(context.Background(), core.IterationReport{
+		SnapshotID: "snapshot-123",
+		Step:       core.EnsureStep{ID: core.EnsureStepLeapCLIAuth},
+		Evidence: []core.EvidenceItem{
+			{Name: "executor.mode", Value: "stub"},
+		},
+		Checks: []core.VerifiedCheck{
+			{
+				StepID: core.EnsureStepLeapCLIAuth,
+				Label:  core.HumanEnsureStepLabel(core.EnsureStepLeapCLIAuth),
+				Status: core.CheckStatusWarning,
+				Issues: []core.Issue{
+					{
+						Code:     core.IssueCodeLeapCLINotFound,
+						Message:  "leap CLI was not found in PATH",
+						Severity: core.SeverityWarning,
+						Scope:    core.IssueScopeCLI,
+					},
+				},
+			},
+		},
+		Validation: core.ValidationResult{Passed: true},
+	})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	output := sink.String()
+	expectedSnippets := []string{
+		"Warning: Leap CLI should be installed and authenticated",
+		"leap CLI was not found in PATH",
+		"Concierge cannot apply an automated fix for this check in the current run.",
+		"Next step: install the Leap CLI, then run `leap --version` and `leap auth login`, and rerun `concierge run`.",
+	}
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(output, snippet) {
+			t.Fatalf("expected output to contain %q, got %q", snippet, output)
+		}
+	}
+	if strings.Contains(output, "Concierge can help with this step interactively and will ask before making any changes.") {
+		t.Fatalf("did not expect interactive-help claim when executor mode is stub, got %q", output)
 	}
 }
 

@@ -164,6 +164,27 @@ func TestRunIterationSuccessCallsStagesInOrder(t *testing.T) {
 	if report.Step.ID != harness.result.Step.ID {
 		t.Fatalf("expected report step %q, got %q", harness.result.Step.ID, report.Step.ID)
 	}
+	if len(report.Checks) == 0 {
+		t.Fatal("expected verified checks to be populated")
+	}
+	leapCheck := core.VerifiedCheck{}
+	foundLeapCheck := false
+	for _, check := range report.Checks {
+		if check.StepID == core.EnsureStepLeapYAML {
+			leapCheck = check
+			foundLeapCheck = true
+			break
+		}
+	}
+	if !foundLeapCheck {
+		t.Fatalf("expected %q check row in report", core.EnsureStepLeapYAML)
+	}
+	if leapCheck.Status != core.CheckStatusFail {
+		t.Fatalf("expected leap.yaml check to fail, got %q", leapCheck.Status)
+	}
+	if !leapCheck.Blocking {
+		t.Fatal("expected leap.yaml check to be marked blocking")
+	}
 	expectedValidation := mergeBlockingInspectIssues(harness.validation, harness.status)
 	if !reflect.DeepEqual(report.Validation, expectedValidation) {
 		t.Fatalf("expected validation %+v, got %+v", expectedValidation, report.Validation)

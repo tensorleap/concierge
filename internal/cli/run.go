@@ -119,8 +119,9 @@ func newRunCommand() *cobra.Command {
 						"this run requires approval before Concierge applies changes; rerun with --yes to auto-approve in non-interactive mode",
 					)
 				}
+				snapshotValue, hasSnapshot := plannerAdapter.LastSnapshot()
 				status, hasStatus := plannerAdapter.LastStatus()
-				return promptApproval(promptInput, cmd.OutOrStdout(), stepApprovalMessage(step, status, hasStatus))
+				return promptApproval(promptInput, cmd.OutOrStdout(), stepApprovalMessage(step, snapshotValue, hasSnapshot, status, hasStatus))
 			}
 
 			gitApproval := func(step core.EnsureStep, diffSummary string) (bool, error) {
@@ -221,8 +222,14 @@ func newRunCommand() *cobra.Command {
 	return cmd
 }
 
-func stepApprovalMessage(step core.EnsureStep, status core.IntegrationStatus, hasStatus bool) string {
-	checklist := checklistRowsForPrompt(step)
+func stepApprovalMessage(
+	step core.EnsureStep,
+	snapshot core.WorkspaceSnapshot,
+	hasSnapshot bool,
+	status core.IntegrationStatus,
+	hasStatus bool,
+) string {
+	checklist := checklistRowsForPrompt(step, snapshot, hasSnapshot, status, hasStatus)
 
 	blockers := []core.Issue(nil)
 	if hasStatus {
@@ -232,6 +239,7 @@ func stepApprovalMessage(step core.EnsureStep, status core.IntegrationStatus, ha
 	checkLabel := core.HumanEnsureStepLabel(step.ID)
 	checkHeading := "Current check"
 	if len(blockers) > 0 {
+		checkLabel = core.HumanEnsureStepRequirementLabel(step.ID)
 		checkHeading = "Current blocker"
 	}
 	checklist = append(checklist, "", fmt.Sprintf("%s: %s", checkHeading, checkLabel))
@@ -294,6 +302,8 @@ type planCapturePlanner struct {
 	base ports.Planner
 
 	mu         sync.RWMutex
+	lastSnap   core.WorkspaceSnapshot
+	hasSnap    bool
 	lastStatus core.IntegrationStatus
 	hasStatus  bool
 }
@@ -309,11 +319,22 @@ func (p *planCapturePlanner) Plan(ctx context.Context, snapshot core.WorkspaceSn
 	}
 
 	p.mu.Lock()
+	p.lastSnap = cloneWorkspaceSnapshot(snapshot)
+	p.hasSnap = true
 	p.lastStatus = cloneIntegrationStatus(status)
 	p.hasStatus = true
 	p.mu.Unlock()
 
 	return plan, nil
+}
+
+func (p *planCapturePlanner) LastSnapshot() (core.WorkspaceSnapshot, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if !p.hasSnap {
+		return core.WorkspaceSnapshot{}, false
+	}
+	return cloneWorkspaceSnapshot(p.lastSnap), true
 }
 
 func (p *planCapturePlanner) LastStatus() (core.IntegrationStatus, bool) {
@@ -323,6 +344,20 @@ func (p *planCapturePlanner) LastStatus() (core.IntegrationStatus, bool) {
 		return core.IntegrationStatus{}, false
 	}
 	return cloneIntegrationStatus(p.lastStatus), true
+}
+
+func cloneWorkspaceSnapshot(snapshot core.WorkspaceSnapshot) core.WorkspaceSnapshot {
+	cloned := snapshot
+	if len(snapshot.FileHashes) > 0 {
+		cloned.FileHashes = make(map[string]string, len(snapshot.FileHashes))
+		for key, value := range snapshot.FileHashes {
+			cloned.FileHashes[key] = value
+		}
+	}
+	if len(snapshot.Runtime.RequirementsFiles) > 0 {
+		cloned.Runtime.RequirementsFiles = append([]string(nil), snapshot.Runtime.RequirementsFiles...)
+	}
+	return cloned
 }
 
 func cloneIntegrationStatus(status core.IntegrationStatus) core.IntegrationStatus {
@@ -336,46 +371,51 @@ func cloneIntegrationStatus(status core.IntegrationStatus) core.IntegrationStatu
 	return cloned
 }
 
-func checklistStepsForPrompt() []core.EnsureStep {
-	known := core.KnownEnsureSteps()
-	steps := make([]core.EnsureStep, 0, len(known))
-	for _, step := range known {
-		if step.ID == core.EnsureStepComplete || step.ID == core.EnsureStepInvestigate {
-			continue
-		}
-		steps = append(steps, step)
-	}
-	return steps
-}
-
-func checklistRowsForPrompt(step core.EnsureStep) []string {
+func checklistRowsForPrompt(
+	step core.EnsureStep,
+	snapshot core.WorkspaceSnapshot,
+	hasSnapshot bool,
+	status core.IntegrationStatus,
+	hasStatus bool,
+) []string {
 	checklist := []string{"Integration checks:"}
-
-	steps := checklistStepsForPrompt()
-	blockingIndex := -1
-	for i, knownStep := range steps {
-		if knownStep.ID == step.ID {
-			blockingIndex = i
-			break
-		}
-	}
-
-	if blockingIndex < 0 {
-		checklist = append(checklist, fmt.Sprintf("☐ %s (blocking)", core.HumanEnsureStepLabel(step.ID)))
+	if !hasSnapshot || !hasStatus {
 		return checklist
 	}
 
-	for i := 0; i <= blockingIndex; i++ {
-		knownStep := steps[i]
-		label := core.HumanEnsureStepLabel(knownStep.ID)
-		if i == blockingIndex {
-			checklist = append(checklist, fmt.Sprintf("☐ %s (blocking)", label))
-			continue
+	checks := core.BuildVerifiedChecks(snapshot, status.Issues, nil, step.ID)
+	for _, check := range core.VisibleChecksForFlow(checks) {
+		icon := promptCheckIcon(check.Status)
+		label := promptCheckLabel(check)
+		if check.Blocking {
+			label += " (blocking)"
 		}
-		checklist = append(checklist, fmt.Sprintf("☑ %s", label))
+		checklist = append(checklist, fmt.Sprintf("%s %s", icon, label))
 	}
 
 	return checklist
+}
+
+func promptCheckIcon(status core.CheckStatus) string {
+	switch status {
+	case core.CheckStatusPass:
+		return "☑"
+	case core.CheckStatusWarning:
+		return "⚠"
+	default:
+		return "☐"
+	}
+}
+
+func promptCheckLabel(check core.VerifiedCheck) string {
+	if check.Status == core.CheckStatusPass {
+		label := strings.TrimSpace(check.Label)
+		if label != "" {
+			return label
+		}
+		return core.HumanEnsureStepLabel(check.StepID)
+	}
+	return core.HumanEnsureStepRequirementLabel(check.StepID)
 }
 
 type stepApprovalGuidance struct {

@@ -262,7 +262,7 @@ func TestSnapshotIncludesEnvironmentFingerprints(t *testing.T) {
 		switch command {
 		case "python3 --version":
 			return []byte("Python 3.11.8\n"), nil, nil
-		case "leap version":
+		case "leap --version":
 			return []byte("leap v0.2.0\n"), nil, nil
 		case "leap auth whoami":
 			return []byte("concierge@example.com\n"), nil, nil
@@ -309,6 +309,48 @@ func TestSnapshotIncludesEnvironmentFingerprints(t *testing.T) {
 	}
 }
 
+func TestSnapshotLeapVersionProbeDoesNotFallbackToLegacyVersionCommand(t *testing.T) {
+	repo := initGitRepo(t)
+
+	snapshotter := NewGitSnapshotter()
+	snapshotter.lookPath = func(file string) (string, error) {
+		switch file {
+		case "python3":
+			return "/usr/bin/python3", nil
+		case "leap":
+			return "/usr/local/bin/leap", nil
+		default:
+			return "", exec.ErrNotFound
+		}
+	}
+	snapshotter.runCommand = func(ctx context.Context, dir string, name string, args ...string) ([]byte, []byte, error) {
+		_ = ctx
+		_ = dir
+		command := name + " " + strings.Join(args, " ")
+		switch command {
+		case "python3 --version":
+			return []byte("Python 3.11.8\n"), nil, nil
+		case "leap --version":
+			return nil, []byte("unknown flag: --version"), errors.New("command failed")
+		case "leap auth whoami":
+			return []byte("concierge@example.com\n"), nil, nil
+		case "leap server info":
+			return []byte("datasetvolumes: []\n"), nil, nil
+		default:
+			return nil, []byte("unknown command"), errors.New("command failed")
+		}
+	}
+
+	snapshotValue, err := snapshotter.Snapshot(context.Background(), core.SnapshotRequest{RepoRoot: repo})
+	if err != nil {
+		t.Fatalf("Snapshot returned error: %v", err)
+	}
+
+	if snapshotValue.LeapCLI.Version != "" {
+		t.Fatalf("expected leap version to be empty when --version probe fails, got %q", snapshotValue.LeapCLI.Version)
+	}
+}
+
 func TestSnapshotServerInfoProbeFailsWhenInstallationInfoMissing(t *testing.T) {
 	repo := initGitRepo(t)
 
@@ -330,7 +372,7 @@ func TestSnapshotServerInfoProbeFailsWhenInstallationInfoMissing(t *testing.T) {
 		switch command {
 		case "python3 --version":
 			return []byte("Python 3.11.8\n"), nil, nil
-		case "leap version":
+		case "leap --version":
 			return []byte("leap v0.2.0\n"), nil, nil
 		case "leap auth whoami":
 			return []byte("concierge@example.com\n"), nil, nil
@@ -374,7 +416,7 @@ func TestSnapshotServerInfoProbeFailsWhenServerNotRunning(t *testing.T) {
 		switch command {
 		case "python3 --version":
 			return []byte("Python 3.11.8\n"), nil, nil
-		case "leap version":
+		case "leap --version":
 			return []byte("leap v0.2.0\n"), nil, nil
 		case "leap auth whoami":
 			return []byte("concierge@example.com\n"), nil, nil

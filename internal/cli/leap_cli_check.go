@@ -52,7 +52,7 @@ func detectLeapCLIDiagnostics(ctx context.Context) leapCLIDiagnostics {
 			LatestVersion:  "unknown",
 			Status:         "unknown",
 			Note:           "unable to read the installed Leap CLI version",
-			Action:         fmt.Sprintf("Run `leap version` manually. If it fails, reinstall from: %s", leapCLIInstallGuideURL),
+			Action:         fmt.Sprintf("Run `leap --version` manually. If it fails, reinstall from: %s", leapCLIInstallGuideURL),
 		}
 	}
 
@@ -106,12 +106,9 @@ func detectLeapCLIDiagnostics(ctx context.Context) leapCLIDiagnostics {
 }
 
 func detectInstalledLeapCLIVersion(ctx context.Context) (string, error) {
-	output, err := leapCLIRunCommand(ctx, "leap", "version")
+	output, err := leapCLIRunCommand(ctx, "leap", "--version")
 	if err != nil {
-		output, err = leapCLIRunCommand(ctx, "leap", "--version")
-		if err != nil {
-			return "", err
-		}
+		return "", err
 	}
 
 	version, found := extractFirstSemver(output)

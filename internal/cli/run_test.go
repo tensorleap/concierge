@@ -51,7 +51,7 @@ func TestRunNonDryRunExecutesSingleIterationByDefault(t *testing.T) {
 	if strings.Count(output, "Integration Checklist") != 1 {
 		t.Fatalf("expected one reporter line, got output: %q", output)
 	}
-	if !strings.Contains(output, "All required checks passed.") {
+	if !strings.Contains(output, "Verified checks") {
 		t.Fatalf("expected completed checklist in output, got: %q", output)
 	}
 	if !strings.Contains(output, "Next steps:") {
@@ -162,13 +162,16 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	if !strings.Contains(output, "Integration checks:") {
 		t.Fatalf("expected checklist before approval prompt, got output: %q", output)
 	}
-	if !strings.Contains(promptOutput, "☐ Check leap.yaml setup (blocking)") {
+	if !strings.Contains(promptOutput, "☐ leap.yaml should be present and valid (blocking)") {
 		t.Fatalf("expected blocking checklist row in approval prompt, got output: %q", output)
 	}
-	if strings.Contains(promptOutput, "☐ Check model compatibility") {
-		t.Fatalf("expected checklist to omit future unchecked steps, got output: %q", output)
+	if strings.Contains(promptOutput, "Model artifact is Tensorleap-compatible") {
+		t.Fatalf("expected model check to stay hidden until leap.yaml is present, got output: %q", output)
 	}
-	if !strings.Contains(promptOutput, "Current blocker: Check leap.yaml setup") {
+	if strings.Contains(promptOutput, "Upload prerequisites are satisfied") {
+		t.Fatalf("expected upload rows to stay hidden before upload checks are implemented, got output: %q", output)
+	}
+	if !strings.Contains(promptOutput, "Current blocker: leap.yaml should be present and valid") {
 		t.Fatalf("expected blocker heading in approval prompt, got output: %q", output)
 	}
 	if !strings.Contains(promptOutput, "Why it matters: leap.yaml defines the upload boundary and entry point that Tensorleap uses to run your integration.") {
@@ -214,15 +217,19 @@ func TestStepApprovalMessageShowsOnlyChecklistThroughBlockingStep(t *testing.T) 
 		},
 	}
 
-	message := stepApprovalMessage(step, status, true)
-	if !strings.Contains(message, "☑ Check required secrets") {
-		t.Fatalf("expected prior checks to be marked done, got message: %q", message)
-	}
-	if !strings.Contains(message, "☐ Check leap.yaml setup (blocking)") {
+	snapshot := core.WorkspaceSnapshot{}
+	message := stepApprovalMessage(step, snapshot, true, status, true)
+	if !strings.Contains(message, "☐ leap.yaml should be present and valid (blocking)") {
 		t.Fatalf("expected blocking check row, got message: %q", message)
 	}
-	if strings.Contains(message, "☐ Check model compatibility") {
-		t.Fatalf("expected future unchecked checks to be omitted, got message: %q", message)
+	if strings.Contains(message, "Required secrets are configured") {
+		t.Fatalf("expected unverified checks to be hidden, got message: %q", message)
+	}
+	if strings.Contains(message, "Model artifact is Tensorleap-compatible") {
+		t.Fatalf("expected model row to stay hidden until leap.yaml is present, got message: %q", message)
+	}
+	if strings.Contains(message, "Upload prerequisites are satisfied") {
+		t.Fatalf("expected upload rows to stay hidden before upload checks are implemented, got message: %q", message)
 	}
 }
 
@@ -241,8 +248,9 @@ func TestStepApprovalMessageIncludesBlockerContext(t *testing.T) {
 		},
 	}
 
-	message := stepApprovalMessage(step, status, true)
-	if !strings.Contains(message, "Current blocker: Check leap.yaml setup") {
+	snapshot := core.WorkspaceSnapshot{}
+	message := stepApprovalMessage(step, snapshot, true, status, true)
+	if !strings.Contains(message, "Current blocker: leap.yaml should be present and valid") {
 		t.Fatalf("expected blocker heading, got message: %q", message)
 	}
 	if !strings.Contains(message, "What failed:\n- leap.yaml is required at repository root") {
@@ -425,7 +433,7 @@ set -euo pipefail
 
 cmd="${1:-}"
 case "$cmd" in
-  version)
+  --version)
     echo "leap v0.2.0"
     ;;
   auth)

@@ -307,7 +307,7 @@ func (g *GitSnapshotter) captureLeapCLIState(ctx context.Context, repoRoot strin
 
 	state.Available = true
 
-	if output, err := g.commandOutput(ctx, repoRoot, "leap", "version"); err == nil {
+	if output, err := g.commandOutput(ctx, repoRoot, "leap", "--version"); err == nil {
 		state.Version = strings.TrimSpace(output)
 	}
 

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"os/exec"
 	"strings"
 	"testing"
@@ -76,8 +75,10 @@ func TestDetectLeapCLIDiagnosticsOutdated(t *testing.T) {
 		func(ctx context.Context, name string, args ...string) (string, error) {
 			_ = ctx
 			_ = name
-			_ = args
-			return "leap version v1.2.2", nil
+			if len(args) != 1 || args[0] != "--version" {
+				t.Fatalf("expected version probe args [--version], got %v", args)
+			}
+			return "v1.2.2", nil
 		},
 		func(ctx context.Context) (string, error) {
 			_ = ctx
@@ -107,8 +108,7 @@ func TestDetectLeapCLIDiagnosticsOutdated(t *testing.T) {
 	}
 }
 
-func TestDetectInstalledLeapCLIVersionFallsBackToDashVersion(t *testing.T) {
-	callCount := 0
+func TestDetectInstalledLeapCLIVersionUsesDashVersionOnly(t *testing.T) {
 	restore := setLeapCLITestHooks(
 		func(file string) (string, error) {
 			_ = file
@@ -117,14 +117,11 @@ func TestDetectInstalledLeapCLIVersionFallsBackToDashVersion(t *testing.T) {
 		func(ctx context.Context, name string, args ...string) (string, error) {
 			_ = ctx
 			_ = name
-			callCount++
-			if callCount == 1 {
-				return "", errors.New("version subcommand unavailable")
-			}
 			if len(args) == 1 && args[0] == "--version" {
 				return "leap-cli v2.0.1", nil
 			}
-			return "", errors.New("unexpected command args")
+			t.Fatalf("expected version probe args [--version], got %v", args)
+			return "", nil
 		},
 		func(ctx context.Context) (string, error) {
 			_ = ctx

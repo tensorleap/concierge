@@ -534,7 +534,7 @@ Some teams may prefer `git worktree` isolation; others prefer working directly i
 
 Concierge doesn’t reimplement `leap`, but must run it and guide users through:
 
-* initialization/login flows (`leap init`, `leap login`) per CLI quickstart
+* initialization/login flows (`leap init`, `leap auth login`) per CLI quickstart
 * `leap push` from repo root containing `leap.yaml`
 * `leap server info` to identify mounted dataset folders (`datasetvolumes`)
 * secrets association via `leap secrets set` and `AUTH_SECRET`

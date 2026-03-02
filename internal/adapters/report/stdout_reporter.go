@@ -17,6 +17,8 @@ const (
 	ansiGreen  = "\033[32m"
 	ansiYellow = "\033[33m"
 	ansiCyan   = "\033[36m"
+
+	tensorleapUploadGuideURL = "https://docs.tensorleap.ai/tensorleap-integration/uploading-with-cli/cli-assets-upload"
 )
 
 // OutputOptions controls how reporter output is rendered for humans.
@@ -65,31 +67,27 @@ func (r *StdoutReporter) Report(ctx context.Context, report core.IterationReport
 
 func writeSummaryLine(writer io.Writer, report core.IterationReport, options OutputOptions) error {
 	colorEnabled := reportColorEnabled(writer, options)
-	headerIcon := "✓"
-	headerColor := ansiGreen
-	if report.Step.ID != core.EnsureStepComplete || !report.Validation.Passed {
-		headerIcon = "⚠"
-		headerColor = ansiYellow
-	}
-
-	if _, err := fmt.Fprintf(writer, "%s %s\n", paint(headerIcon, headerColor, colorEnabled), paint("Integration Checklist", ansiBold+ansiCyan, colorEnabled)); err != nil {
+	if _, err := fmt.Fprintf(writer, "%s\n", paint("Integration Checklist", ansiBold+ansiCyan, colorEnabled)); err != nil {
 		return err
 	}
 
-	rows, blockerStep, blockerIssues, complete := buildChecklist(report)
-	for _, row := range rows {
+	visibleChecks := core.VisibleChecksForFlow(report.Checks)
+	for _, check := range visibleChecks {
 		checkbox := "☐"
 		checkboxColor := ansiDim
-		switch row.State {
-		case checklistPassed:
+		switch check.Status {
+		case core.CheckStatusPass:
 			checkbox = "☑"
 			checkboxColor = ansiGreen
-		case checklistBlocked:
+		case core.CheckStatusWarning:
+			checkbox = "⚠"
+			checkboxColor = ansiYellow
+		case core.CheckStatusFail:
 			checkboxColor = ansiYellow
 		}
 
-		label := core.HumanEnsureStepLabel(row.Step.ID)
-		if row.State == checklistBlocked {
+		label := renderedCheckLabel(check)
+		if check.Blocking {
 			label += " (blocking)"
 		}
 		if _, err := fmt.Fprintf(writer, "%s %s\n", paint(checkbox, checkboxColor, colorEnabled), label); err != nil {
@@ -101,19 +99,46 @@ func writeSummaryLine(writer io.Writer, report core.IterationReport, options Out
 		return err
 	}
 
-	if complete {
-		if _, err := fmt.Fprintln(writer, "All required checks passed."); err != nil {
+	attentionCheck, hasAttention := core.FirstAttentionCheck(visibleChecks)
+	if len(visibleChecks) == 0 {
+		if _, err := fmt.Fprintln(writer, "No checks were verified in this iteration."); err != nil {
 			return err
 		}
-	} else if blockerStep.ID != "" {
-		if _, err := fmt.Fprintf(writer, "Blocked on: %s\n", core.HumanEnsureStepLabel(blockerStep.ID)); err != nil {
+	} else if !hasAttention {
+		if _, err := fmt.Fprintln(writer, "Verified checks passed."); err != nil {
 			return err
 		}
-		if len(blockerIssues) > 0 {
-			if _, err := fmt.Fprintln(writer, "Missing or failing requirements:"); err != nil {
+		if report.Step.ID == core.EnsureStepComplete && report.Validation.Passed {
+			if _, err := fmt.Fprintln(writer, "Next steps:"); err != nil {
 				return err
 			}
-			for i, issue := range blockerIssues {
+			if _, err := fmt.Fprintln(writer, "- If you have not uploaded this integration yet, run `leap push` from the repository root."); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintf(writer, "- Upload guide: %s\n", tensorleapUploadGuideURL); err != nil {
+				return err
+			}
+		}
+	} else if attentionCheck.StepID != "" {
+		attentionLabel := renderedCheckLabel(attentionCheck)
+
+		heading := "Warning:"
+		defaultMessage := "A warning was reported for this check."
+		if attentionCheck.Status == core.CheckStatusFail {
+			heading = "Blocked on:"
+			defaultMessage = "A required verification is failing."
+		}
+
+		if _, err := fmt.Fprintf(writer, "%s %s\n", heading, attentionLabel); err != nil {
+			return err
+		}
+
+		details := attentionIssues(attentionCheck, report.Validation.Issues)
+		if len(details) > 0 {
+			if _, err := fmt.Fprintln(writer, "Details:"); err != nil {
+				return err
+			}
+			for i, issue := range details {
 				if i >= 3 {
 					if _, err := fmt.Fprintln(writer, "- Additional blocking details were omitted for brevity."); err != nil {
 						return err
@@ -125,7 +150,7 @@ func writeSummaryLine(writer io.Writer, report core.IterationReport, options Out
 					if options.Debug {
 						message = string(issue.Code)
 					} else {
-						message = "A required check is failing."
+						message = defaultMessage
 					}
 				}
 				if _, err := fmt.Fprintf(writer, "- %s\n", message); err != nil {
@@ -133,8 +158,16 @@ func writeSummaryLine(writer io.Writer, report core.IterationReport, options Out
 				}
 			}
 		}
-		if _, err := fmt.Fprintln(writer, "Concierge can help with this step interactively and will ask before making any changes."); err != nil {
-			return err
+		if shouldOfferInteractiveHelp(report, attentionCheck) {
+			if _, err := fmt.Fprintln(writer, "Concierge can help with this step interactively and will ask before making any changes."); err != nil {
+				return err
+			}
+		} else {
+			for _, line := range selfServiceGuidanceLines(report, attentionCheck.StepID, details) {
+				if _, err := fmt.Fprintln(writer, line); err != nil {
+					return err
+				}
+			}
 		}
 	}
 
@@ -192,110 +225,52 @@ func writeSummaryLine(writer io.Writer, report core.IterationReport, options Out
 	return err
 }
 
-type checklistState string
-
-const (
-	checklistPending checklistState = "pending"
-	checklistPassed  checklistState = "passed"
-	checklistBlocked checklistState = "blocked"
-)
-
-type checklistRow struct {
-	Step  core.EnsureStep
-	State checklistState
+func blockingIssues(issues []core.Issue) []core.Issue {
+	filtered := make([]core.Issue, 0, len(issues))
+	for _, issue := range issues {
+		if issue.Severity == core.SeverityError {
+			filtered = append(filtered, issue)
+		}
+	}
+	if len(filtered) > 0 {
+		return filtered
+	}
+	return append([]core.Issue(nil), issues...)
 }
 
-func buildChecklist(report core.IterationReport) ([]checklistRow, core.EnsureStep, []core.Issue, bool) {
-	steps := checklistSteps()
-	if len(steps) == 0 {
-		return nil, core.EnsureStep{}, nil, false
-	}
-
-	complete := report.Step.ID == core.EnsureStepComplete && report.Validation.Passed
-	if complete {
-		rows := make([]checklistRow, 0, len(steps))
-		for _, step := range steps {
-			rows = append(rows, checklistRow{Step: step, State: checklistPassed})
+func renderedCheckLabel(check core.VerifiedCheck) string {
+	if check.Status == core.CheckStatusPass {
+		label := strings.TrimSpace(check.Label)
+		if label != "" {
+			return label
 		}
-		return rows, core.EnsureStep{}, nil, true
+		return core.HumanEnsureStepLabel(check.StepID)
 	}
-
-	blockerStep, hasBlocker := resolveBlockerStep(report, steps)
-	if !hasBlocker {
-		rows := make([]checklistRow, 0, len(steps))
-		for _, step := range steps {
-			rows = append(rows, checklistRow{Step: step, State: checklistPending})
-		}
-		return rows, core.EnsureStep{}, nil, false
-	}
-
-	blockerIndex := indexOfStep(steps, blockerStep.ID)
-	rows := make([]checklistRow, 0, len(steps))
-	for i, step := range steps {
-		state := checklistPending
-		if i < blockerIndex {
-			state = checklistPassed
-		}
-		if i == blockerIndex {
-			state = checklistBlocked
-		}
-		rows = append(rows, checklistRow{Step: step, State: state})
-	}
-
-	return rows, blockerStep, issuesForStep(report.Validation.Issues, blockerStep.ID), false
+	return core.HumanEnsureStepRequirementLabel(check.StepID)
 }
 
-func checklistSteps() []core.EnsureStep {
-	known := core.KnownEnsureSteps()
-	steps := make([]core.EnsureStep, 0, len(known))
-	for _, step := range known {
-		if step.ID == core.EnsureStepComplete || step.ID == core.EnsureStepInvestigate {
-			continue
+func attentionIssues(check core.VerifiedCheck, validationIssues []core.Issue) []core.Issue {
+	if len(check.Issues) > 0 {
+		if check.Status == core.CheckStatusFail {
+			return blockingIssues(check.Issues)
 		}
-		steps = append(steps, step)
-	}
-	return steps
-}
 
-func resolveBlockerStep(report core.IterationReport, steps []core.EnsureStep) (core.EnsureStep, bool) {
-	if report.Step.ID != "" && report.Step.ID != core.EnsureStepComplete {
-		if _, ok := ensureStepInList(steps, report.Step.ID); ok {
-			return report.Step, true
+		warnings := make([]core.Issue, 0, len(check.Issues))
+		for _, issue := range check.Issues {
+			if issue.Severity == core.SeverityWarning {
+				warnings = append(warnings, issue)
+			}
 		}
-	}
-
-	for _, issue := range report.Validation.Issues {
-		if issue.Severity != core.SeverityError {
-			continue
+		if len(warnings) > 0 {
+			return warnings
 		}
-		step := core.PreferredEnsureStepForIssue(issue)
-		if step.ID == "" || step.ID == core.EnsureStepComplete {
-			continue
-		}
-		if _, ok := ensureStepInList(steps, step.ID); ok {
-			return step, true
-		}
+		return append([]core.Issue(nil), check.Issues...)
 	}
 
-	return core.EnsureStep{}, false
-}
-
-func ensureStepInList(steps []core.EnsureStep, stepID core.EnsureStepID) (core.EnsureStep, bool) {
-	for _, step := range steps {
-		if step.ID == stepID {
-			return step, true
-		}
+	if check.Status == core.CheckStatusFail {
+		return issuesForStep(validationIssues, check.StepID)
 	}
-	return core.EnsureStep{}, false
-}
-
-func indexOfStep(steps []core.EnsureStep, stepID core.EnsureStepID) int {
-	for i, step := range steps {
-		if step.ID == stepID {
-			return i
-		}
-	}
-	return -1
+	return issuesForStepAny(validationIssues, check.StepID)
 }
 
 func issuesForStep(issues []core.Issue, stepID core.EnsureStepID) []core.Issue {
@@ -322,9 +297,92 @@ func issuesForStep(issues []core.Issue, stepID core.EnsureStepID) []core.Issue {
 	return fallback
 }
 
+func issuesForStepAny(issues []core.Issue, stepID core.EnsureStepID) []core.Issue {
+	matched := make([]core.Issue, 0, len(issues))
+	for _, issue := range issues {
+		step := core.PreferredEnsureStepForIssue(issue)
+		if step.ID == stepID {
+			matched = append(matched, issue)
+		}
+	}
+	return matched
+}
+
 func hasEvidenceValue(evidence []core.EvidenceItem, name, value string) bool {
 	for _, item := range evidence {
 		if item.Name == name && item.Value == value {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldOfferInteractiveHelp(report core.IterationReport, attentionCheck core.VerifiedCheck) bool {
+	if attentionCheck.StepID == "" {
+		return false
+	}
+	if report.Step.ID == core.EnsureStepComplete {
+		return false
+	}
+	if hasEvidenceValue(report.Evidence, "executor.mode", "stub") {
+		return false
+	}
+	return true
+}
+
+func selfServiceGuidanceLines(report core.IterationReport, stepID core.EnsureStepID, issues []core.Issue) []string {
+	if report.Step.ID == core.EnsureStepComplete {
+		return warningFollowUpLines(stepID, issues)
+	}
+
+	lines := []string{
+		"Concierge cannot apply an automated fix for this check in the current run.",
+	}
+	return append(lines, stepGuidanceLines(stepID, issues)...)
+}
+
+func warningFollowUpLines(stepID core.EnsureStepID, issues []core.Issue) []string {
+	lines := []string{
+		"This warning is advisory in the current run, so Concierge did not apply a fix automatically.",
+	}
+	return append(lines, stepGuidanceLines(stepID, issues)...)
+}
+
+func stepGuidanceLines(stepID core.EnsureStepID, issues []core.Issue) []string {
+	switch stepID {
+	case core.EnsureStepLeapCLIAuth:
+		if hasIssueCode(issues, core.IssueCodeLeapCLINotFound) {
+			return []string{
+				"Next step: install the Leap CLI, then run `leap --version` and `leap auth login`, and rerun `concierge run`.",
+			}
+		}
+		if hasIssueCode(issues, core.IssueCodeLeapCLIVersionUnavailable) {
+			return []string{
+				"Next step: run `leap --version`; if it fails, reinstall the Leap CLI, then rerun `concierge run`.",
+			}
+		}
+		if hasIssueCode(issues, core.IssueCodeLeapCLINotAuthenticated) {
+			return []string{
+				"Next step: run `leap auth login`, then rerun `concierge run`.",
+			}
+		}
+		return []string{
+			"Next step: run `leap --version` and `leap auth whoami`, then rerun `concierge run`.",
+		}
+	case core.EnsureStepServerConnectivity:
+		return []string{
+			"Next step: run `leap server info` and make sure your Tensorleap server is reachable on port 4589, then rerun `concierge run`.",
+		}
+	default:
+		return []string{
+			"Resolve the warning and rerun `concierge run` to verify it is cleared.",
+		}
+	}
+}
+
+func hasIssueCode(issues []core.Issue, code core.IssueCode) bool {
+	for _, issue := range issues {
+		if issue.Code == code {
 			return true
 		}
 	}

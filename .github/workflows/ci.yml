@@ -119,9 +119,9 @@ jobs:
         run: |
           output="$(./dist/concierge-linux-amd64 version)"
           echo "$output"
-          echo "$output" | grep -Fx "version: ${BUILD_VERSION}"
-          echo "$output" | grep -Fx "commit: ${BUILD_COMMIT}"
-          echo "$output" | grep -Fx "date: ${BUILD_DATE}"
+          echo "$output" | grep -Fx "Version:     ${BUILD_VERSION}"
+          echo "$output" | grep -Fx "Commit:      ${BUILD_COMMIT}"
+          echo "$output" | grep -Fx "Build date:  ${BUILD_DATE}"
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4

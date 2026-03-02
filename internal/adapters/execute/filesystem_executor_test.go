@@ -159,6 +159,40 @@ func TestExecutorRepairsLeapYAMLMissingEntryFile(t *testing.T) {
 	}
 }
 
+func TestExecutorCreatesEntryFileWhenLeapYAMLEntryFileMissingOnDisk(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
+
+	writeFile(t, filepath.Join(repoRoot, "leap.yaml"), strings.Join([]string{
+		"entryFile: leap_binder.py",
+		"include:",
+		"  - leap.yaml",
+		"  - leap_binder.py",
+		"",
+	}, "\n"))
+
+	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("expected leap.yaml step to scaffold missing entryFile target")
+	}
+	if !strings.Contains(result.Summary, "created leap_binder.py") {
+		t.Fatalf("expected summary to mention entry file scaffold, got %q", result.Summary)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "leap_binder.py")); err != nil {
+		t.Fatalf("expected leap_binder.py to be created: %v", err)
+	}
+	assertEvidenceValue(t, result.Evidence, "executor.entry_file", "leap_binder.py")
+	assertEvidenceValue(t, result.Evidence, "executor.entry_file.before_checksum", "missing")
+	entryAfter := evidenceValue(result.Evidence, "executor.entry_file.after_checksum")
+	if entryAfter == "" || entryAfter == "missing" {
+		t.Fatalf("expected entry file after checksum evidence, got %q", entryAfter)
+	}
+}
+
 func TestExecutorDoesNotModifyCompliantLeapYAML(t *testing.T) {
 	executor := NewFilesystemExecutor()
 	repoRoot := t.TempDir()

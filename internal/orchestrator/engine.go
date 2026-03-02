@@ -132,6 +132,7 @@ func (e *Engine) runIteration(
 		Step:        finalResult.Step,
 		Applied:     finalResult.Applied,
 		Evidence:    evidence,
+		Checks:      core.BuildVerifiedChecks(snapshot, status.Issues, validation.Issues, finalResult.Step.ID),
 		Validation:  validation,
 		Commit:      decision.Commit,
 		Notes:       append([]string(nil), decision.Notes...),

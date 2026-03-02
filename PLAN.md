@@ -569,7 +569,7 @@ Files to modify:
 Locked behavior:
 
 1. Upload push is never implicit.
-2. `ensure.upload_readiness` runs non-destructive probes (`leap version`, auth check, `leap server info`).
+2. `ensure.upload_readiness` runs non-destructive probes (`leap --version`, auth check via `leap auth whoami`, `leap server info`).
 3. `ensure.upload_push` requires explicit user confirmation and `--allow-push` (or equivalent affirmative flag).
 4. Capture command stdout/stderr as evidence logs.
 

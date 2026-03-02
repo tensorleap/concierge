@@ -51,8 +51,14 @@ func TestRunNonDryRunExecutesSingleIterationByDefault(t *testing.T) {
 	if strings.Count(output, "Integration Checklist") != 1 {
 		t.Fatalf("expected one reporter line, got output: %q", output)
 	}
-	if !strings.Contains(output, "All required checks passed.") {
+	if !strings.Contains(output, "Verified checks") {
 		t.Fatalf("expected completed checklist in output, got: %q", output)
+	}
+	if !strings.Contains(output, "Next steps:") {
+		t.Fatalf("expected next-steps guidance in output, got: %q", output)
+	}
+	if !strings.Contains(output, "run `leap push` from the repository root.") {
+		t.Fatalf("expected leap push guidance in output, got: %q", output)
 	}
 }
 
@@ -149,11 +155,36 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected max-iterations stop to return error")
 	}
+	promptOutput := output
+	if promptEnd := strings.Index(output, "Review proposed changes"); promptEnd >= 0 {
+		promptOutput = output[:promptEnd]
+	}
 	if !strings.Contains(output, "Integration checks:") {
 		t.Fatalf("expected checklist before approval prompt, got output: %q", output)
 	}
-	if !strings.Contains(output, "☐ Check leap.yaml setup (blocking)") {
+	if !strings.Contains(promptOutput, "☐ leap.yaml should be present and valid (blocking)") {
 		t.Fatalf("expected blocking checklist row in approval prompt, got output: %q", output)
+	}
+	if strings.Contains(promptOutput, "Model artifact is Tensorleap-compatible") {
+		t.Fatalf("expected model check to stay hidden until leap.yaml is present, got output: %q", output)
+	}
+	if strings.Contains(promptOutput, "Upload prerequisites are satisfied") {
+		t.Fatalf("expected upload rows to stay hidden before upload checks are implemented, got output: %q", output)
+	}
+	if !strings.Contains(promptOutput, "Current blocker: leap.yaml should be present and valid") {
+		t.Fatalf("expected blocker heading in approval prompt, got output: %q", output)
+	}
+	if !strings.Contains(promptOutput, "Why it matters: leap.yaml defines the upload boundary and entry point that Tensorleap uses to run your integration.") {
+		t.Fatalf("expected blocker explanation in approval prompt, got output: %q", output)
+	}
+	if !strings.Contains(promptOutput, "Docs: "+stepGuideLeapYAMLURL) {
+		t.Fatalf("expected leap.yaml docs link in approval prompt, got output: %q", output)
+	}
+	if strings.Contains(promptOutput, "Next required check:") {
+		t.Fatalf("expected prompt to avoid next-check phrasing, got output: %q", output)
+	}
+	if strings.Contains(promptOutput, "(No changes will be made before approval.)") {
+		t.Fatalf("expected prompt to avoid redundant parenthetical approval note, got output: %q", output)
 	}
 	if !strings.Contains(output, "Allow Concierge to make changes for this check now?") {
 		t.Fatalf("expected pre-change approval prompt, got output: %q", output)
@@ -168,6 +199,71 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	latestMessage := runGit(t, repo, "log", "-1", "--pretty=%s")
 	if !strings.HasPrefix(latestMessage, "concierge(ensure.leap_yaml):") {
 		t.Fatalf("expected structured commit message, got %q", latestMessage)
+	}
+}
+
+func TestStepApprovalMessageShowsOnlyChecklistThroughBlockingStep(t *testing.T) {
+	step, ok := core.EnsureStepByID(core.EnsureStepLeapYAML)
+	if !ok {
+		t.Fatal("expected leap.yaml ensure-step in catalog")
+	}
+	status := core.IntegrationStatus{
+		Issues: []core.Issue{
+			{
+				Code:     core.IssueCodeLeapYAMLMissing,
+				Message:  "leap.yaml is required at repository root",
+				Severity: core.SeverityError,
+			},
+		},
+	}
+
+	snapshot := core.WorkspaceSnapshot{}
+	message := stepApprovalMessage(step, snapshot, true, status, true)
+	if !strings.Contains(message, "☐ leap.yaml should be present and valid (blocking)") {
+		t.Fatalf("expected blocking check row, got message: %q", message)
+	}
+	if strings.Contains(message, "Required secrets are configured") {
+		t.Fatalf("expected unverified checks to be hidden, got message: %q", message)
+	}
+	if strings.Contains(message, "Model artifact is Tensorleap-compatible") {
+		t.Fatalf("expected model row to stay hidden until leap.yaml is present, got message: %q", message)
+	}
+	if strings.Contains(message, "Upload prerequisites are satisfied") {
+		t.Fatalf("expected upload rows to stay hidden before upload checks are implemented, got message: %q", message)
+	}
+}
+
+func TestStepApprovalMessageIncludesBlockerContext(t *testing.T) {
+	step, ok := core.EnsureStepByID(core.EnsureStepLeapYAML)
+	if !ok {
+		t.Fatal("expected leap.yaml ensure-step in catalog")
+	}
+	status := core.IntegrationStatus{
+		Issues: []core.Issue{
+			{
+				Code:     core.IssueCodeLeapYAMLMissing,
+				Message:  "leap.yaml is required at repository root",
+				Severity: core.SeverityError,
+			},
+		},
+	}
+
+	snapshot := core.WorkspaceSnapshot{}
+	message := stepApprovalMessage(step, snapshot, true, status, true)
+	if !strings.Contains(message, "Current blocker: leap.yaml should be present and valid") {
+		t.Fatalf("expected blocker heading, got message: %q", message)
+	}
+	if !strings.Contains(message, "What failed:\n- leap.yaml is required at repository root") {
+		t.Fatalf("expected failure details, got message: %q", message)
+	}
+	if !strings.Contains(message, "Docs: "+stepGuideLeapYAMLURL) {
+		t.Fatalf("expected docs link, got message: %q", message)
+	}
+	if strings.Contains(message, "Next required check:") {
+		t.Fatalf("expected next-check wording to be removed, got message: %q", message)
+	}
+	if strings.Contains(message, "(No changes will be made before approval.)") {
+		t.Fatalf("expected redundant approval note to be removed, got message: %q", message)
 	}
 }
 
@@ -324,4 +420,48 @@ func writeFile(t *testing.T, path, content string) {
 func disableHarness(t *testing.T) {
 	t.Helper()
 	t.Setenv("CONCIERGE_ENABLE_HARNESS", "0")
+	mockLeapCLIInstalled(t)
+}
+
+func mockLeapCLIInstalled(t *testing.T) {
+	t.Helper()
+
+	binDir := t.TempDir()
+	leapPath := filepath.Join(binDir, "leap")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-}"
+case "$cmd" in
+  --version)
+    echo "leap v0.2.0"
+    ;;
+  auth)
+    if [[ "${2:-}" != "whoami" ]]; then
+      echo "unsupported auth subcommand" >&2
+      exit 1
+    fi
+    echo "concierge@example.com"
+    ;;
+  server)
+    if [[ "${2:-}" != "info" ]]; then
+      echo "unsupported server subcommand" >&2
+      exit 1
+    fi
+    cat <<'EOF'
+Installation information:
+datasetvolumes: []
+EOF
+    ;;
+  *)
+    echo "unsupported leap command" >&2
+    exit 1
+    ;;
+esac
+`
+	if err := os.WriteFile(leapPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile failed for mock leap CLI: %v", err)
+	}
+
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }

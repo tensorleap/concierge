@@ -105,7 +105,6 @@ var ensureStepPriority = []EnsureStepID{
 	EnsureStepRepositoryContext,
 	EnsureStepPythonRuntime,
 	EnsureStepLeapCLIAuth,
-	EnsureStepServerConnectivity,
 	EnsureStepSecretsContext,
 	EnsureStepLeapYAML,
 	EnsureStepModelContract,
@@ -116,6 +115,7 @@ var ensureStepPriority = []EnsureStepID{
 	EnsureStepIntegrationTestContract,
 	EnsureStepOptionalHooks,
 	EnsureStepHarnessValidation,
+	EnsureStepServerConnectivity,
 	EnsureStepUploadReadiness,
 	EnsureStepUploadPush,
 	EnsureStepInvestigate,
@@ -144,39 +144,39 @@ func KnownEnsureSteps() []EnsureStep {
 func HumanEnsureStepLabel(stepID EnsureStepID) string {
 	switch stepID {
 	case EnsureStepComplete:
-		return "Integration complete"
+		return "Integration is complete"
 	case EnsureStepRepositoryContext:
-		return "Check repository setup"
+		return "Repository context is ready"
 	case EnsureStepPythonRuntime:
-		return "Check Python setup"
+		return "Python runtime is installed and ready"
 	case EnsureStepLeapCLIAuth:
-		return "Check Leap CLI installation and login"
+		return "Leap CLI is installed and authenticated"
 	case EnsureStepServerConnectivity:
-		return "Check Tensorleap server connection"
+		return "Tensorleap server is reachable"
 	case EnsureStepSecretsContext:
-		return "Check required secrets"
+		return "Required secrets are configured"
 	case EnsureStepLeapYAML:
-		return "Check leap.yaml setup"
+		return "leap.yaml is present and valid"
 	case EnsureStepModelContract:
-		return "Check model compatibility"
+		return "Model artifact is Tensorleap-compatible"
 	case EnsureStepIntegrationScript:
-		return "Check integration script setup"
+		return "Integration script is present and importable"
 	case EnsureStepPreprocessContract:
-		return "Check preprocess setup"
+		return "Preprocess contract is satisfied"
 	case EnsureStepInputEncoders:
-		return "Check input encoders"
+		return "Input encoders run successfully"
 	case EnsureStepGroundTruthEncoders:
-		return "Check ground-truth encoders"
+		return "Ground-truth encoders run successfully"
 	case EnsureStepIntegrationTestContract:
-		return "Check integration test wiring"
+		return "Integration test wiring is complete"
 	case EnsureStepOptionalHooks:
-		return "Check optional integration hooks"
+		return "Optional integration hooks are valid"
 	case EnsureStepHarnessValidation:
-		return "Run runtime checks"
+		return "Runtime validation checks pass"
 	case EnsureStepUploadReadiness:
-		return "Check upload readiness"
+		return "Upload prerequisites are satisfied"
 	case EnsureStepUploadPush:
-		return "Upload integration to Tensorleap"
+		return "Integration is uploaded to Tensorleap"
 	case EnsureStepInvestigate:
 		return "Investigate remaining issues"
 	default:
@@ -185,6 +185,56 @@ func HumanEnsureStepLabel(stepID EnsureStepID) string {
 		label = strings.TrimSpace(label)
 		if label == "" {
 			return "Run the next planned step"
+		}
+		return strings.ToUpper(label[:1]) + label[1:]
+	}
+}
+
+// HumanEnsureStepRequirementLabel returns requirement wording for checks that need attention.
+func HumanEnsureStepRequirementLabel(stepID EnsureStepID) string {
+	switch stepID {
+	case EnsureStepComplete:
+		return "Integration should be complete"
+	case EnsureStepRepositoryContext:
+		return "Repository context should be ready"
+	case EnsureStepPythonRuntime:
+		return "Python runtime should be installed and ready"
+	case EnsureStepLeapCLIAuth:
+		return "Leap CLI should be installed and authenticated"
+	case EnsureStepServerConnectivity:
+		return "Tensorleap server should be reachable"
+	case EnsureStepSecretsContext:
+		return "Required secrets should be configured"
+	case EnsureStepLeapYAML:
+		return "leap.yaml should be present and valid"
+	case EnsureStepModelContract:
+		return "Model artifact should be Tensorleap-compatible"
+	case EnsureStepIntegrationScript:
+		return "Integration script should be present and importable"
+	case EnsureStepPreprocessContract:
+		return "Preprocess contract should be satisfied"
+	case EnsureStepInputEncoders:
+		return "Input encoders should run successfully"
+	case EnsureStepGroundTruthEncoders:
+		return "Ground-truth encoders should run successfully"
+	case EnsureStepIntegrationTestContract:
+		return "Integration test wiring should be complete"
+	case EnsureStepOptionalHooks:
+		return "Optional integration hooks should be valid"
+	case EnsureStepHarnessValidation:
+		return "Runtime validation checks should pass"
+	case EnsureStepUploadReadiness:
+		return "Upload prerequisites should be satisfied"
+	case EnsureStepUploadPush:
+		return "Integration should be uploaded to Tensorleap"
+	case EnsureStepInvestigate:
+		return "Remaining issues should be investigated"
+	default:
+		label := strings.TrimPrefix(string(stepID), "ensure.")
+		label = strings.ReplaceAll(label, "_", " ")
+		label = strings.TrimSpace(label)
+		if label == "" {
+			return "The next planned step should be completed"
 		}
 		return strings.ToUpper(label[:1]) + label[1:]
 	}

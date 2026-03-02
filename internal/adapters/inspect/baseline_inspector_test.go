@@ -254,6 +254,17 @@ func TestInspectorDetectsServerInfoFailures(t *testing.T) {
 	if !hasIssueCode(status.Issues, core.IssueCodeLeapServerUnreachable) {
 		t.Fatalf("expected %q issue, got %+v", core.IssueCodeLeapServerUnreachable, status.Issues)
 	}
+	issueByCode := make(map[core.IssueCode]core.Issue, len(status.Issues))
+	for _, issue := range status.Issues {
+		issueByCode[issue.Code] = issue
+	}
+	issue, ok := issueByCode[core.IssueCodeLeapServerUnreachable]
+	if !ok {
+		t.Fatalf("expected %q issue, got %+v", core.IssueCodeLeapServerUnreachable, status.Issues)
+	}
+	if issue.Severity != core.SeverityWarning {
+		t.Fatalf("expected server info failures to be warning severity %q, got %q", core.SeverityWarning, issue.Severity)
+	}
 }
 
 func snapshotForRoot(root string) core.WorkspaceSnapshot {

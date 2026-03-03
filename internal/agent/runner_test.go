@@ -12,6 +12,25 @@ import (
 	"github.com/tensorleap/concierge/internal/core"
 )
 
+func TestRenderPromptIncludesConciergeSystemContext(t *testing.T) {
+	prompt := renderPrompt(AgentTask{
+		Objective:      "Repair preprocess function",
+		Constraints:    []string{"Keep shape semantics"},
+		RepoRoot:       "/tmp/repo",
+		TranscriptPath: "/tmp/repo/.concierge/evidence/snap/agent.transcript.log",
+	})
+
+	if !strings.Contains(prompt, "System context (must follow):") {
+		t.Fatalf("expected system-context heading in prompt, got: %q", prompt)
+	}
+	if !strings.Contains(prompt, "Concierge is the deterministic orchestrator") {
+		t.Fatalf("expected concierge role context in prompt, got: %q", prompt)
+	}
+	if !strings.Contains(prompt, "Complete only the specific objective provided for this task.") {
+		t.Fatalf("expected objective-scope rule in prompt, got: %q", prompt)
+	}
+}
+
 func TestRunnerCheckAvailabilityReturnsMissingDependencyWhenClaudeMissing(t *testing.T) {
 	runner := NewRunner()
 	runner.lookPath = func(file string) (string, error) {
@@ -66,10 +85,13 @@ func TestRunnerRunWritesTranscript(t *testing.T) {
 	if !strings.Contains(contents, "Objective:\nImplement preprocess contract") {
 		t.Fatalf("expected objective in transcript, got: %q", contents)
 	}
+	if !strings.Contains(contents, "System context:\nYou are a task-scoped coding collaborator running under Concierge.") {
+		t.Fatalf("expected system context in transcript, got: %q", contents)
+	}
 	if !strings.Contains(contents, "argv: --print --output-format text --permission-mode bypassPermissions") {
 		t.Fatalf("expected claude arguments in transcript, got: %q", contents)
 	}
-	if !strings.Contains(contents, "prompt: Repository root:") {
+	if !strings.Contains(contents, "prompt: System context (must follow):") {
 		t.Fatalf("expected stdout in transcript, got: %q", contents)
 	}
 	if !strings.Contains(contents, "stderr line") {

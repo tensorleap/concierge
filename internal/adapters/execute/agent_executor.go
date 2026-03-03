@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/tensorleap/concierge/internal/agent"
+	agentcontext "github.com/tensorleap/concierge/internal/agent/context"
 	"github.com/tensorleap/concierge/internal/core"
 	"github.com/tensorleap/concierge/internal/persistence"
 )
@@ -17,7 +19,8 @@ type agentTaskRunner interface {
 
 // AgentExecutor delegates complex integration objectives to an external coding agent.
 type AgentExecutor struct {
-	runner agentTaskRunner
+	runner            agentTaskRunner
+	loadKnowledgePack func() (agent.DomainKnowledgePack, error)
 }
 
 // NewAgentExecutor creates an agent-backed executor.
@@ -25,7 +28,10 @@ func NewAgentExecutor(runner agentTaskRunner) *AgentExecutor {
 	if runner == nil {
 		runner = agent.NewRunner()
 	}
-	return &AgentExecutor{runner: runner}
+	return &AgentExecutor{
+		runner:            runner,
+		loadKnowledgePack: agentcontext.LoadDomainKnowledgePack,
+	}
 }
 
 // Execute delegates supported ensure-steps to the configured agent runner.
@@ -40,6 +46,11 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 	}
 
 	task, err := agentTaskForStep(snapshot, canonicalStep)
+	if err != nil {
+		return core.ExecutionResult{}, err
+	}
+
+	knowledgePack, err := e.loadPack()
 	if err != nil {
 		return core.ExecutionResult{}, err
 	}
@@ -63,6 +74,8 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		{Name: "executor.mode", Value: "agent"},
 		{Name: "agent.objective", Value: task.Objective},
 		{Name: "agent.transcript_path", Value: transcriptPath},
+		{Name: "agent.knowledge_pack.version", Value: knowledgePack.Version},
+		{Name: "agent.knowledge_pack.section_ids", Value: strings.Join(knowledgeSectionIDs(knowledgePack), ",")},
 	}
 	evidence = append(evidence, runnerResult.Evidence...)
 
@@ -72,6 +85,27 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		Summary:  summary,
 		Evidence: evidence,
 	}, nil
+}
+
+func (e *AgentExecutor) loadPack() (agent.DomainKnowledgePack, error) {
+	if e.loadKnowledgePack == nil {
+		e.loadKnowledgePack = agentcontext.LoadDomainKnowledgePack
+	}
+
+	pack, err := e.loadKnowledgePack()
+	if err != nil {
+		return agent.DomainKnowledgePack{}, core.WrapError(core.KindUnknown, "execute.agent.knowledge_pack", err)
+	}
+	return pack, nil
+}
+
+func knowledgeSectionIDs(pack agent.DomainKnowledgePack) []string {
+	ids := make([]string, 0, len(pack.Sections))
+	for sectionID := range pack.Sections {
+		ids = append(ids, sectionID)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func agentTaskForStep(snapshot core.WorkspaceSnapshot, step core.EnsureStep) (agent.AgentTask, error) {

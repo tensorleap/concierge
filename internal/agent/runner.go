@@ -21,6 +21,21 @@ const defaultTimeout = 15 * time.Minute
 
 var defaultClaudeArgs = []string{"--print", "--output-format", "text", "--permission-mode", "bypassPermissions"}
 
+const conciergeOperatingPolicy = `
+You are a task-scoped coding collaborator running under Concierge.
+Concierge is the deterministic orchestrator; you are not the orchestrator.
+
+Operating responsibilities:
+- Complete only the specific objective provided for this task.
+- Keep edits minimal, local, and reviewable.
+- Prioritize Tensorleap integration files and avoid unrelated repository changes.
+- Do not refactor or modify unrelated user/training/business logic.
+- Preserve existing behavior outside the requested scope.
+- If repository state is ambiguous or objective conflicts appear, stop and state the blocker clearly.
+- Never run git commit/push/rebase/reset operations.
+- Never access files outside the repository root unless explicitly instructed.
+`
+
 type commandRunner func(ctx context.Context, dir, command string, args []string) ([]byte, []byte, error)
 
 // Runner executes one task-scoped command invocation and writes a transcript.
@@ -121,6 +136,10 @@ func (r *Runner) resolveCommand() (string, error) {
 
 func renderPrompt(task AgentTask) string {
 	var b strings.Builder
+	b.WriteString("System context (must follow):\n")
+	b.WriteString(strings.TrimSpace(conciergeOperatingPolicy))
+	b.WriteString("\n\n")
+
 	b.WriteString("Repository root: ")
 	b.WriteString(task.RepoRoot)
 	b.WriteString("\n\n")
@@ -170,6 +189,10 @@ func writeTranscript(path, command string, args []string, task AgentTask, stdout
 	}
 
 	var b strings.Builder
+	b.WriteString("System context:\n")
+	b.WriteString(strings.TrimSpace(conciergeOperatingPolicy))
+	b.WriteString("\n\n")
+
 	b.WriteString("Objective:\n")
 	b.WriteString(task.Objective)
 	b.WriteString("\n\n")

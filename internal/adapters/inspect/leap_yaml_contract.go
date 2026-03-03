@@ -16,8 +16,6 @@ type leapYAMLContract struct {
 	EntryFile     string   `yaml:"entryFile"`
 	Include       []string `yaml:"include"`
 	Exclude       []string `yaml:"exclude"`
-	ModelPath     string   `yaml:"modelPath"`
-	Model         string   `yaml:"model"`
 	ProjectID     string   `yaml:"projectId"`
 	SecretID      string   `yaml:"secretId"`
 	PythonVersion string   `yaml:"pythonVersion"`

@@ -8,16 +8,10 @@ import (
 	"github.com/tensorleap/concierge/internal/core"
 )
 
-func TestModelDiscoveryFromLeapYAML(t *testing.T) {
+func TestModelDiscoveryFromRepoSearchSingleCandidate(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
 		"entryFile: leap_custom_test.py",
-		"modelPath: model/demo.h5",
-		"include:",
-		"  - leap.yaml",
-		"  - leap_binder.py",
-		"  - leap_custom_test.py",
-		"  - model/**",
 		"",
 	}, "\n"))
 	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
@@ -41,11 +35,6 @@ func TestModelDiscoveryFromLoadModelDecorator(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
 		"entryFile: leap_custom_test.py",
-		"include:",
-		"  - leap.yaml",
-		"  - leap_binder.py",
-		"  - leap_custom_test.py",
-		"  - model/**",
 		"",
 	}, "\n"))
 	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
@@ -63,6 +52,7 @@ func TestModelDiscoveryFromLoadModelDecorator(t *testing.T) {
 		"",
 	}, "\n"))
 	writeFixtureFile(t, root, "model/from_decorator.onnx", "binary")
+	writeFixtureFile(t, root, "model/other.h5", "binary")
 
 	status := inspectStatus(t, root)
 
@@ -73,6 +63,10 @@ func TestModelDiscoveryFromLoadModelDecorator(t *testing.T) {
 	if !strings.Contains(source, "load_model.load_model") {
 		t.Fatalf("expected candidate source to include load-model discovery, got %q", source)
 	}
+	if status.Contracts == nil || status.Contracts.ResolvedModelPath != "model/from_decorator.onnx" {
+		t.Fatalf("expected resolved model path %q, got %+v", "model/from_decorator.onnx", status.Contracts)
+	}
+	assertNoModelIssue(t, status.Issues, core.IssueCodeModelCandidatesAmbiguous)
 	assertNoModelIssue(t, status.Issues, core.IssueCodeModelFileMissing)
 }
 
@@ -80,11 +74,6 @@ func TestModelDiscoveryReportsAmbiguousCandidates(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
 		"entryFile: leap_custom_test.py",
-		"include:",
-		"  - leap.yaml",
-		"  - leap_binder.py",
-		"  - leap_custom_test.py",
-		"  - model/**",
 		"",
 	}, "\n"))
 	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
@@ -106,17 +95,18 @@ func TestModelDiscoveryRejectsUnsupportedFormat(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
 		"entryFile: leap_custom_test.py",
-		"modelPath: model/demo.pt",
-		"include:",
-		"  - leap.yaml",
-		"  - leap_binder.py",
-		"  - leap_custom_test.py",
-		"  - model/**",
 		"",
 	}, "\n"))
 	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", simpleIntegrationTestSource())
-	writeFixtureFile(t, root, "model/demo.pt", "binary")
+	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    model_path = 'model/demo.pt'",
+		"    return model_path",
+		"",
+	}, "\n"))
 
 	status := inspectStatus(t, root)
 
@@ -132,11 +122,18 @@ func TestModelDiscoveryRejectsOutsideRepoModelPath(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
 		"entryFile: leap_custom_test.py",
-		"modelPath: ../external/model.h5",
 		"",
 	}, "\n"))
 	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", simpleIntegrationTestSource())
+	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    model_path = '../external/model.h5'",
+		"    return model_path",
+		"",
+	}, "\n"))
 
 	status := inspectStatus(t, root)
 
@@ -145,22 +142,28 @@ func TestModelDiscoveryRejectsOutsideRepoModelPath(t *testing.T) {
 	}
 }
 
-func TestModelDiscoveryRespectsIncludeExcludeRules(t *testing.T) {
+func TestModelDiscoveryIgnoresLeapYAMLIncludeExcludeForModelResolution(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
 		"entryFile: leap_custom_test.py",
-		"modelPath: model/private/model.h5",
 		"include:",
 		"  - leap.yaml",
 		"  - leap_binder.py",
 		"  - leap_custom_test.py",
-		"  - model/**",
 		"exclude:",
 		"  - model/private/**",
 		"",
 	}, "\n"))
 	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", simpleIntegrationTestSource())
+	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    model_path = 'model/private/model.h5'",
+		"    return model_path",
+		"",
+	}, "\n"))
 	writeFixtureFile(t, root, "model/private/model.h5", "binary")
 
 	status := inspectStatus(t, root)

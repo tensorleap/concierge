@@ -50,7 +50,6 @@ func TestInspectorAcceptsEitherIntegrationTestFileName(t *testing.T) {
 			root := t.TempDir()
 			writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
 				"entryFile: leap_binder.py",
-				"modelPath: model/model.h5",
 				"",
 			}, "\n"))
 			writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
@@ -79,7 +78,6 @@ func TestInspectorNoIssuesWhenArtifactsExist(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
 		"entryFile: leap_binder.py",
-		"modelPath: model/model.h5",
 		"",
 	}, "\n"))
 	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
@@ -172,7 +170,6 @@ func TestInspectorAllowsProjectAndSecretIdentifiersInLeapYAML(t *testing.T) {
 		"projectId: demo-project",
 		"secretId: demo-secret",
 		"entryFile: leap_binder.py",
-		"modelPath: model/model.h5",
 		"",
 	}, "\n"))
 	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
@@ -193,7 +190,6 @@ func TestInspectorAllowsEntryFileExcludedByLeapYAML(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
 		"entryFile: leap_binder.py",
-		"modelPath: model/model.h5",
 		"include:",
 		"  - leap.yaml",
 		"  - leap_binder.py",
@@ -229,13 +225,19 @@ func TestInspectorAllowsEntryFileExcludedByLeapYAML(t *testing.T) {
 func TestInspectorDetectsUnsupportedModelFormat(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
-		"entryFile: leap_binder.py",
-		"modelPath: model.pt",
+		"entryFile: leap_custom_test.py",
 		"",
 	}, "\n"))
 	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", "print('test')\n")
-	writeFixtureFile(t, root, "model.pt", "binary\n")
+	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    model_path = 'model.pt'",
+		"    return model_path",
+		"",
+	}, "\n"))
 
 	inspector := NewBaselineInspector()
 	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))

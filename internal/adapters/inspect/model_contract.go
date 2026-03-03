@@ -20,7 +20,7 @@ func inspectModelContract(repoRoot string, contract *leapYAMLContract, status *c
 	attachModelCandidates(status, candidates)
 
 	if len(candidates) == 0 {
-		appendModelIssue(status, core.IssueCodeModelFileMissing, "no model candidate found; set leap.yaml modelPath/model or provide a discoverable .onnx/.h5 model", core.SeverityError)
+		appendModelIssue(status, core.IssueCodeModelFileMissing, "no model candidate found; implement @tensorleap_load_model with a supported .onnx or .h5 artifact path", core.SeverityError)
 		return nil
 	}
 
@@ -36,12 +36,9 @@ func inspectModelContract(repoRoot string, contract *leapYAMLContract, status *c
 		evaluations = append(evaluations, evaluation)
 	}
 
-	issueCandidates := explicitModelEvaluations(evaluations)
-	if len(issueCandidates) == 0 {
-		issueCandidates = evaluations
-	}
+	preferredCandidates := preferredModelEvaluations(evaluations)
 
-	if candidate, ok := firstUnsupportedModelCandidate(issueCandidates); ok {
+	if candidate, ok := firstUnsupportedModelCandidate(preferredCandidates); ok {
 		appendModelIssue(
 			status,
 			core.IssueCodeModelFormatUnsupported,
@@ -50,7 +47,7 @@ func inspectModelContract(repoRoot string, contract *leapYAMLContract, status *c
 		)
 	}
 
-	if candidate, ok := firstOutsideRepoModelCandidate(issueCandidates); ok {
+	if candidate, ok := firstOutsideRepoModelCandidate(preferredCandidates); ok {
 		appendModelIssue(
 			status,
 			core.IssueCodeModelFileMissing,
@@ -59,7 +56,7 @@ func inspectModelContract(repoRoot string, contract *leapYAMLContract, status *c
 		)
 	}
 
-	resolvable := resolvableModelEvaluations(evaluations)
+	resolvable := resolvableModelEvaluations(preferredCandidates)
 	setResolvedModelPath(status, resolvable)
 
 	if len(resolvable) > 1 {
@@ -67,7 +64,7 @@ func inspectModelContract(repoRoot string, contract *leapYAMLContract, status *c
 			status,
 			core.IssueCodeModelCandidatesAmbiguous,
 			fmt.Sprintf(
-				"multiple resolvable model candidates found: %s; set leap.yaml modelPath/model to disambiguate",
+				"multiple resolvable model candidates found: %s; make @tensorleap_load_model resolve a single .onnx/.h5 artifact",
 				joinModelCandidatePaths(resolvable),
 			),
 			core.SeverityError,
@@ -76,7 +73,7 @@ func inspectModelContract(repoRoot string, contract *leapYAMLContract, status *c
 	}
 
 	if len(resolvable) == 0 {
-		if candidate, ok := firstMissingModelFileCandidate(issueCandidates); ok {
+		if candidate, ok := firstMissingModelFileCandidate(preferredCandidates); ok {
 			appendModelIssue(
 				status,
 				core.IssueCodeModelFileMissing,
@@ -88,7 +85,7 @@ func inspectModelContract(repoRoot string, contract *leapYAMLContract, status *c
 		appendModelIssue(
 			status,
 			core.IssueCodeModelFileMissing,
-			fmt.Sprintf("no resolvable model candidate found; discovered candidates: %s", joinModelCandidatePaths(evaluations)),
+			fmt.Sprintf("no resolvable model candidate found; discovered candidates: %s", joinModelCandidatePaths(preferredCandidates)),
 			core.SeverityError,
 		)
 	}
@@ -123,12 +120,34 @@ func setResolvedModelPath(status *core.IntegrationStatus, resolvable []modelCand
 func explicitModelEvaluations(evaluations []modelCandidateEvaluation) []modelCandidateEvaluation {
 	explicit := make([]modelCandidateEvaluation, 0, len(evaluations))
 	for _, evaluation := range evaluations {
-		if strings.Contains(evaluation.Candidate.Source, modelCandidateSourceRepoSearch) {
+		if isRepoSearchOnlySource(evaluation.Candidate.Source) {
 			continue
 		}
 		explicit = append(explicit, evaluation)
 	}
 	return explicit
+}
+
+func preferredModelEvaluations(evaluations []modelCandidateEvaluation) []modelCandidateEvaluation {
+	explicit := explicitModelEvaluations(evaluations)
+	if len(explicit) > 0 {
+		return explicit
+	}
+	return evaluations
+}
+
+func isRepoSearchOnlySource(source string) bool {
+	parts := strings.Split(strings.TrimSpace(source), ",")
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		if trimmed != modelCandidateSourceRepoSearch {
+			return false
+		}
+	}
+	return true
 }
 
 func firstUnsupportedModelCandidate(evaluations []modelCandidateEvaluation) (modelCandidateEvaluation, bool) {

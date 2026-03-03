@@ -11,9 +11,7 @@ import (
 )
 
 const (
-	modelCandidateSourceLeapYAMLModelPath = "leap_yaml.modelPath"
-	modelCandidateSourceLeapYAMLModel     = "leap_yaml.model"
-	modelCandidateSourceRepoSearch        = "repo_search"
+	modelCandidateSourceRepoSearch = "repo_search"
 )
 
 var (
@@ -62,9 +60,6 @@ func discoverModelCandidates(repoRoot string, contract *leapYAMLContract, contra
 		byPathKey: make(map[string]*collectedModelCandidate),
 	}
 
-	collector.add(strings.TrimSpace(contractModelPath(contract)), modelCandidateSourceLeapYAMLModelPath)
-	collector.add(strings.TrimSpace(contractModel(contract)), modelCandidateSourceLeapYAMLModel)
-
 	fromDecorators, err := discoverModelCandidatesFromLoadModelDecorators(repoRoot, contract, contracts)
 	if err != nil {
 		return nil, err
@@ -82,20 +77,6 @@ func discoverModelCandidates(repoRoot string, contract *leapYAMLContract, contra
 	}
 
 	return collector.list(), nil
-}
-
-func contractModelPath(contract *leapYAMLContract) string {
-	if contract == nil {
-		return ""
-	}
-	return contract.ModelPath
-}
-
-func contractModel(contract *leapYAMLContract) string {
-	if contract == nil {
-		return ""
-	}
-	return contract.Model
 }
 
 func (c *modelCandidateCollector) add(path string, source string) {

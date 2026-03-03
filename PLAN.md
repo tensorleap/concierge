@@ -78,7 +78,7 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 9C: AgentRunner integration for complex ensure-steps | `ACCEPTED` | 2026-03-03 (`main`) | Added task-scoped coding-agent delegation with transcript evidence integration in executor flow. |
 | Step 10A0: Plan state sync after 9C merge | `ACCEPTED` | 2026-03-03 (`main`) | Synchronized plan tracking after `9C` merge and verified authoring-first tail consistency (`10A-14B`). |
 | Step 10A: Contract discovery core | `DONE` | 2026-03-03 (`PR #11`) | Added deterministic entry-file contract discovery for decorators and integration-test call symbols with graceful path-aware failures. |
-| Step 10B: Model discovery and need detection | `DONE` | 2026-03-03 (`PR #12`) | Added deterministic model candidate discovery (leap.yaml + load-model analysis + repo search), ambiguity/missing/format/outside-repo issues, and candidate evidence context without enforcing leap.yaml include/exclude for model artifacts. |
+| Step 10B: Model discovery and need detection | `DONE` | 2026-03-03 (`PR #12`) | Added deterministic model candidate discovery from `@tensorleap_load_model` and repo search, ambiguity/missing/format/outside-repo issues, and candidate evidence context without enforcing leap.yaml include/exclude for model artifacts. |
 | Step 10B1: Pre-commit integration quality gate (delta-scoped) | `PENDING` | — | Run step-local integration validation and changed-file syntax checks before commit approval is offered. |
 | Step 10C: Model contract authoring flow | `PENDING` | — | Add model-specific authoring objectives and deterministic recommendation/evidence path. |
 | Step 10D: Preprocess need detection | `PENDING` | — | Emit preprocess-specific issue codes from real contract inspection. |
@@ -589,14 +589,13 @@ Files to modify:
 Locked behavior:
 
 1. Resolve model candidates from:
-   1. `leap.yaml` (`modelPath` / `model`)
-   2. discovered `@tensorleap_load_model` call sites
-   3. deterministic repo search for `.onnx` / `.h5` files
+   1. discovered `@tensorleap_load_model` call sites
+   2. deterministic repo search for `.onnx` / `.h5` files
 2. Emit deterministic issues for:
    1. no resolvable model
    2. ambiguous model candidates
    3. unsupported extension
-   4. path outside repo or excluded by upload boundary
+   4. path outside repo
 3. Attach candidate list to evidence/recommendation context.
 
 Tests:
@@ -1338,8 +1337,8 @@ Tests:
 
 Validation commands:
 
-1. `CONCIERGE_RUN_FIXTURE_E2E=1 go test ./internal/e2e/fixtures -run MissingModel -v`
-2. `CONCIERGE_RUN_FIXTURE_E2E=1 bash scripts/fixtures_run_checks.sh`
+1. `go test ./internal/e2e/fixtures -run MissingModel -v`
+2. `bash scripts/fixtures_run_checks.sh`
 
 Acceptance criteria:
 
@@ -1379,8 +1378,8 @@ Tests:
 
 Validation commands:
 
-1. `CONCIERGE_RUN_FIXTURE_E2E=1 go test ./internal/e2e/fixtures -run MissingPreprocess -v`
-2. `CONCIERGE_RUN_FIXTURE_E2E=1 bash scripts/fixtures_run_checks.sh`
+1. `go test ./internal/e2e/fixtures -run MissingPreprocess -v`
+2. `bash scripts/fixtures_run_checks.sh`
 
 Acceptance criteria:
 
@@ -1420,8 +1419,8 @@ Tests:
 
 Validation commands:
 
-1. `CONCIERGE_RUN_FIXTURE_E2E=1 go test ./internal/e2e/fixtures -run MissingInputEncoders -v`
-2. `CONCIERGE_RUN_FIXTURE_E2E=1 bash scripts/fixtures_run_checks.sh`
+1. `go test ./internal/e2e/fixtures -run MissingInputEncoders -v`
+2. `bash scripts/fixtures_run_checks.sh`
 
 Acceptance criteria:
 
@@ -1461,8 +1460,8 @@ Tests:
 
 Validation commands:
 
-1. `CONCIERGE_RUN_FIXTURE_E2E=1 go test ./internal/e2e/fixtures -run MissingGTEncoders -v`
-2. `CONCIERGE_RUN_FIXTURE_E2E=1 bash scripts/fixtures_run_checks.sh`
+1. `go test ./internal/e2e/fixtures -run MissingGTEncoders -v`
+2. `bash scripts/fixtures_run_checks.sh`
 
 Acceptance criteria:
 
@@ -1502,8 +1501,8 @@ Tests:
 
 Validation commands:
 
-1. `CONCIERGE_RUN_FIXTURE_E2E=1 go test ./internal/e2e/fixtures -run MissingIntegrationTestCalls -v`
-2. `CONCIERGE_RUN_FIXTURE_E2E=1 bash scripts/fixtures_run_checks.sh`
+1. `go test ./internal/e2e/fixtures -run MissingIntegrationTestCalls -v`
+2. `bash scripts/fixtures_run_checks.sh`
 
 Acceptance criteria:
 
@@ -1543,8 +1542,8 @@ Tests:
 
 Validation commands:
 
-1. `CONCIERGE_RUN_FIXTURE_E2E=1 go test ./internal/e2e/fixtures -run Composite -v`
-2. `CONCIERGE_RUN_FIXTURE_E2E=1 bash scripts/fixtures_run_checks.sh`
+1. `go test ./internal/e2e/fixtures -run Composite -v`
+2. `bash scripts/fixtures_run_checks.sh`
 
 Acceptance criteria:
 
@@ -1645,7 +1644,7 @@ Validation commands:
 
 1. `make lint`
 2. `make test`
-3. `CONCIERGE_RUN_FIXTURE_E2E=1 make test-fixtures`
+3. `make test-fixtures`
 4. `make build`
 
 Acceptance criteria:
@@ -1737,7 +1736,7 @@ Final acceptance checklist commands:
 1. `go test ./...`
 2. `make lint`
 3. `make build`
-4. `CONCIERGE_RUN_FIXTURE_E2E=1 make test-fixtures`
+4. `make test-fixtures`
 5. Manual smoke: `go run ./cmd/concierge run --max-iterations=3 --persist`
 6. Manual smoke (agent-enabled): `go run ./cmd/concierge run --enable-agent --max-iterations=3 --persist`
 

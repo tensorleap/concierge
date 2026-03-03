@@ -381,7 +381,6 @@ func initRunTestRepoAtPath(t *testing.T, repo string, complete bool) {
 	if complete {
 		writeFile(t, filepath.Join(repo, "leap.yaml"), strings.Join([]string{
 			"entryFile: leap_binder.py",
-			"modelPath: model/model.h5",
 			"",
 		}, "\n"))
 		writeFile(t, filepath.Join(repo, "leap_binder.py"), "def noop():\n    return None\n")

@@ -10,14 +10,19 @@ LDFLAGS := -s -w \
 	-X github.com/tensorleap/concierge/internal/buildinfo.Commit=$(COMMIT) \
 	-X github.com/tensorleap/concierge/internal/buildinfo.Date=$(DATE)
 
-.PHONY: build test clean fixtures-prepare fixtures-verify fixtures-reset
+UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v '/internal/e2e/fixtures$$')
+
+.PHONY: build test test-fixtures clean fixtures-prepare fixtures-verify fixtures-reset fixtures-checks
 
 build:
 	@mkdir -p $(BIN_DIR)
 	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY_NAME) $(CMD_PATH)
 
 test:
-	go test ./...
+	go test $(UNIT_TEST_PACKAGES)
+
+test-fixtures: fixtures-prepare fixtures-verify
+	go test ./internal/e2e/fixtures -v
 
 clean:
 	rm -rf $(BIN_DIR)
@@ -29,3 +34,5 @@ fixtures-verify:
 	bash scripts/fixtures_verify.sh
 
 fixtures-reset: fixtures-prepare fixtures-verify
+
+fixtures-checks: test-fixtures

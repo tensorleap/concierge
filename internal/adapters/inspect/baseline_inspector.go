@@ -48,6 +48,9 @@ func (i *BaselineInspector) Inspect(ctx context.Context, snapshot core.Workspace
 		if err != nil {
 			return core.IntegrationStatus{}, err
 		}
+		if err := inspectIntegrationContracts(repoRoot, contract, &status); err != nil {
+			return core.IntegrationStatus{}, err
+		}
 	}
 
 	binderPath := filepath.Join(repoRoot, "leap_binder.py")

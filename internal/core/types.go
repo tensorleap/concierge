@@ -101,10 +101,22 @@ type IssueLocation struct {
 	Symbol string `json:"symbol,omitempty"`
 }
 
+// IntegrationContracts captures discovered interface symbols from the integration entry file.
+type IntegrationContracts struct {
+	EntryFile                string   `json:"entryFile"`
+	LoadModelFunctions       []string `json:"loadModelFunctions,omitempty"`
+	PreprocessFunctions      []string `json:"preprocessFunctions,omitempty"`
+	InputEncoders            []string `json:"inputEncoders,omitempty"`
+	GroundTruthEncoders      []string `json:"groundTruthEncoders,omitempty"`
+	IntegrationTestFunctions []string `json:"integrationTestFunctions,omitempty"`
+	IntegrationTestCalls     []string `json:"integrationTestCalls,omitempty"`
+}
+
 // IntegrationStatus summarizes what is currently missing or invalid.
 type IntegrationStatus struct {
-	Missing []string `json:"missing"`
-	Issues  []Issue  `json:"issues"`
+	Missing   []string              `json:"missing"`
+	Issues    []Issue               `json:"issues"`
+	Contracts *IntegrationContracts `json:"contracts,omitempty"`
 }
 
 // Ready reports whether integration has no known blockers.

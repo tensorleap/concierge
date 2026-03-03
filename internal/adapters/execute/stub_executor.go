@@ -43,13 +43,20 @@ func (e *StubExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnaps
 // falls back to the stub executor for unsupported ensure-steps.
 type DispatcherExecutor struct {
 	filesystem *FilesystemExecutor
+	agent      *AgentExecutor
 	fallback   *StubExecutor
 }
 
 // NewDispatcherExecutor creates an executor that applies deterministic mutations where available.
 func NewDispatcherExecutor() *DispatcherExecutor {
+	return NewDispatcherExecutorWithAgent(nil)
+}
+
+// NewDispatcherExecutorWithAgent creates an executor with optional agent fallback.
+func NewDispatcherExecutorWithAgent(agentExecutor *AgentExecutor) *DispatcherExecutor {
 	return &DispatcherExecutor{
 		filesystem: NewFilesystemExecutor(),
+		agent:      agentExecutor,
 		fallback:   NewStubExecutor(),
 	}
 }
@@ -58,6 +65,15 @@ func NewDispatcherExecutor() *DispatcherExecutor {
 func (d *DispatcherExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnapshot, step core.EnsureStep) (core.ExecutionResult, error) {
 	if isFilesystemStep(step.ID) {
 		return d.filesystem.Execute(ctx, snapshot, step)
+	}
+	if d.agent != nil {
+		result, err := d.agent.Execute(ctx, snapshot, step)
+		if err == nil {
+			return result, nil
+		}
+		if core.KindOf(err) != core.KindStepNotApplicable {
+			return core.ExecutionResult{}, err
+		}
 	}
 	return d.fallback.Execute(ctx, snapshot, step)
 }

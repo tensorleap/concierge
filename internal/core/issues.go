@@ -93,13 +93,6 @@ const (
 	IssueCodeGTEncoderConstantOutputSuspected IssueCode = "gt_encoder_constant_output_suspected"
 	IssueCodeUnlabeledSubsetGTInvocation      IssueCode = "unlabeled_subset_gt_invocation"
 
-	// Optional hooks (metadata, visualization, metrics, loss, layers).
-	IssueCodeMetadataFunctionExecutionFailed IssueCode = "metadata_function_execution_failed"
-	IssueCodeVisualizerExecutionFailed       IssueCode = "visualizer_execution_failed"
-	IssueCodeMetricExecutionFailed           IssueCode = "metric_execution_failed"
-	IssueCodeLossExecutionFailed             IssueCode = "loss_execution_failed"
-	IssueCodeCustomLayerLoadFailed           IssueCode = "custom_layer_load_failed"
-
 	// Upload and runtime validation.
 	IssueCodeUploadNotConfirmed               IssueCode = "upload_not_confirmed"
 	IssueCodeUploadFailed                     IssueCode = "upload_failed"
@@ -133,10 +126,6 @@ const (
 	IssueScopePreprocess         IssueScope = "preprocess"
 	IssueScopeInputEncoder       IssueScope = "input_encoder"
 	IssueScopeGroundTruthEncoder IssueScope = "ground_truth_encoder"
-	IssueScopeMetadata           IssueScope = "metadata"
-	IssueScopeVisualizer         IssueScope = "visualizer"
-	IssueScopeMetric             IssueScope = "metric"
-	IssueScopeLoss               IssueScope = "loss"
 	IssueScopeUpload             IssueScope = "upload"
 	IssueScopeValidation         IssueScope = "validation"
 	IssueScopeDataset            IssueScope = "dataset"
@@ -212,11 +201,6 @@ var knownIssueCodes = []IssueCode{
 	IssueCodeGTEncoderCoverageIncomplete,
 	IssueCodeGTEncoderConstantOutputSuspected,
 	IssueCodeUnlabeledSubsetGTInvocation,
-	IssueCodeMetadataFunctionExecutionFailed,
-	IssueCodeVisualizerExecutionFailed,
-	IssueCodeMetricExecutionFailed,
-	IssueCodeLossExecutionFailed,
-	IssueCodeCustomLayerLoadFailed,
 	IssueCodeUploadNotConfirmed,
 	IssueCodeUploadFailed,
 	IssueCodeUploadedFilesMissingArtifacts,

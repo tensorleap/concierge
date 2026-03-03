@@ -3,7 +3,7 @@
 **Document type:** Design document (handoff-ready for implementation)
 **Primary audience:** Engineering + agent-assisted coding implementation
 **Status:** Draft (implementation-oriented, no step-by-step implementation plan)
-**Implementation status (2026-02-25):** Step 1 baseline is complete (Go module initialized, inherited CI removed, minimal Go CI added with Go `1.24.x`).
+**Implementation status (2026-03-03):** Concierge v1 scope is explicitly focused on mandatory onboarding requirements. Optional asset assistance (metadata, visualizers, metrics, loss, custom layers) is deferred to v2.
 
 ---
 
@@ -13,7 +13,7 @@ Tensorleap integrations are powerful but often require a pre-sales/solutions eng
 
 * dataset preprocessing and sample fetching
 * input encoders and ground-truth encoders
-* optional metadata/visualizers/metrics/loss
+* optional metadata/visualizers/metrics/loss (deferred from Concierge v1 workflow)
 * a mandatory integration test that connects these interfaces to model inference
 * CLI upload and server-side validation
 
@@ -71,6 +71,8 @@ Tensorleap describes the integration script as:
 * Optional: metadata functions, custom visualizers, metrics, loss, custom layers.
 
 Nuance: for the *unlabeled* set, GT encoders + metrics/loss won’t run.
+
+**Concierge v1 scope note:** although Tensorleap supports optional hooks, Concierge v1 does not validate, enforce, or auto-generate optional assets. Concierge v1 targets only mandatory integration contracts required to reach a working upload.
 
 ### 2.5 Integration test is mandatory and has strict rules
 
@@ -348,7 +350,7 @@ Every ensure-step:
 * preprocess returns at least train+validation `PreprocessResponse`
 * input encoders exist and execute reliably across multiple indices
 * GT encoders exist and execute on labeled subsets
-* optional hooks where useful
+* optional hooks where useful (deferred in Concierge v1; planned for v2 enhancement flows)
 
 **E) Integration test contract and coverage**
 
@@ -388,7 +390,7 @@ Concierge runs a deterministic harness that:
 * selects multiple indices per subset (bounded)
 * calls every input encoder across those indices
 * calls every GT encoder across those indices for labeled subsets
-* optionally calls metadata/visualizers if defined
+* optionally calls metadata/visualizers if defined (planned for Concierge v2, not v1)
 * enforces invariants:
 
   * no exceptions

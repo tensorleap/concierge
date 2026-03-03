@@ -89,13 +89,6 @@ var preferredEnsureStepByIssueCode = map[IssueCode]EnsureStepID{
 	IssueCodeGTEncoderConstantOutputSuspected: EnsureStepGroundTruthEncoders,
 	IssueCodeUnlabeledSubsetGTInvocation:      EnsureStepGroundTruthEncoders,
 
-	// Optional hooks (metadata, visualization, metrics, loss, layers).
-	IssueCodeMetadataFunctionExecutionFailed: EnsureStepOptionalHooks,
-	IssueCodeVisualizerExecutionFailed:       EnsureStepOptionalHooks,
-	IssueCodeMetricExecutionFailed:           EnsureStepOptionalHooks,
-	IssueCodeLossExecutionFailed:             EnsureStepOptionalHooks,
-	IssueCodeCustomLayerLoadFailed:           EnsureStepOptionalHooks,
-
 	// Upload and runtime validation.
 	IssueCodeUploadNotConfirmed:               EnsureStepUploadReadiness,
 	IssueCodeUploadFailed:                     EnsureStepUploadPush,

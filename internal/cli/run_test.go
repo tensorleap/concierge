@@ -93,6 +93,20 @@ func TestRunNonDryRunReturnsErrorOnMaxIterationsStop(t *testing.T) {
 	}
 }
 
+func TestRunEnableAgentFailsWhenCommandUnavailable(t *testing.T) {
+	disableHarness(t)
+	repo := initRunTestRepo(t, true)
+	withWorkingDir(t, repo)
+
+	_, err := executeCLI(t, "run", "--enable-agent", "--agent-command=definitely-not-a-real-binary")
+	if err == nil {
+		t.Fatal("expected run to fail when agent command is unavailable")
+	}
+	if got := core.KindOf(err); got != core.KindMissingDependency {
+		t.Fatalf("expected missing dependency error kind, got %q (err=%v)", got, err)
+	}
+}
+
 func TestRunPromptsForProjectRootWhenAmbiguous(t *testing.T) {
 	disableHarness(t)
 

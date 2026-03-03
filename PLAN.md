@@ -8,6 +8,7 @@ This ExecPlan is a living document. Keep `Progress`, `Gap Analysis`, `Surprises 
 - 2026-02-26: Re-baselined remaining work after a full README/PLAN/code audit. Added explicit gap analysis and replaced the old two-step tail (`Step 7`, `Step 8`) with a detailed operational completion plan (`Steps 7A-12B`).
 - 2026-02-26: Verified current baseline is green locally: `go test ./...`, `bash scripts/fixtures_prepare.sh`, `bash scripts/fixtures_verify.sh`, `bash scripts/fixtures_run_checks.sh`.
 - 2026-02-26: Confirmed current implementation is still scaffold-first (stub executor, optional harness gate, no real `leap push` path, no git approval/commit loop in product runtime).
+- 2026-03-03: Locked v1 product scope to mandatory onboarding contracts only. Optional asset assistance (metadata/visualizers/metrics/loss/custom layers) is deferred to v2 and removed from v1 ensure-step taxonomy.
 
 ## Purpose / Exit Target
 
@@ -91,6 +92,7 @@ Out of scope for this release train:
 1. Managed cloud brokerage for coding-agent credentials.
 2. Full backend enforcement sandbox outside local trust model.
 3. Automatic Tensorleap server installation/provisioning.
+4. Optional integration asset assistance (metadata/visualizers/metrics/loss/custom layers), which is deferred to v2.
 
 ## Detailed Step Specifications
 
@@ -878,6 +880,9 @@ Phase acceptance condition:
 - Decision: Implement deterministic executor coverage before agent integration.
   Rationale: Preserve deterministic baseline and reduce dependence on agent availability for core flows.
   Date/Author: 2026-02-26 / assistant.
+- Decision: Exclude optional asset guidance/checks from Concierge v1 runtime and defer to a dedicated v2 enhancement workflow.
+  Rationale: v1 goal is successful mandatory onboarding with minimal distraction and deterministic contracts.
+  Date/Author: 2026-03-03 / user + assistant.
 
 ## Outcomes & Retrospective
 

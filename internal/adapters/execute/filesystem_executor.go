@@ -47,6 +47,8 @@ func (e *FilesystemExecutor) Execute(ctx context.Context, snapshot core.Workspac
 	switch canonicalStep.ID {
 	case core.EnsureStepLeapYAML:
 		return ensureLeapYAML(repoRoot, canonicalStep)
+	case core.EnsureStepModelContract:
+		return ensureModelContract(snapshot, canonicalStep), nil
 	case core.EnsureStepIntegrationScript:
 		return applyTemplate(repoRoot, canonicalStep, "leap_binder.py", "templates/leap_binder.py.tmpl")
 	case core.EnsureStepIntegrationTestContract:
@@ -57,6 +59,23 @@ func (e *FilesystemExecutor) Execute(ctx context.Context, snapshot core.Workspac
 			"execute.filesystem.unsupported_step",
 			fmt.Errorf("ensure-step %q is not supported by filesystem executor", canonicalStep.ID),
 		)
+	}
+}
+
+func ensureModelContract(snapshot core.WorkspaceSnapshot, step core.EnsureStep) core.ExecutionResult {
+	resolvedPath := strings.TrimSpace(snapshot.SelectedModelPath)
+	summary := "no model path override was selected for this step"
+	if resolvedPath != "" {
+		summary = fmt.Sprintf("selected model path %q for @tensorleap_load_model", resolvedPath)
+	}
+	return core.ExecutionResult{
+		Step:    step,
+		Applied: false,
+		Summary: summary,
+		Evidence: []core.EvidenceItem{
+			{Name: "executor.mode", Value: "filesystem"},
+			{Name: "executor.selected_model_path", Value: resolvedPath},
+		},
 	}
 }
 

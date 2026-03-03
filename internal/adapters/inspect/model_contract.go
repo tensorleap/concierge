@@ -2,13 +2,14 @@ package inspect
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/tensorleap/concierge/internal/core"
 )
 
-func inspectModelContract(repoRoot string, contract *leapYAMLContract, status *core.IntegrationStatus) error {
+func inspectModelContract(repoRoot string, contract *leapYAMLContract, selectedModelPath string, status *core.IntegrationStatus) error {
 	if contract == nil || status == nil {
 		return nil
 	}
@@ -37,6 +38,55 @@ func inspectModelContract(repoRoot string, contract *leapYAMLContract, status *c
 	}
 
 	preferredCandidates := preferredModelEvaluations(evaluations)
+	resolvable := resolvableModelEvaluations(preferredCandidates)
+
+	selected := normalizeSelectedModelPath(selectedModelPath)
+	if selected != "" {
+		candidate, found := findModelEvaluationByDisplayPath(evaluations, selected)
+		if !found {
+			appendModelIssue(
+				status,
+				core.IssueCodeModelFileMissing,
+				fmt.Sprintf("selected model path %q was not found among discovered candidates", selected),
+				core.SeverityError,
+			)
+			return nil
+		}
+		if !candidate.SupportedFormat {
+			appendModelIssue(
+				status,
+				core.IssueCodeModelFormatUnsupported,
+				fmt.Sprintf("model candidate %q has unsupported format; expected .onnx or .h5", candidate.DisplayPath),
+				core.SeverityError,
+			)
+			return nil
+		}
+		if !candidate.InsideRepo {
+			appendModelIssue(
+				status,
+				core.IssueCodeModelFileMissing,
+				fmt.Sprintf("model candidate %q points outside repository", candidate.Candidate.Path),
+				core.SeverityError,
+			)
+			return nil
+		}
+		if !candidate.Exists {
+			appendModelIssue(
+				status,
+				core.IssueCodeModelFileMissing,
+				fmt.Sprintf("model file %q was not found", candidate.DisplayPath),
+				core.SeverityError,
+			)
+			return nil
+		}
+		setResolvedModelPath(status, []modelCandidateEvaluation{candidate})
+		return nil
+	}
+
+	if shouldDeferModelIssuesUntilPreprocess(status) {
+		setResolvedModelPath(status, resolvable)
+		return nil
+	}
 
 	if candidate, ok := firstUnsupportedModelCandidate(preferredCandidates); ok {
 		appendModelIssue(
@@ -56,7 +106,6 @@ func inspectModelContract(repoRoot string, contract *leapYAMLContract, status *c
 		)
 	}
 
-	resolvable := resolvableModelEvaluations(preferredCandidates)
 	setResolvedModelPath(status, resolvable)
 
 	if len(resolvable) > 1 {
@@ -91,6 +140,46 @@ func inspectModelContract(repoRoot string, contract *leapYAMLContract, status *c
 	}
 
 	return nil
+}
+
+func shouldDeferModelIssuesUntilPreprocess(status *core.IntegrationStatus) bool {
+	if status == nil || status.Contracts == nil {
+		return false
+	}
+	if len(status.Contracts.LoadModelFunctions) > 0 {
+		return false
+	}
+	for _, issue := range status.Issues {
+		if issue.Code == core.IssueCodePreprocessFunctionMissing {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeSelectedModelPath(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return ""
+	}
+	return filepath.ToSlash(filepath.Clean(filepath.FromSlash(trimmed)))
+}
+
+func findModelEvaluationByDisplayPath(
+	evaluations []modelCandidateEvaluation,
+	selectedPath string,
+) (modelCandidateEvaluation, bool) {
+	target := strings.ToLower(strings.TrimSpace(selectedPath))
+	if target == "" {
+		return modelCandidateEvaluation{}, false
+	}
+	for _, evaluation := range evaluations {
+		candidatePath := strings.ToLower(strings.TrimSpace(evaluation.DisplayPath))
+		if candidatePath == target {
+			return evaluation, true
+		}
+	}
+	return modelCandidateEvaluation{}, false
 }
 
 func attachModelCandidates(status *core.IntegrationStatus, candidates []core.ModelCandidate) {

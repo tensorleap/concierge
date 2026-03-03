@@ -23,7 +23,7 @@ type AgentExecutor struct {
 // NewAgentExecutor creates an agent-backed executor.
 func NewAgentExecutor(runner agentTaskRunner) *AgentExecutor {
 	if runner == nil {
-		runner = agent.NewRunner(agent.RunnerOptions{})
+		runner = agent.NewRunner()
 	}
 	return &AgentExecutor{runner: runner}
 }
@@ -80,7 +80,7 @@ func agentTaskForStep(snapshot core.WorkspaceSnapshot, step core.EnsureStep) (ag
 		return agent.AgentTask{}, core.NewError(core.KindUnknown, "execute.agent.repo_root", "snapshot repository root is empty")
 	}
 
-	objective, constraints, supported := objectiveForStep(step.ID)
+	objective, constraints, supported := objectiveForStep(snapshot, step.ID)
 	if !supported {
 		return agent.AgentTask{}, core.WrapError(
 			core.KindStepNotApplicable,
@@ -102,18 +102,19 @@ func agentTaskForStep(snapshot core.WorkspaceSnapshot, step core.EnsureStep) (ag
 	}, nil
 }
 
-func objectiveForStep(stepID core.EnsureStepID) (string, []string, bool) {
+func objectiveForStep(snapshot core.WorkspaceSnapshot, stepID core.EnsureStepID) (string, []string, bool) {
 	switch stepID {
-	case core.EnsureStepModelContract:
-		return "Repair model artifact compatibility and loading contract for Tensorleap", []string{
-			"Keep model path inside repository and include it in leap.yaml upload boundary",
-			"Use only .onnx or .h5 model formats",
-		}, true
 	case core.EnsureStepPreprocessContract:
-		return "Implement preprocess contract with mandatory train and validation subsets", []string{
-			"Preprocess should return deterministic, non-empty subset descriptors when possible",
+		constraints := []string{
+			"Author preprocess in one pass: include @tensorleap_preprocess and required train/validation subset handling",
+			"Ensure @tensorleap_load_model exists and preprocess wiring references the resolved model path",
+			"Avoid changing input encoders, ground-truth encoders, and integration-test wiring in this step",
 			"Avoid changing unrelated project behavior",
-		}, true
+		}
+		if selectedModelPath := strings.TrimSpace(snapshot.SelectedModelPath); selectedModelPath != "" {
+			constraints = append(constraints, fmt.Sprintf("Use model path %q for @tensorleap_load_model unless repository code proves this path is invalid", selectedModelPath))
+		}
+		return "Implement preprocess contract with decorator-correct model loading in one pass", constraints, true
 	case core.EnsureStepInputEncoders:
 		return "Implement and repair Tensorleap input encoders", []string{
 			"Ensure encoders execute for multiple indices without exceptions",

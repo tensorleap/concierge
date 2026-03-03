@@ -40,16 +40,29 @@ func TestFixturePreVsPostIssueDeltas(t *testing.T) {
 			preStatus := inspectStatus(t, preRoot)
 			postStatus := inspectStatus(t, postRoot)
 
-			requiredMissingCodes := []core.IssueCode{
+			if !containsIssueCode(preStatus.Issues, core.IssueCodeIntegrationTestMissing) {
+				t.Fatalf("pre variant must include issue %q, got %+v", core.IssueCodeIntegrationTestMissing, preStatus.Issues)
+			}
+			if !containsAnyIssueCode(preStatus.Issues,
 				core.IssueCodeLeapYAMLMissing,
 				core.IssueCodeIntegrationScriptMissing,
-				core.IssueCodeIntegrationTestMissing,
+				core.IssueCodePreprocessFunctionMissing,
+			) {
+				t.Fatalf(
+					"pre variant must include at least one integration-contract bootstrap issue (%q, %q, or %q), got %+v",
+					core.IssueCodeLeapYAMLMissing,
+					core.IssueCodeIntegrationScriptMissing,
+					core.IssueCodePreprocessFunctionMissing,
+					preStatus.Issues,
+				)
 			}
 
-			for _, code := range requiredMissingCodes {
-				if !containsIssueCode(preStatus.Issues, code) {
-					t.Fatalf("pre variant must include issue %q, got %+v", code, preStatus.Issues)
-				}
+			for _, code := range []core.IssueCode{
+				core.IssueCodeLeapYAMLMissing,
+				core.IssueCodeIntegrationScriptMissing,
+				core.IssueCodePreprocessFunctionMissing,
+				core.IssueCodeIntegrationTestMissing,
+			} {
 				if containsIssueCode(postStatus.Issues, code) {
 					t.Fatalf("post variant must not include issue %q, got %+v", code, postStatus.Issues)
 				}
@@ -66,6 +79,7 @@ func TestFixturePlannerPrimaryStepPreVariant(t *testing.T) {
 	allowedPrimary := map[core.EnsureStepID]struct{}{
 		core.EnsureStepLeapYAML:                {},
 		core.EnsureStepIntegrationScript:       {},
+		core.EnsureStepPreprocessContract:      {},
 		core.EnsureStepIntegrationTestContract: {},
 	}
 
@@ -205,6 +219,15 @@ func captureSnapshot(t *testing.T, repoRoot string) core.WorkspaceSnapshot {
 func containsIssueCode(issues []core.Issue, code core.IssueCode) bool {
 	for _, issue := range issues {
 		if issue.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAnyIssueCode(issues []core.Issue, codes ...core.IssueCode) bool {
+	for _, code := range codes {
+		if containsIssueCode(issues, code) {
 			return true
 		}
 	}

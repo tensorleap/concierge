@@ -49,6 +49,7 @@ type WorkspaceSnapshot struct {
 	ID                  string            `json:"id"`
 	CapturedAt          time.Time         `json:"capturedAt"`
 	WorktreeFingerprint string            `json:"worktreeFingerprint"`
+	SelectedModelPath   string            `json:"selectedModelPath,omitempty"`
 	Repository          RepositoryState   `json:"repository"`
 	FileHashes          map[string]string `json:"fileHashes,omitempty"`
 	Runtime             RuntimeState      `json:"runtime,omitempty"`

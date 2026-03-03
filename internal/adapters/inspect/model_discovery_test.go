@@ -142,6 +142,62 @@ func TestModelDiscoveryRejectsOutsideRepoModelPath(t *testing.T) {
 	}
 }
 
+func TestModelDiscoveryDefersAmbiguityWhilePreprocessMissing(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
+		"entryFile: leap_binder.py",
+		"",
+	}, "\n"))
+	writeFixtureFile(t, root, "leap_binder.py", "def helper():\n    return None\n")
+	writeFixtureFile(t, root, "integration_test.py", "print('test')\n")
+	writeFixtureFile(t, root, "model/a.h5", "binary")
+	writeFixtureFile(t, root, "model/b.onnx", "binary")
+
+	status := inspectStatus(t, root)
+
+	if !hasIssueCode(status.Issues, core.IssueCodePreprocessFunctionMissing) {
+		t.Fatalf("expected preprocess missing issue, got %+v", status.Issues)
+	}
+	if hasIssueCode(status.Issues, core.IssueCodeModelCandidatesAmbiguous) {
+		t.Fatalf("did not expect ambiguous model issue while preprocess is missing, got %+v", status.Issues)
+	}
+}
+
+func TestModelDiscoveryResolvesSelectedModelPath(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
+		"entryFile: leap_custom_test.py",
+		"",
+	}, "\n"))
+	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    return 'model/a.h5'",
+		"",
+	}, "\n"))
+	writeFixtureFile(t, root, "model/a.h5", "binary")
+	writeFixtureFile(t, root, "model/b.onnx", "binary")
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), core.WorkspaceSnapshot{
+		Repository:        core.RepositoryState{Root: root},
+		SelectedModelPath: "model/b.onnx",
+	})
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+
+	if status.Contracts == nil || status.Contracts.ResolvedModelPath != "model/b.onnx" {
+		t.Fatalf("expected selected resolved model path %q, got %+v", "model/b.onnx", status.Contracts)
+	}
+	if hasIssueCode(status.Issues, core.IssueCodeModelCandidatesAmbiguous) {
+		t.Fatalf("did not expect ambiguous model issue when selected path is provided, got %+v", status.Issues)
+	}
+}
+
 func TestModelDiscoveryIgnoresLeapYAMLIncludeExcludeForModelResolution(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{

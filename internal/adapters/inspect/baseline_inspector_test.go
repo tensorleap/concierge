@@ -52,7 +52,7 @@ func TestInspectorAcceptsEitherIntegrationTestFileName(t *testing.T) {
 				"entryFile: leap_binder.py",
 				"",
 			}, "\n"))
-			writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+			writeFixtureFile(t, root, "leap_binder.py", minimalBinderWithPreprocessSource())
 			writeFixtureFile(t, root, tc.testFile, "print('test')\n")
 			writeFixtureFile(t, root, "model/model.h5", "binary\n")
 
@@ -80,7 +80,7 @@ func TestInspectorNoIssuesWhenArtifactsExist(t *testing.T) {
 		"entryFile: leap_binder.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_binder.py", minimalBinderWithPreprocessSource())
 	writeFixtureFile(t, root, "integration_test.py", "print('test')\n")
 	writeFixtureFile(t, root, "model/model.h5", "binary\n")
 
@@ -119,7 +119,7 @@ func TestInspectorIssueScopesAndSeverities(t *testing.T) {
 func TestInspectorLeapYAMLUnparseableEmitsIssue(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", "entryFile: [\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_binder.py", minimalBinderWithPreprocessSource())
 	writeFixtureFile(t, root, "integration_test.py", "print('test')\n")
 
 	inspector := NewBaselineInspector()
@@ -135,7 +135,7 @@ func TestInspectorLeapYAMLUnparseableEmitsIssue(t *testing.T) {
 func TestInspectorLeapYAMLEntryFileMissingEmitsIssue(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", "projectId: demo\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_binder.py", minimalBinderWithPreprocessSource())
 	writeFixtureFile(t, root, "integration_test.py", "print('test')\n")
 
 	inspector := NewBaselineInspector()
@@ -151,7 +151,7 @@ func TestInspectorLeapYAMLEntryFileMissingEmitsIssue(t *testing.T) {
 func TestInspectorLeapYAMLEntryFileNotFoundEmitsIssue(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", "entryFile: missing_entry.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_binder.py", minimalBinderWithPreprocessSource())
 	writeFixtureFile(t, root, "integration_test.py", "print('test')\n")
 
 	inspector := NewBaselineInspector()
@@ -172,7 +172,7 @@ func TestInspectorAllowsProjectAndSecretIdentifiersInLeapYAML(t *testing.T) {
 		"entryFile: leap_binder.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_binder.py", minimalBinderWithPreprocessSource())
 	writeFixtureFile(t, root, "integration_test.py", "print('test')\n")
 	writeFixtureFile(t, root, "model/model.h5", "binary\n")
 
@@ -199,7 +199,7 @@ func TestInspectorAllowsEntryFileExcludedByLeapYAML(t *testing.T) {
 		"  - leap_binder.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_binder.py", minimalBinderWithPreprocessSource())
 	writeFixtureFile(t, root, "leap_custom_test.py", "print('test')\n")
 	writeFixtureFile(t, root, "model/model.h5", "binary\n")
 
@@ -228,7 +228,7 @@ func TestInspectorDetectsUnsupportedModelFormat(t *testing.T) {
 		"entryFile: leap_custom_test.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_binder.py", minimalBinderWithPreprocessSource())
 	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model",
 		"",
@@ -252,7 +252,7 @@ func TestInspectorDetectsUnsupportedModelFormat(t *testing.T) {
 func TestInspectorDetectsMissingLeapCLI(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_binder.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_binder.py", minimalBinderWithPreprocessSource())
 	writeFixtureFile(t, root, "leap_custom_test.py", "print('test')\n")
 
 	inspector := NewBaselineInspector()
@@ -271,7 +271,7 @@ func TestInspectorDetectsMissingLeapCLI(t *testing.T) {
 func TestInspectorDetectsServerInfoFailures(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_binder.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_binder.py", minimalBinderWithPreprocessSource())
 	writeFixtureFile(t, root, "leap_custom_test.py", "print('test')\n")
 
 	inspector := NewBaselineInspector()
@@ -309,6 +309,17 @@ func snapshotForRoot(root string) core.WorkspaceSnapshot {
 	return core.WorkspaceSnapshot{
 		Repository: core.RepositoryState{Root: root},
 	}
+}
+
+func minimalBinderWithPreprocessSource() string {
+	return strings.Join([]string{
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_preprocess",
+		"",
+		"@tensorleap_preprocess()",
+		"def preprocess():",
+		"    return []",
+		"",
+	}, "\n")
 }
 
 func writeFixtureFile(t *testing.T, root, relativePath, contents string) {

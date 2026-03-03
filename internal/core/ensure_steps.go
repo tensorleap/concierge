@@ -152,7 +152,7 @@ func HumanEnsureStepLabel(stepID EnsureStepID) string {
 	case EnsureStepLeapYAML:
 		return "leap.yaml is present and valid"
 	case EnsureStepModelContract:
-		return "Model artifact is Tensorleap-compatible"
+		return "Model path for @tensorleap_load_model is resolved and supported"
 	case EnsureStepIntegrationScript:
 		return "Integration script is present and importable"
 	case EnsureStepPreprocessContract:
@@ -200,7 +200,7 @@ func HumanEnsureStepRequirementLabel(stepID EnsureStepID) string {
 	case EnsureStepLeapYAML:
 		return "leap.yaml should be present and valid"
 	case EnsureStepModelContract:
-		return "Model artifact should be Tensorleap-compatible"
+		return "Model path for @tensorleap_load_model should be resolved and supported"
 	case EnsureStepIntegrationScript:
 		return "Integration script should be present and importable"
 	case EnsureStepPreprocessContract:

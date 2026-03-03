@@ -3,7 +3,6 @@ package agent
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,53 +14,39 @@ import (
 )
 
 const (
-	// CommandEnvVar points to the agent command Concierge should run when agent delegation is enabled.
-	CommandEnvVar = "CONCIERGE_AGENT_COMMAND"
-	// ArgsEnvVar optionally provides additional command arguments for the agent command.
-	ArgsEnvVar = "CONCIERGE_AGENT_ARGS"
+	claudeCommand = "claude"
 )
 
 const defaultTimeout = 15 * time.Minute
 
-type commandRunner func(ctx context.Context, dir, command string, args, env []string) ([]byte, []byte, error)
+var defaultClaudeArgs = []string{"--print", "--output-format", "text", "--permission-mode", "bypassPermissions"}
 
-// RunnerOptions configures the agent runner.
-type RunnerOptions struct {
-	Command string
-	Args    []string
-	Timeout time.Duration
-}
+type commandRunner func(ctx context.Context, dir, command string, args []string) ([]byte, []byte, error)
 
 // Runner executes one task-scoped command invocation and writes a transcript.
 type Runner struct {
-	command    string
-	args       []string
 	timeout    time.Duration
-	getEnv     func(string) string
 	lookPath   func(string) (string, error)
 	runCommand commandRunner
 }
 
-// NewRunner creates an agent runner with environment-backed defaults.
-func NewRunner(options RunnerOptions) *Runner {
+// NewRunner creates an agent runner that invokes Claude Code.
+func NewRunner() *Runner {
 	return &Runner{
-		command:    strings.TrimSpace(options.Command),
-		args:       append([]string(nil), options.Args...),
-		timeout:    options.Timeout,
-		getEnv:     os.Getenv,
+		timeout:    defaultTimeout,
 		lookPath:   exec.LookPath,
 		runCommand: runAgentCommand,
 	}
 }
 
-// CheckAvailability reports whether the configured agent command can be resolved.
+// CheckAvailability reports whether Claude Code can be resolved from PATH.
 func (r *Runner) CheckAvailability() error {
 	r.ensureDefaults()
-	_, _, err := r.resolveCommand()
+	_, err := r.resolveCommand()
 	return err
 }
 
-// Run executes the task via the configured agent command and writes a transcript file.
+// Run executes the task via Claude Code and writes a transcript file.
 func (r *Runner) Run(ctx context.Context, task AgentTask) (AgentResult, error) {
 	r.ensureDefaults()
 
@@ -77,7 +62,7 @@ func (r *Runner) Run(ctx context.Context, task AgentTask) (AgentResult, error) {
 		return AgentResult{}, core.NewError(core.KindUnknown, "agent.runner.task_transcript_path", "agent task transcript path is required")
 	}
 
-	commandPath, args, err := r.resolveCommand()
+	commandPath, err := r.resolveCommand()
 	if err != nil {
 		return AgentResult{}, err
 	}
@@ -89,18 +74,10 @@ func (r *Runner) Run(ctx context.Context, task AgentTask) (AgentResult, error) {
 	}
 	defer cancel()
 
-	payload := map[string]any{
-		"objective":   task.Objective,
-		"constraints": task.Constraints,
-	}
-	payloadJSON, _ := json.Marshal(payload)
-	env := []string{
-		"CONCIERGE_AGENT_OBJECTIVE=" + task.Objective,
-		"CONCIERGE_AGENT_CONSTRAINTS=" + strings.Join(task.Constraints, "\n"),
-		"CONCIERGE_AGENT_TASK_JSON=" + string(payloadJSON),
-	}
+	prompt := renderPrompt(task)
+	args := append(append([]string(nil), defaultClaudeArgs...), prompt)
 
-	stdout, stderr, runErr := r.runCommand(runCtx, repoRoot, commandPath, args, env)
+	stdout, stderr, runErr := r.runCommand(runCtx, repoRoot, commandPath, args)
 	if writeErr := writeTranscript(transcriptPath, commandPath, args, task, stdout, stderr, runErr); writeErr != nil {
 		return AgentResult{}, core.WrapError(core.KindUnknown, "agent.runner.transcript_write", writeErr)
 	}
@@ -119,9 +96,6 @@ func (r *Runner) Run(ctx context.Context, task AgentTask) (AgentResult, error) {
 }
 
 func (r *Runner) ensureDefaults() {
-	if r.getEnv == nil {
-		r.getEnv = os.Getenv
-	}
 	if r.lookPath == nil {
 		r.lookPath = exec.LookPath
 	}
@@ -131,41 +105,49 @@ func (r *Runner) ensureDefaults() {
 	if r.timeout <= 0 {
 		r.timeout = defaultTimeout
 	}
-	if len(r.args) == 0 {
-		r.args = strings.Fields(strings.TrimSpace(r.getEnv(ArgsEnvVar)))
-	}
-	if strings.TrimSpace(r.command) == "" {
-		r.command = strings.TrimSpace(r.getEnv(CommandEnvVar))
-	}
 }
 
-func (r *Runner) resolveCommand() (string, []string, error) {
-	command := strings.TrimSpace(r.command)
-	if command == "" {
-		return "", nil, core.NewError(
-			core.KindMissingDependency,
-			"agent.runner.command_missing",
-			"agent delegation is enabled but no agent command is configured (set --agent-command or CONCIERGE_AGENT_COMMAND)",
-		)
-	}
-
-	path, err := r.lookPath(command)
+func (r *Runner) resolveCommand() (string, error) {
+	path, err := r.lookPath(claudeCommand)
 	if err != nil {
-		return "", nil, core.WrapError(
+		return "", core.WrapError(
 			core.KindMissingDependency,
 			"agent.runner.command_lookup",
-			fmt.Errorf("agent command %q is not available: %w", command, err),
+			fmt.Errorf("Claude CLI is not available on PATH (expected %q): %w", claudeCommand, err),
 		)
 	}
-
-	args := append([]string(nil), r.args...)
-	return path, args, nil
+	return path, nil
 }
 
-func runAgentCommand(ctx context.Context, dir, command string, args, env []string) ([]byte, []byte, error) {
+func renderPrompt(task AgentTask) string {
+	var b strings.Builder
+	b.WriteString("Repository root: ")
+	b.WriteString(task.RepoRoot)
+	b.WriteString("\n\n")
+	b.WriteString("Objective:\n")
+	b.WriteString(strings.TrimSpace(task.Objective))
+	b.WriteString("\n\n")
+	if len(task.Constraints) > 0 {
+		b.WriteString("Constraints:\n")
+		for _, constraint := range task.Constraints {
+			trimmed := strings.TrimSpace(constraint)
+			if trimmed == "" {
+				continue
+			}
+			b.WriteString("- ")
+			b.WriteString(trimmed)
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("Apply the required code changes directly in this repository. Keep edits focused on the objective and constraints.")
+	return b.String()
+}
+
+func runAgentCommand(ctx context.Context, dir, command string, args []string) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = os.Environ()
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

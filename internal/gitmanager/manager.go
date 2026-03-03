@@ -12,6 +12,8 @@ import (
 	"github.com/tensorleap/concierge/internal/core"
 )
 
+const conciergePathExclude = ":(exclude).concierge/**"
+
 // ApprovalFunc decides whether to approve committing the current diff.
 type ApprovalFunc func(step core.EnsureStep, review ChangeReview) (bool, error)
 
@@ -63,7 +65,7 @@ func (m *Manager) Handle(ctx context.Context, snapshot core.WorkspaceSnapshot, r
 		return core.GitDecision{}, core.NewError(core.KindUnknown, "gitmanager.handle.repo_root", "snapshot repository root is empty")
 	}
 
-	statusPorcelain, err := m.runGit(ctx, repoRoot, "status", "--porcelain")
+	statusPorcelain, err := m.runGit(ctx, repoRoot, "status", "--porcelain", "--", ".", conciergePathExclude)
 	if err != nil {
 		return core.GitDecision{}, core.WrapError(core.KindUnknown, "gitmanager.handle.status", err)
 	}
@@ -129,7 +131,7 @@ func (m *Manager) Handle(ctx context.Context, snapshot core.WorkspaceSnapshot, r
 	}
 
 	message := CommitMessage(result.Step, result.Summary)
-	if _, err := m.runGit(ctx, repoRoot, "add", "-A"); err != nil {
+	if _, err := m.runGit(ctx, repoRoot, "add", "-A", "--", ".", conciergePathExclude); err != nil {
 		return core.GitDecision{}, core.WrapError(core.KindUnknown, "gitmanager.handle.add", err)
 	}
 	if _, err := m.runGit(ctx, repoRoot, "commit", "-m", message); err != nil {
@@ -167,6 +169,9 @@ func (m *Manager) restoreWorkingTree(ctx context.Context, repoRoot string) error
 		if rel == "" {
 			continue
 		}
+		if isConciergeInternalPath(rel) {
+			continue
+		}
 		cleanRel := filepath.Clean(rel)
 		if cleanRel == "." || strings.HasPrefix(cleanRel, "..") {
 			continue
@@ -189,7 +194,7 @@ func (m *Manager) buildChangeReview(
 		Focus: ReviewFocus(step),
 	}
 
-	stat, err := m.runGit(ctx, repoRoot, "diff", "--stat")
+	stat, err := m.runGit(ctx, repoRoot, "diff", "--stat", "--", ".", conciergePathExclude)
 	if err != nil {
 		stat = statusPorcelain
 	}
@@ -225,7 +230,7 @@ func (m *Manager) collectChangedFiles(ctx context.Context, repoRoot string, fall
 		merged = append(merged, trimmed)
 	}
 
-	nameStatus, err := m.runGit(ctx, repoRoot, "diff", "--name-status")
+	nameStatus, err := m.runGit(ctx, repoRoot, "diff", "--name-status", "--", ".", conciergePathExclude)
 	if err == nil {
 		for _, line := range splitNonEmptyLines(nameStatus) {
 			appendUnique(line)
@@ -235,6 +240,9 @@ func (m *Manager) collectChangedFiles(ctx context.Context, repoRoot string, fall
 	untracked, err := m.runGit(ctx, repoRoot, "ls-files", "--others", "--exclude-standard")
 	if err == nil {
 		for _, file := range splitNonEmptyLines(untracked) {
+			if isConciergeInternalPath(file) {
+				continue
+			}
 			appendUnique("A\t" + file)
 		}
 	}
@@ -249,7 +257,7 @@ func (m *Manager) collectChangedFiles(ctx context.Context, repoRoot string, fall
 }
 
 func (m *Manager) collectPatch(ctx context.Context, repoRoot string) (string, error) {
-	args := []string{"diff", "--patch", "--minimal", "--"}
+	args := []string{"diff", "--patch", "--minimal", "--", ".", conciergePathExclude}
 	if m.options.ColorDiff {
 		args = append([]string{"-c", "color.ui=always"}, args...)
 	} else {
@@ -268,6 +276,9 @@ func (m *Manager) collectPatch(ctx context.Context, repoRoot string) (string, er
 	}
 
 	for _, relativePath := range splitNonEmptyLines(untracked) {
+		if isConciergeInternalPath(relativePath) {
+			continue
+		}
 		patch, patchErr := diffUntrackedPath(ctx, repoRoot, relativePath, m.options.ColorDiff)
 		if patchErr != nil {
 			return "", patchErr
@@ -284,6 +295,9 @@ func (m *Manager) collectPatch(ctx context.Context, repoRoot string) (string, er
 func diffUntrackedPath(ctx context.Context, repoRoot string, relativePath string, colorDiff bool) (string, error) {
 	rel := filepath.Clean(strings.TrimSpace(relativePath))
 	if rel == "" || rel == "." || strings.HasPrefix(rel, "..") {
+		return "", nil
+	}
+	if isConciergeInternalPath(rel) {
 		return "", nil
 	}
 	target := filepath.Join(repoRoot, rel)
@@ -335,6 +349,14 @@ func splitNonEmptyLines(raw string) []string {
 		result = append(result, trimmed)
 	}
 	return result
+}
+
+func isConciergeInternalPath(relativePath string) bool {
+	cleaned := filepath.ToSlash(filepath.Clean(strings.TrimSpace(relativePath)))
+	if cleaned == "" || cleaned == "." {
+		return false
+	}
+	return cleaned == ".concierge" || strings.HasPrefix(cleaned, ".concierge/")
 }
 
 func runGitCombined(ctx context.Context, dir string, args ...string) (string, error) {

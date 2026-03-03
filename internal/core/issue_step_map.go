@@ -43,7 +43,7 @@ var preferredEnsureStepByIssueCode = map[IssueCode]EnsureStepID{
 
 	// Model contract.
 	IssueCodeModelFileMissing:                 EnsureStepModelContract,
-	IssueCodeModelPathNotIncluded:             EnsureStepModelContract,
+	IssueCodeModelCandidatesAmbiguous:         EnsureStepModelContract,
 	IssueCodeModelFormatUnsupported:           EnsureStepModelContract,
 	IssueCodeModelLoadFailed:                  EnsureStepModelContract,
 	IssueCodeModelInputBatchDimensionMissing:  EnsureStepModelContract,

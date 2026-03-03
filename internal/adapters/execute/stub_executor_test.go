@@ -62,3 +62,44 @@ func TestExecutorReturnsEvidenceStub(t *testing.T) {
 		t.Fatalf("expected evidence value %q, got %q", "stub", result.Evidence[0].Value)
 	}
 }
+
+func TestDispatcherRequiresAgentForPreprocessContract(t *testing.T) {
+	executor := NewDispatcherExecutor()
+	step, ok := core.EnsureStepByID(core.EnsureStepPreprocessContract)
+	if !ok {
+		t.Fatalf("expected step %q to be registered", core.EnsureStepPreprocessContract)
+	}
+
+	_, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{}, step)
+	if err == nil {
+		t.Fatal("expected missing dependency error for preprocess contract without agent")
+	}
+	if got := core.KindOf(err); got != core.KindMissingDependency {
+		t.Fatalf("expected error kind %q, got %q (err=%v)", core.KindMissingDependency, got, err)
+	}
+}
+
+func TestDispatcherUsesFilesystemForModelContract(t *testing.T) {
+	executor := NewDispatcherExecutor()
+	step, ok := core.EnsureStepByID(core.EnsureStepModelContract)
+	if !ok {
+		t.Fatalf("expected step %q to be registered", core.EnsureStepModelContract)
+	}
+
+	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		SelectedModelPath: "model/demo.h5",
+		Repository:        core.RepositoryState{Root: t.TempDir()},
+	}, step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Step.ID != core.EnsureStepModelContract {
+		t.Fatalf("expected result step %q, got %q", core.EnsureStepModelContract, result.Step.ID)
+	}
+	if result.Applied {
+		t.Fatal("expected model contract filesystem result to be non-mutating")
+	}
+	if result.Summary == "" {
+		t.Fatal("expected non-empty summary")
+	}
+}

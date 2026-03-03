@@ -80,7 +80,7 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 9C: AgentRunner integration for complex ensure-steps | `ACCEPTED` | 2026-03-03 (`main`) | Added task-scoped coding-agent delegation with transcript evidence integration in executor flow. |
 | Step 10A0: Plan state sync after 9C merge | `ACCEPTED` | 2026-03-03 (`main`) | Synchronized plan tracking after `9C` merge and verified authoring-first tail consistency (`10A-14B`). |
 | Step 10A: Contract discovery core | `DONE` | 2026-03-03 (`PR #11`) | Added deterministic entry-file contract discovery for decorators and integration-test call symbols with graceful path-aware failures. |
-| Step 10B: Model discovery and need detection | `PENDING` | — | Add deterministic model discovery and issue emission for missing/ambiguous model contract. |
+| Step 10B: Model discovery and need detection | `DONE` | 2026-03-03 (`PR #12`) | Added deterministic model candidate discovery from `@tensorleap_load_model` and repo search, ambiguity/missing/format/outside-repo issues, and candidate evidence context without enforcing leap.yaml include/exclude for model artifacts. |
 | Step 10B1: Pre-commit integration quality gate (delta-scoped) | `PENDING` | — | Run step-local integration validation and changed-file syntax checks before commit approval is offered. |
 | Step 10C: Tensorleap knowledge pack baseline | `PENDING` | — | Add checked-in Tensorleap integration knowledge pack + source manifest used for agent context injection. |
 | Step 10D: Step-scoped domain slice and edit-scope policy | `PENDING` | — | Map ensure-steps to minimal Tensorleap rule slices and strict allowed/forbidden edit scope contracts. |
@@ -129,508 +129,9 @@ Out of scope for this release train:
 
 ## Detailed Step Specifications
 
-### Step 7A: Persistent run state + invalidation engine (`ACCEPTED`)
-
-Objective:
-
-Implement durable run state in `.concierge/state/state.json` and deterministic invalidation rules when dependencies change.
-
-Files to add:
-
-1. `internal/state/store.go`
-2. `internal/state/types.go`
-3. `internal/state/store_test.go`
-
-Files to modify:
-
-1. `internal/persistence/paths.go` (if additional deterministic directories are needed)
-2. `internal/orchestrator/run.go`
-3. `internal/cli/run.go`
-
-Interface/API changes:
-
-1. `type RunState struct { Version int; SelectedProjectRoot string; LastSnapshotID string; LastHead string; LastWorktreeFingerprint string; LastPrimaryStep core.EnsureStepID; LastRunAt time.Time; InvalidationReasons []string }`
-2. `LoadState(projectRoot string) (RunState, error)` and `SaveState(projectRoot string, state RunState) error`.
-
-Implementation tasks:
-
-1. Load state at run start; initialize defaults if missing.
-2. Compute invalidation reasons based on snapshot deltas (HEAD/worktree/root change).
-3. Persist state after each iteration with atomic write.
-4. Record invalidation reasons in report notes/evidence.
-
-Tests:
-
-1. `TestLoadStateReturnsDefaultWhenMissing`
-2. `TestSaveStateAtomicRoundTrip`
-3. `TestInvalidationReasonsOnHeadAndWorktreeChange`
-4. `TestStatePersistsAcrossMultipleIterations`
-
-Validation commands:
-
-1. `go test ./internal/state ./internal/orchestrator ./internal/cli`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. `.concierge/state/state.json` is created and updated on run.
-2. Invalidation reasons are deterministic and observable.
-
-Rollback boundary:
-
-- Revert only `internal/state/*` and direct wiring changes in `internal/cli/run.go` / `internal/orchestrator/run.go`.
-
----
-
-### Step 7B: Interactive run session UX (project-root + approvals) (`ACCEPTED`)
-
-Objective:
-
-Add interactive gates required by README UX principles: project-root selection, mutation confirmation, and non-interactive safeguards.
-
-Files to add:
-
-1. `internal/cli/prompt.go`
-2. `internal/cli/project_root_select.go`
-3. `internal/cli/prompt_test.go`
-
-Files to modify:
-
-1. `internal/cli/run.go`
-2. `internal/cli/run_test.go`
-
-Interface/API changes:
-
-1. New flags:
-   1. `--project-root <path>`
-   2. `--non-interactive`
-   3. `--yes` (auto-approve mutation/push prompts in interactive-equivalent mode)
-
-Locked behavior:
-
-1. If `--project-root` is unset, detect candidates and prompt user to choose.
-2. If mutations are required and `--non-interactive` without `--yes`, fail with actionable error.
-3. Prompt text and decisions are recorded in iteration notes.
-
-Tests:
-
-1. `TestRunPromptsForProjectRootWhenAmbiguous`
-2. `TestRunNonInteractiveFailsWithoutApprovalOverride`
-3. `TestRunYesSkipsApprovalPrompts`
-
-Validation commands:
-
-1. `go test ./internal/cli`
-2. `go run ./cmd/concierge run --dry-run`
-
-Acceptance criteria:
-
-1. Project root and approval behavior is deterministic and test-covered.
-2. No hidden mutation path exists without explicit approval semantics.
-
-Rollback boundary:
-
-- Revert `internal/cli` prompt/root-selection additions only.
-
----
-
-### Step 8A: Snapshot/Inspector expansion to readiness checks (`ACCEPTED`)
-
-Objective:
-
-Expand snapshot and inspector beyond artifact existence to cover operational readiness checks defined in README §§6,8,12.
-
-Files to add:
-
-1. `internal/adapters/inspect/leap_yaml_contract.go`
-2. `internal/adapters/inspect/model_contract.go`
-3. `internal/adapters/inspect/runtime_contract.go`
-4. `internal/adapters/inspect/leap_cli_contract.go`
-
-Files to modify:
-
-1. `internal/core/types.go`
-2. `internal/core/issues.go`
-3. `internal/adapters/snapshot/git_snapshotter.go`
-4. `internal/adapters/inspect/baseline_inspector.go`
-5. `internal/adapters/inspect/baseline_inspector_test.go`
-
-Interface/API changes:
-
-1. Extend `WorkspaceSnapshot` with optional environment/tool fingerprints (python/leap versions, key file hashes).
-2. Add missing issue codes only if not already present in `core/issues.go`.
-
-Locked checks:
-
-1. Validate `leap.yaml` include/exclude contract for required files.
-2. Validate `entryFile` is inside repo and not excluded.
-3. Validate model path + `.onnx`/`.h5` format where model can be resolved.
-4. Inspect runtime prerequisites (python presence/version, requirements file detection).
-5. Inspect `leap` availability/auth/server-info reachability (non-destructive probes).
-
-Tests:
-
-1. `TestInspectorDetectsEntryFileExcludedByLeapYAML`
-2. `TestInspectorDetectsUnsupportedModelFormat`
-3. `TestInspectorDetectsMissingLeapCLI`
-4. `TestInspectorDetectsServerInfoFailures`
-5. `TestSnapshotIncludesEnvironmentFingerprints`
-
-Validation commands:
-
-1. `go test ./internal/adapters/snapshot ./internal/adapters/inspect`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. Inspector emits deterministic issue set for readiness blockers beyond missing files.
-2. Planner inputs now include CLI/server/model/runtime signals.
-
-Rollback boundary:
-
-- Revert snapshot/inspector expansions and newly added issue-code mappings for this step.
-
----
-
-### Step 8B: Planner policy hardening and gate-aware ordering (`ACCEPTED`)
-
-Objective:
-
-Upgrade planner selection policy to prioritize blockers deterministically and preserve push/mutation gate semantics.
-
-Files to add:
-
-1. `internal/adapters/planner/policy.go`
-2. `internal/adapters/planner/policy_test.go`
-
-Files to modify:
-
-1. `internal/adapters/planner/deterministic_planner.go`
-2. `internal/core/issue_step_map.go`
-3. `internal/core/ensure_steps.go`
-
-Locked behavior:
-
-1. Primary step selection honors blocker severity (`error` > `warning` > `info`) then canonical step priority.
-2. Planner must not select `ensure.upload_push` unless upload-readiness issues are clear.
-3. `ensure.complete` is returned only when no blocking issues remain.
-
-Tests:
-
-1. `TestPlannerPrioritizesErrorSeverity`
-2. `TestPlannerDefersUploadPushUntilReadinessClear`
-3. `TestPlannerReturnsCompleteOnlyWhenNoBlockingIssues`
-
-Validation commands:
-
-1. `go test ./internal/adapters/planner ./internal/core`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. Planner decisions are deterministic and policy-explicit.
-2. Push step cannot be selected prematurely.
-
-Rollback boundary:
-
-- Revert planner policy files and mapping changes only.
-
----
-
-### Step 9A: Deterministic executor implementations (non-agent) (`ACCEPTED`)
-
-Objective:
-
-Replace stub-only execution with deterministic, idempotent implementations for scaffoldable ensure-steps.
-
-Files to add:
-
-1. `internal/adapters/execute/filesystem_executor.go`
-2. `internal/adapters/execute/templates/leap_yaml.tmpl`
-3. `internal/adapters/execute/templates/leap_binder.py.tmpl`
-4. `internal/adapters/execute/templates/leap_custom_test.py.tmpl`
-5. `internal/adapters/execute/filesystem_executor_test.go`
-
-Files to modify:
-
-1. `internal/adapters/execute/stub_executor.go` (split into dispatcher + fallback)
-2. `internal/cli/run.go` (wire configurable executor mode)
-
-Locked behavior:
-
-1. Implement concrete actions for:
-   1. `ensure.leap_yaml`
-   2. `ensure.integration_script`
-   3. `ensure.integration_test_contract`
-2. Actions must be idempotent and include evidence files with before/after checksums.
-3. Unknown or unsupported step IDs still return typed `KindStepNotApplicable`.
-
-Tests:
-
-1. `TestExecutorCreatesLeapYAMLWhenMissing`
-2. `TestExecutorCreatesIntegrationScriptTemplate`
-3. `TestExecutorCreatesIntegrationTestTemplate`
-4. `TestExecutorIdempotentOnSecondRun`
-
-Validation commands:
-
-1. `go test ./internal/adapters/execute`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. At least three ensure-steps perform real repo-local fixes.
-2. Execution evidence proves applied mutations.
-
-Rollback boundary:
-
-- Revert execute adapter/template additions only.
-
----
-
-### Step 9B: GitManager runtime integration (diff/approve/reject/commit) (`ACCEPTED`)
-
-Objective:
-
-Add product-grade branch safety and audited commit flow for approved changes.
-
-Files to add:
-
-1. `internal/gitmanager/manager.go`
-2. `internal/gitmanager/manager_test.go`
-3. `internal/gitmanager/messages.go`
-
-Files to modify:
-
-1. `internal/orchestrator/engine.go`
-2. `internal/cli/run.go`
-3. `internal/core/types.go` (add commit metadata in report if needed)
-
-Locked behavior:
-
-1. Never commit on `main`/`master`.
-2. Show diff summary before commit and require explicit approval.
-3. Reject path restores pre-step working tree state.
-4. Approved path commits with structured message: `concierge(<step-id>): <summary>`.
-
-Tests:
-
-1. `TestGitManagerRejectsMainBranchCommit`
-2. `TestGitManagerApproveCreatesCommit`
-3. `TestGitManagerRejectRestoresTree`
-4. `TestRunFlowPromptsBeforeCommit`
-
-Validation commands:
-
-1. `go test ./internal/gitmanager ./internal/orchestrator ./internal/cli`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. Repo mutation path is auditable with explicit approval and commit hash evidence.
-2. Reject path is deterministic and safe.
-
-Rollback boundary:
-
-- Revert `internal/gitmanager/*` and direct orchestrator/CLI wiring for commit flow.
-
----
-
-### Step 9C: AgentRunner integration for complex ensure-steps (`ACCEPTED`)
-
-Objective:
-
-Add task-scoped coding-agent delegation for steps that cannot be safely templated.
-
-Files added:
-
-1. `internal/agent/runner.go`
-2. `internal/agent/types.go`
-3. `internal/agent/runner_test.go`
-4. `internal/adapters/execute/agent_executor.go`
-
-Files modified:
-
-1. `internal/adapters/execute/stub_executor.go` (dispatcher fallback to agent runner)
-2. `internal/cli/run.go` (feature-flag and availability checks)
-
-Interface/API changes:
-
-1. `type AgentTask struct { Objective string; Constraints []string; RepoRoot string; TranscriptPath string }`
-2. `type AgentResult struct { Applied bool; TranscriptPath string; Summary string; Evidence []core.EvidenceItem }`
-
-Delivered behavior:
-
-1. One objective per session.
-2. Transcript captured under `.concierge/evidence/<snapshot-id>/agent.transcript.log`.
-3. Agent command lookup failure is explicit and deterministic.
-
-Regression tests:
-
-1. `TestAgentExecutorDispatchesSupportedSteps`
-2. `TestAgentExecutorReturnsDeterministicErrorWhenUnavailable`
-3. `TestAgentTranscriptPersistedAsEvidence`
-
-Validation commands:
-
-1. `go test ./internal/agent ./internal/adapters/execute`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. Executor delegates complex steps with deterministic reporting.
-2. Agent evidence is persisted and reviewable.
-
-Rollback boundary:
-
-- Revert `internal/agent/*` and agent-executor wiring only.
-
----
-
-### Step 10A0: Plan state sync after Step 9C merge (`ACCEPTED`)
-
-Objective:
-
-Reconcile planning metadata with current repo truth before implementing additional code.
-
-Files to modify:
-
-1. `PLAN.md`
-
-Locked behavior:
-
-1. Mark Step `9C` as `ACCEPTED`.
-2. Replace remaining pending tail with authoring-first execution plan (`10A-14B`).
-3. Ensure every unresolved gap maps to at least one concrete step.
-
-Validation commands:
-
-1. `rg -n "Step 9C|PENDING|ACCEPTED|Concrete Step Execution Order|Phase acceptance condition" PLAN.md`
-
-Acceptance criteria:
-
-1. No stale `PENDING` marker remains for `9C`.
-2. Execution order, acceptance criteria, and detailed steps are internally consistent.
-
-Rollback boundary:
-
-- Revert only `PLAN.md` planning edits for this synchronization step.
-
----
-
-### Step 10A: Contract discovery core (`DONE`)
-
-Objective:
-
-Introduce deterministic contract discovery from integration entry file so planner decisions are driven by discovered interfaces, not only file presence.
-
-Files to add:
-
-1. `internal/adapters/inspect/integration_contract.go`
-2. `internal/adapters/inspect/integration_contract_test.go`
-
-Files to modify:
-
-1. `internal/adapters/inspect/baseline_inspector.go`
-2. `internal/core/types.go`
-3. `internal/core/issues.go` (only if additional code-level issue constants are required)
-
-Interface/API changes:
-
-1. Add `IntegrationContracts` to `core` types with fields:
-   1. `EntryFile`
-   2. `LoadModelFunctions`
-   3. `PreprocessFunctions`
-   4. `InputEncoders`
-   5. `GroundTruthEncoders`
-   6. `IntegrationTestFunctions`
-   7. `IntegrationTestCalls`
-2. Extend `IntegrationStatus` with optional `Contracts *IntegrationContracts`.
-
-Locked behavior:
-
-1. Parse `leap.yaml` `entryFile`, then parse/inspect entry python module for relevant decorators and function symbols.
-2. Discovery errors are deterministic and include file-path context.
-3. Discovery supports both `leap_custom_test.py` and `integration_test.py` naming conventions.
-
-Tests:
-
-1. `TestContractDiscoveryFindsDecoratedFunctions`
-2. `TestContractDiscoveryCapturesIntegrationTestCalls`
-3. `TestContractDiscoveryGracefullyHandlesMissingEntryFile`
-4. `TestContractDiscoveryGracefullyHandlesSyntaxErrors`
-
-Validation commands:
-
-1. `go test ./internal/adapters/inspect -run ContractDiscovery -v`
-2. `go test ./internal/adapters/inspect ./internal/core`
-3. `go test ./...`
-
-Acceptance criteria:
-
-1. `IntegrationStatus` includes machine-readable discovered contracts when possible.
-2. Contract discovery failures are surfaced without panics.
-
-Rollback boundary:
-
-- Revert contract discovery files and `core/types.go` contract extensions only.
-
----
-
-### Step 10B: Model discovery and need detection (`PENDING`)
-
-Objective:
-
-Detect model requirements and gaps even when `leap.yaml` model fields are absent or ambiguous.
-
-Files to add:
-
-1. `internal/adapters/inspect/model_discovery.go`
-2. `internal/adapters/inspect/model_discovery_test.go`
-
-Files to modify:
-
-1. `internal/adapters/inspect/model_contract.go`
-2. `internal/adapters/inspect/baseline_inspector.go`
-3. `internal/core/issues.go` (if new deterministic ambiguity issue code is needed)
-
-Locked behavior:
-
-1. Resolve model candidates from:
-   1. `leap.yaml` (`modelPath` / `model`)
-   2. discovered `@tensorleap_load_model` call sites
-   3. deterministic repo search for `.onnx` / `.h5` files
-2. Emit deterministic issues for:
-   1. no resolvable model
-   2. ambiguous model candidates
-   3. unsupported extension
-   4. path outside repo or excluded by upload boundary
-3. Attach candidate list to evidence/recommendation context.
-
-Tests:
-
-1. `TestModelDiscoveryFromLeapYAML`
-2. `TestModelDiscoveryFromLoadModelDecorator`
-3. `TestModelDiscoveryReportsAmbiguousCandidates`
-4. `TestModelDiscoveryRejectsUnsupportedFormat`
-5. `TestModelDiscoveryRespectsIncludeExcludeRules`
-
-Validation commands:
-
-1. `go test ./internal/adapters/inspect -run ModelDiscovery -v`
-2. `go test ./internal/adapters/inspect ./internal/core`
-3. `go test ./...`
-
-Acceptance criteria:
-
-1. Model contract needs are detected deterministically across fixture variants.
-2. Planner can select `ensure.model_contract` based on real discovery results.
-
-Rollback boundary:
-
-- Revert model discovery additions and linked inspector wiring only.
-
----
+Detailed breakdowns for completed steps are intentionally omitted from this section.
+Use the `Progress` table above as the source of record for completed step titles/status.
+Detailed specifications below cover only pending steps.
 
 ### Step 10B1: Pre-commit integration quality gate (delta-scoped) (`PENDING`)
 
@@ -1561,8 +1062,8 @@ Tests:
 
 Validation commands:
 
-1. `CONCIERGE_RUN_FIXTURE_E2E=1 go test ./internal/e2e/fixtures -run MissingModel -v`
-2. `CONCIERGE_RUN_FIXTURE_E2E=1 bash scripts/fixtures_run_checks.sh`
+1. `go test ./internal/e2e/fixtures -run MissingModel -v`
+2. `bash scripts/fixtures_run_checks.sh`
 
 Acceptance criteria:
 
@@ -1602,8 +1103,8 @@ Tests:
 
 Validation commands:
 
-1. `CONCIERGE_RUN_FIXTURE_E2E=1 go test ./internal/e2e/fixtures -run MissingPreprocess -v`
-2. `CONCIERGE_RUN_FIXTURE_E2E=1 bash scripts/fixtures_run_checks.sh`
+1. `go test ./internal/e2e/fixtures -run MissingPreprocess -v`
+2. `bash scripts/fixtures_run_checks.sh`
 
 Acceptance criteria:
 
@@ -1643,8 +1144,8 @@ Tests:
 
 Validation commands:
 
-1. `CONCIERGE_RUN_FIXTURE_E2E=1 go test ./internal/e2e/fixtures -run MissingInputEncoders -v`
-2. `CONCIERGE_RUN_FIXTURE_E2E=1 bash scripts/fixtures_run_checks.sh`
+1. `go test ./internal/e2e/fixtures -run MissingInputEncoders -v`
+2. `bash scripts/fixtures_run_checks.sh`
 
 Acceptance criteria:
 
@@ -1684,8 +1185,8 @@ Tests:
 
 Validation commands:
 
-1. `CONCIERGE_RUN_FIXTURE_E2E=1 go test ./internal/e2e/fixtures -run MissingGTEncoders -v`
-2. `CONCIERGE_RUN_FIXTURE_E2E=1 bash scripts/fixtures_run_checks.sh`
+1. `go test ./internal/e2e/fixtures -run MissingGTEncoders -v`
+2. `bash scripts/fixtures_run_checks.sh`
 
 Acceptance criteria:
 
@@ -1725,8 +1226,8 @@ Tests:
 
 Validation commands:
 
-1. `CONCIERGE_RUN_FIXTURE_E2E=1 go test ./internal/e2e/fixtures -run MissingIntegrationTestCalls -v`
-2. `CONCIERGE_RUN_FIXTURE_E2E=1 bash scripts/fixtures_run_checks.sh`
+1. `go test ./internal/e2e/fixtures -run MissingIntegrationTestCalls -v`
+2. `bash scripts/fixtures_run_checks.sh`
 
 Acceptance criteria:
 
@@ -1766,8 +1267,8 @@ Tests:
 
 Validation commands:
 
-1. `CONCIERGE_RUN_FIXTURE_E2E=1 go test ./internal/e2e/fixtures -run Composite -v`
-2. `CONCIERGE_RUN_FIXTURE_E2E=1 bash scripts/fixtures_run_checks.sh`
+1. `go test ./internal/e2e/fixtures -run Composite -v`
+2. `bash scripts/fixtures_run_checks.sh`
 
 Acceptance criteria:
 
@@ -1913,7 +1414,7 @@ Validation commands:
 
 1. `make lint`
 2. `make test`
-3. `CONCIERGE_RUN_FIXTURE_E2E=1 make test-fixtures`
+3. `make test-fixtures`
 4. `make build`
 
 Acceptance criteria:
@@ -2005,7 +1506,7 @@ Final acceptance checklist commands:
 1. `go test ./...`
 2. `make lint`
 3. `make build`
-4. `CONCIERGE_RUN_FIXTURE_E2E=1 make test-fixtures`
+4. `make test-fixtures`
 5. Manual smoke: `go run ./cmd/concierge run --max-iterations=3 --persist`
 6. Manual smoke (agent-backed step requiring Claude CLI): `go run ./cmd/concierge run --max-iterations=3 --persist`
 

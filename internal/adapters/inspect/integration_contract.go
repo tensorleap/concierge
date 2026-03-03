@@ -76,6 +76,7 @@ func inspectIntegrationContracts(repoRoot string, contract *leapYAMLContract, st
 		status.Contracts = contracts
 	}
 	if err == nil {
+		emitIntegrationContractPresenceIssues(entryFilePath, contracts, status)
 		return nil
 	}
 
@@ -92,6 +93,33 @@ func inspectIntegrationContracts(repoRoot string, contract *leapYAMLContract, st
 	))
 
 	return nil
+}
+
+func emitIntegrationContractPresenceIssues(entryFilePath string, contracts *core.IntegrationContracts, status *core.IntegrationStatus) {
+	if contracts == nil || status == nil {
+		return
+	}
+
+	normalizedEntry := strings.ToLower(strings.TrimSpace(filepath.Base(entryFilePath)))
+	if normalizedEntry == "" {
+		return
+	}
+	if normalizedEntry != "leap_binder.py" {
+		return
+	}
+
+	if len(contracts.PreprocessFunctions) == 0 {
+		status.Issues = append(status.Issues, core.Issue{
+			Code:     core.IssueCodePreprocessFunctionMissing,
+			Message:  "no @tensorleap_preprocess function found in leap_binder.py",
+			Severity: core.SeverityError,
+			Scope:    core.IssueScopePreprocess,
+			Location: &core.IssueLocation{
+				Path:   entryFilePath,
+				Symbol: "preprocess",
+			},
+		})
+	}
 }
 
 func discoverContractsFromPythonSource(entryFilePath string, source string) (*core.IntegrationContracts, error) {

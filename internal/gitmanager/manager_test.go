@@ -112,6 +112,112 @@ func TestGitManagerRejectRestoresTree(t *testing.T) {
 	}
 }
 
+func TestGitManagerSkipsConciergeOnlyChanges(t *testing.T) {
+	repo := initGitRepo(t)
+	runGit(t, repo, "checkout", "-B", "feature/test")
+	writeFile(t, filepath.Join(repo, ".concierge", "reports", "snapshot.json"), "{}\n")
+
+	approvalCalled := false
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (bool, error) {
+		_ = step
+		_ = review
+		approvalCalled = true
+		return true, nil
+	})
+
+	decision, err := manager.Handle(context.Background(), core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: repo}}, executionResult(core.EnsureStepIntegrationScript))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if approvalCalled {
+		t.Fatal("expected approval callback to be skipped for .concierge-only changes")
+	}
+	if decision.Commit != nil {
+		t.Fatalf("expected no commit metadata for .concierge-only changes, got %+v", decision.Commit)
+	}
+}
+
+func TestGitManagerCommitExcludesConciergeArtifacts(t *testing.T) {
+	repo := initGitRepo(t)
+	runGit(t, repo, "checkout", "-B", "feature/test")
+	writeFile(t, filepath.Join(repo, "tracked.txt"), "changed\n")
+	writeFile(t, filepath.Join(repo, ".concierge", "reports", "snapshot.json"), "{}\n")
+
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (bool, error) {
+		_ = step
+		if strings.Contains(review.Stat, ".concierge") {
+			t.Fatalf("expected diff summary to exclude .concierge, got %q", review.Stat)
+		}
+		if strings.Contains(review.Patch, ".concierge") {
+			t.Fatalf("expected patch to exclude .concierge, got %q", review.Patch)
+		}
+		for _, file := range review.Files {
+			if strings.Contains(file, ".concierge") {
+				t.Fatalf("expected changed files list to exclude .concierge, got %v", review.Files)
+			}
+		}
+		return true, nil
+	})
+
+	decision, err := manager.Handle(context.Background(), core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: repo}}, executionResult(core.EnsureStepLeapYAML))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if decision.Commit == nil {
+		t.Fatal("expected commit metadata when approved")
+	}
+
+	committedFiles := runGit(t, repo, "show", "--pretty=format:", "--name-only", "HEAD")
+	if strings.Contains(committedFiles, ".concierge") {
+		t.Fatalf("expected commit to exclude .concierge artifacts, got %q", committedFiles)
+	}
+	if !strings.Contains(committedFiles, "tracked.txt") {
+		t.Fatalf("expected commit to include tracked.txt, got %q", committedFiles)
+	}
+
+	status := runGit(t, repo, "status", "--short")
+	if !strings.Contains(status, "?? .concierge/") {
+		t.Fatalf("expected .concierge artifacts to remain unstaged/uncommitted, got %q", status)
+	}
+}
+
+func TestGitManagerRejectKeepsConciergeArtifacts(t *testing.T) {
+	repo := initGitRepo(t)
+	runGit(t, repo, "checkout", "-B", "feature/test")
+	writeFile(t, filepath.Join(repo, "tracked.txt"), "changed\n")
+	writeFile(t, filepath.Join(repo, "new.txt"), "new\n")
+	conciergeReport := filepath.Join(repo, ".concierge", "reports", "snapshot.json")
+	writeFile(t, conciergeReport, "{}\n")
+
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (bool, error) {
+		_ = step
+		_ = review
+		return false, nil
+	})
+
+	decision, err := manager.Handle(context.Background(), core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: repo}}, executionResult(core.EnsureStepIntegrationScript))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if decision.FinalResult.Applied {
+		t.Fatal("expected final applied=false after rejection")
+	}
+	if _, err := os.Stat(conciergeReport); err != nil {
+		t.Fatalf("expected .concierge artifact to remain after rejection, got stat err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "new.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected new.txt to be removed on rejection, got err=%v", err)
+	}
+
+	trackedContents, err := os.ReadFile(filepath.Join(repo, "tracked.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile tracked.txt failed: %v", err)
+	}
+	if string(trackedContents) != "initial\n" {
+		t.Fatalf("expected tracked file to be restored, got %q", string(trackedContents))
+	}
+}
+
 func executionResult(stepID core.EnsureStepID) core.ExecutionResult {
 	step, _ := core.EnsureStepByID(stepID)
 	return core.ExecutionResult{
@@ -154,6 +260,9 @@ func runGit(t *testing.T, repo string, args ...string) string {
 
 func writeFile(t *testing.T, path string, contents string) {
 	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed for %q: %v", path, err)
+	}
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("WriteFile failed for %q: %v", path, err)
 	}

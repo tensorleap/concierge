@@ -17,6 +17,7 @@ import (
 	"github.com/tensorleap/concierge/internal/adapters/report"
 	"github.com/tensorleap/concierge/internal/adapters/snapshot"
 	"github.com/tensorleap/concierge/internal/adapters/validate"
+	"github.com/tensorleap/concierge/internal/agent"
 	"github.com/tensorleap/concierge/internal/core"
 	"github.com/tensorleap/concierge/internal/core/ports"
 	"github.com/tensorleap/concierge/internal/gitmanager"
@@ -43,6 +44,8 @@ func newRunCommand() *cobra.Command {
 	var projectRootFlag string
 	var nonInteractive bool
 	var yes bool
+	var enableAgent bool
+	var agentCommand string
 	var noColor bool
 	var debugOutput bool
 
@@ -104,6 +107,15 @@ func newRunCommand() *cobra.Command {
 			}
 
 			plannerAdapter := newPlanCapturePlanner(planner.NewDeterministicPlanner())
+			baseExecutor := execute.NewDispatcherExecutor()
+
+			if enableAgent {
+				agentRunner := agent.NewRunner(agent.RunnerOptions{Command: strings.TrimSpace(agentCommand)})
+				if err := agentRunner.CheckAvailability(); err != nil {
+					return err
+				}
+				baseExecutor = execute.NewDispatcherExecutorWithAgent(execute.NewAgentExecutor(agentRunner))
+			}
 
 			stepApproval := func(step core.EnsureStep) (bool, error) {
 				if step.ID == core.EnsureStepComplete {
@@ -152,7 +164,7 @@ func newRunCommand() *cobra.Command {
 				Snapshotter: snapshot.NewGitSnapshotter(),
 				Inspector:   inspect.NewBaselineInspector(),
 				Planner:     plannerAdapter,
-				Executor:    execute.NewApprovalExecutor(execute.NewDispatcherExecutor(), stepApproval),
+				Executor:    execute.NewApprovalExecutor(baseExecutor, stepApproval),
 				GitManager:  gitmanager.NewManager(gitApproval, gitmanager.ManagerOptions{ColorDiff: renderOptions.EnableColor}),
 				Validator:   validate.NewBaselineValidator(),
 				Reporter:    iterationReporter,
@@ -227,6 +239,8 @@ func newRunCommand() *cobra.Command {
 	cmd.Flags().StringVar(&projectRootFlag, "project-root", "", "Project root to operate on")
 	cmd.Flags().BoolVar(&nonInteractive, "non-interactive", false, "Fail instead of prompting for interactive decisions")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Auto-approve mutation/push prompts")
+	cmd.Flags().BoolVar(&enableAgent, "enable-agent", false, "Enable coding-agent delegation for complex ensure-steps")
+	cmd.Flags().StringVar(&agentCommand, "agent-command", "", "Agent command to run when --enable-agent is set (defaults to CONCIERGE_AGENT_COMMAND)")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colorized output")
 	cmd.Flags().BoolVar(&debugOutput, "debug-output", false, "Show internal debug details in run output")
 	return cmd
@@ -500,11 +514,6 @@ func approvalGuidanceForStep(stepID core.EnsureStepID) stepApprovalGuidance {
 		return stepApprovalGuidance{
 			Explanation: "The integration test defines which interfaces Tensorleap actually executes during analysis.",
 			DocsURL:     stepGuideIntegrationTestURL,
-		}
-	case core.EnsureStepOptionalHooks:
-		return stepApprovalGuidance{
-			Explanation: "Optional hooks like metadata, metrics, and visualizers should execute cleanly when enabled.",
-			DocsURL:     stepGuideWritingIntegrationURL,
 		}
 	case core.EnsureStepHarnessValidation:
 		return stepApprovalGuidance{

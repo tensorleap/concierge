@@ -74,3 +74,23 @@ func TestKnownEnsureStepsAreInPriorityOrder(t *testing.T) {
 		t.Fatalf("expected last step to be %q, got %q", EnsureStepInvestigate, steps[len(steps)-1].ID)
 	}
 }
+
+func TestOptionalIssueCodesFallbackToInvestigateInV1(t *testing.T) {
+	removedCodes := []IssueCode{
+		IssueCode("metadata_function_execution_failed"),
+		IssueCode("visualizer_execution_failed"),
+		IssueCode("metric_execution_failed"),
+		IssueCode("loss_execution_failed"),
+		IssueCode("custom_layer_load_failed"),
+	}
+
+	for _, code := range removedCodes {
+		if _, ok := PreferredEnsureStepForIssueCode(code); ok {
+			t.Fatalf("did not expect preferred step mapping for removed v1 issue code %q", code)
+		}
+		step := PreferredEnsureStepForIssue(Issue{Code: code, Severity: SeverityError})
+		if step.ID != EnsureStepInvestigate {
+			t.Fatalf("expected fallback step %q for code %q, got %q", EnsureStepInvestigate, code, step.ID)
+		}
+	}
+}

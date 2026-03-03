@@ -20,7 +20,6 @@ const (
 	EnsureStepInputEncoders           EnsureStepID = "ensure.input_encoders"
 	EnsureStepGroundTruthEncoders     EnsureStepID = "ensure.ground_truth_encoders"
 	EnsureStepIntegrationTestContract EnsureStepID = "ensure.integration_test_contract"
-	EnsureStepOptionalHooks           EnsureStepID = "ensure.optional_hooks"
 	EnsureStepHarnessValidation       EnsureStepID = "ensure.harness_validation"
 	EnsureStepUploadReadiness         EnsureStepID = "ensure.upload_readiness"
 	EnsureStepUploadPush              EnsureStepID = "ensure.upload_push"
@@ -83,10 +82,6 @@ var ensureStepCatalog = map[EnsureStepID]EnsureStep{
 		ID:          EnsureStepIntegrationTestContract,
 		Description: "Ensure integration test wiring and decorator-call contract",
 	},
-	EnsureStepOptionalHooks: {
-		ID:          EnsureStepOptionalHooks,
-		Description: "Ensure optional metadata/visualizer/metric/loss hooks are valid",
-	},
 	EnsureStepHarnessValidation: {
 		ID:          EnsureStepHarnessValidation,
 		Description: "Ensure Concierge harness and anti-stub validation checks pass",
@@ -113,7 +108,6 @@ var ensureStepPriority = []EnsureStepID{
 	EnsureStepInputEncoders,
 	EnsureStepGroundTruthEncoders,
 	EnsureStepIntegrationTestContract,
-	EnsureStepOptionalHooks,
 	EnsureStepHarnessValidation,
 	EnsureStepServerConnectivity,
 	EnsureStepUploadReadiness,
@@ -169,8 +163,6 @@ func HumanEnsureStepLabel(stepID EnsureStepID) string {
 		return "Ground-truth encoders run successfully"
 	case EnsureStepIntegrationTestContract:
 		return "Integration test wiring is complete"
-	case EnsureStepOptionalHooks:
-		return "Optional integration hooks are valid"
 	case EnsureStepHarnessValidation:
 		return "Runtime validation checks pass"
 	case EnsureStepUploadReadiness:
@@ -219,8 +211,6 @@ func HumanEnsureStepRequirementLabel(stepID EnsureStepID) string {
 		return "Ground-truth encoders should run successfully"
 	case EnsureStepIntegrationTestContract:
 		return "Integration test wiring should be complete"
-	case EnsureStepOptionalHooks:
-		return "Optional integration hooks should be valid"
 	case EnsureStepHarnessValidation:
 		return "Runtime validation checks should pass"
 	case EnsureStepUploadReadiness:

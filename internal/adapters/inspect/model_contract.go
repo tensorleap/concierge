@@ -1,97 +1,218 @@
 package inspect
 
 import (
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/tensorleap/concierge/internal/core"
 )
 
 func inspectModelContract(repoRoot string, contract *leapYAMLContract, status *core.IntegrationStatus) error {
-	if contract == nil {
+	if contract == nil || status == nil {
 		return nil
 	}
 
-	modelPath := strings.TrimSpace(contract.ModelPath)
-	if modelPath == "" {
-		modelPath = strings.TrimSpace(contract.Model)
+	candidates, err := discoverModelCandidates(repoRoot, contract, status.Contracts)
+	if err != nil {
+		return err
 	}
-	if modelPath == "" {
+	attachModelCandidates(status, candidates)
+
+	if len(candidates) == 0 {
+		appendModelIssue(status, core.IssueCodeModelFileMissing, "no model candidate found; set leap.yaml modelPath/model or provide a discoverable .onnx/.h5 model", core.SeverityError)
 		return nil
 	}
 
-	ext := strings.ToLower(filepath.Ext(modelPath))
-	if ext != ".onnx" && ext != ".h5" {
-		status.Issues = append(status.Issues, core.Issue{
-			Code:     core.IssueCodeModelFormatUnsupported,
-			Message:  fmt.Sprintf("model path %q has unsupported format; expected .onnx or .h5", modelPath),
-			Severity: core.SeverityError,
-			Scope:    core.IssueScopeModel,
-		})
+	evaluations := make([]modelCandidateEvaluation, 0, len(candidates))
+	for _, candidate := range candidates {
+		evaluation, evalErr := evaluateModelCandidate(repoRoot, candidate)
+		if evalErr != nil {
+			return evalErr
+		}
+		if strings.TrimSpace(evaluation.DisplayPath) == "" {
+			continue
+		}
+		evaluations = append(evaluations, evaluation)
 	}
 
-	modelAbsPath := modelPath
-	if !filepath.IsAbs(modelAbsPath) {
-		modelAbsPath = filepath.Join(repoRoot, filepath.FromSlash(modelPath))
+	issueCandidates := explicitModelEvaluations(evaluations)
+	if len(issueCandidates) == 0 {
+		issueCandidates = evaluations
 	}
-	modelAbsPath = filepath.Clean(modelAbsPath)
 
-	if !isPathWithinRepo(repoRoot, modelAbsPath) {
-		status.Issues = append(status.Issues, core.Issue{
-			Code:     core.IssueCodeModelFileMissing,
-			Message:  fmt.Sprintf("model path %q points outside repository", modelPath),
-			Severity: core.SeverityError,
-			Scope:    core.IssueScopeModel,
-		})
+	if candidate, ok := firstUnsupportedModelCandidate(issueCandidates); ok {
+		appendModelIssue(
+			status,
+			core.IssueCodeModelFormatUnsupported,
+			fmt.Sprintf("model candidate %q has unsupported format; expected .onnx or .h5", candidate.DisplayPath),
+			core.SeverityError,
+		)
+	}
+
+	if candidate, ok := firstOutsideRepoModelCandidate(issueCandidates); ok {
+		appendModelIssue(
+			status,
+			core.IssueCodeModelFileMissing,
+			fmt.Sprintf("model candidate %q points outside repository", candidate.Candidate.Path),
+			core.SeverityError,
+		)
+	}
+
+	resolvable := resolvableModelEvaluations(evaluations)
+	setResolvedModelPath(status, resolvable)
+
+	if len(resolvable) > 1 {
+		appendModelIssue(
+			status,
+			core.IssueCodeModelCandidatesAmbiguous,
+			fmt.Sprintf(
+				"multiple resolvable model candidates found: %s; set leap.yaml modelPath/model to disambiguate",
+				joinModelCandidatePaths(resolvable),
+			),
+			core.SeverityError,
+		)
 		return nil
 	}
 
-	if info, err := os.Stat(modelAbsPath); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			status.Issues = append(status.Issues, core.Issue{
-				Code:     core.IssueCodeModelFileMissing,
-				Message:  fmt.Sprintf("model file %q was not found", modelPath),
-				Severity: core.SeverityError,
-				Scope:    core.IssueScopeModel,
-			})
+	if len(resolvable) == 0 {
+		if candidate, ok := firstMissingModelFileCandidate(issueCandidates); ok {
+			appendModelIssue(
+				status,
+				core.IssueCodeModelFileMissing,
+				fmt.Sprintf("model file %q was not found", candidate.DisplayPath),
+				core.SeverityError,
+			)
 			return nil
 		}
-		return core.WrapError(core.KindUnknown, "inspect.baseline.model_stat", err)
-	} else if info.IsDir() {
-		status.Issues = append(status.Issues, core.Issue{
-			Code:     core.IssueCodeModelFileMissing,
-			Message:  fmt.Sprintf("model path %q must reference a file", modelPath),
-			Severity: core.SeverityError,
-			Scope:    core.IssueScopeModel,
-		})
-		return nil
-	}
-
-	modelRelativePath, err := filepath.Rel(repoRoot, modelAbsPath)
-	if err != nil {
-		return core.WrapError(core.KindUnknown, "inspect.baseline.model_rel", err)
-	}
-	modelRelativePath = filepath.ToSlash(filepath.Clean(modelRelativePath))
-
-	if len(contract.Include) > 0 && !matchesAnyPattern(modelRelativePath, contract.Include) {
-		status.Issues = append(status.Issues, core.Issue{
-			Code:     core.IssueCodeModelPathNotIncluded,
-			Message:  fmt.Sprintf("model file %q is not covered by leap.yaml include patterns", modelRelativePath),
-			Severity: core.SeverityError,
-			Scope:    core.IssueScopeModel,
-		})
-	}
-	if matchesAnyPattern(modelRelativePath, contract.Exclude) {
-		status.Issues = append(status.Issues, core.Issue{
-			Code:     core.IssueCodeModelPathNotIncluded,
-			Message:  fmt.Sprintf("model file %q is excluded by leap.yaml patterns", modelRelativePath),
-			Severity: core.SeverityError,
-			Scope:    core.IssueScopeModel,
-		})
+		appendModelIssue(
+			status,
+			core.IssueCodeModelFileMissing,
+			fmt.Sprintf("no resolvable model candidate found; discovered candidates: %s", joinModelCandidatePaths(evaluations)),
+			core.SeverityError,
+		)
 	}
 
 	return nil
+}
+
+func attachModelCandidates(status *core.IntegrationStatus, candidates []core.ModelCandidate) {
+	if status == nil || status.Contracts == nil {
+		return
+	}
+	if len(candidates) == 0 {
+		status.Contracts.ModelCandidates = nil
+		status.Contracts.ResolvedModelPath = ""
+		return
+	}
+	status.Contracts.ModelCandidates = append([]core.ModelCandidate(nil), candidates...)
+	status.Contracts.ResolvedModelPath = ""
+}
+
+func setResolvedModelPath(status *core.IntegrationStatus, resolvable []modelCandidateEvaluation) {
+	if status == nil || status.Contracts == nil {
+		return
+	}
+	if len(resolvable) != 1 {
+		status.Contracts.ResolvedModelPath = ""
+		return
+	}
+	status.Contracts.ResolvedModelPath = strings.TrimSpace(resolvable[0].DisplayPath)
+}
+
+func explicitModelEvaluations(evaluations []modelCandidateEvaluation) []modelCandidateEvaluation {
+	explicit := make([]modelCandidateEvaluation, 0, len(evaluations))
+	for _, evaluation := range evaluations {
+		if strings.Contains(evaluation.Candidate.Source, modelCandidateSourceRepoSearch) {
+			continue
+		}
+		explicit = append(explicit, evaluation)
+	}
+	return explicit
+}
+
+func firstUnsupportedModelCandidate(evaluations []modelCandidateEvaluation) (modelCandidateEvaluation, bool) {
+	for _, evaluation := range evaluations {
+		if evaluation.SupportedFormat {
+			continue
+		}
+		return evaluation, true
+	}
+	return modelCandidateEvaluation{}, false
+}
+
+func firstOutsideRepoModelCandidate(evaluations []modelCandidateEvaluation) (modelCandidateEvaluation, bool) {
+	for _, evaluation := range evaluations {
+		if !evaluation.InsideRepo {
+			return evaluation, true
+		}
+	}
+	return modelCandidateEvaluation{}, false
+}
+
+func firstMissingModelFileCandidate(evaluations []modelCandidateEvaluation) (modelCandidateEvaluation, bool) {
+	for _, evaluation := range evaluations {
+		if !evaluation.InsideRepo || !evaluation.SupportedFormat {
+			continue
+		}
+		if evaluation.Exists {
+			continue
+		}
+		return evaluation, true
+	}
+	return modelCandidateEvaluation{}, false
+}
+
+func resolvableModelEvaluations(evaluations []modelCandidateEvaluation) []modelCandidateEvaluation {
+	resolvable := make([]modelCandidateEvaluation, 0, len(evaluations))
+	for _, evaluation := range evaluations {
+		if !evaluation.SupportedFormat {
+			continue
+		}
+		if !evaluation.InsideRepo {
+			continue
+		}
+		if !evaluation.Exists {
+			continue
+		}
+		resolvable = append(resolvable, evaluation)
+	}
+	return resolvable
+}
+
+func appendModelIssue(status *core.IntegrationStatus, code core.IssueCode, message string, severity core.Severity) {
+	if status == nil {
+		return
+	}
+	status.Issues = append(status.Issues, core.Issue{
+		Code:     code,
+		Message:  message,
+		Severity: severity,
+		Scope:    core.IssueScopeModel,
+	})
+}
+
+func joinModelCandidatePaths(candidates []modelCandidateEvaluation) string {
+	if len(candidates) == 0 {
+		return "none"
+	}
+
+	paths := make([]string, 0, len(candidates))
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		path := strings.TrimSpace(candidate.DisplayPath)
+		if path == "" {
+			continue
+		}
+		if _, exists := seen[path]; exists {
+			continue
+		}
+		seen[path] = struct{}{}
+		paths = append(paths, path)
+	}
+	if len(paths) == 0 {
+		return "none"
+	}
+	sort.Strings(paths)
+	return strings.Join(paths, ", ")
 }

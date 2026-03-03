@@ -379,9 +379,14 @@ func initRunTestRepoAtPath(t *testing.T, repo string, complete bool) {
 	writeFile(t, filepath.Join(repo, "README.md"), "test repo\n")
 	writeFile(t, filepath.Join(repo, ".gitignore"), ".concierge/\n")
 	if complete {
-		writeFile(t, filepath.Join(repo, "leap.yaml"), "entryFile: leap_binder.py\n")
+		writeFile(t, filepath.Join(repo, "leap.yaml"), strings.Join([]string{
+			"entryFile: leap_binder.py",
+			"modelPath: model/model.h5",
+			"",
+		}, "\n"))
 		writeFile(t, filepath.Join(repo, "leap_binder.py"), "def noop():\n    return None\n")
 		writeFile(t, filepath.Join(repo, "leap_custom_test.py"), "def test_noop():\n    return None\n")
+		writeFile(t, filepath.Join(repo, "model", "model.h5"), "binary\n")
 	}
 
 	runGit(t, repo, "add", ".")
@@ -422,6 +427,9 @@ func runGit(t *testing.T, repo string, args ...string) string {
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed for %q: %v", path, err)
+	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile failed for %q: %v", path, err)
 	}

@@ -48,9 +48,14 @@ func TestInspectorAcceptsEitherIntegrationTestFileName(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
-			writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_binder.py\n")
+			writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
+				"entryFile: leap_binder.py",
+				"modelPath: model/model.h5",
+				"",
+			}, "\n"))
 			writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
 			writeFixtureFile(t, root, tc.testFile, "print('test')\n")
+			writeFixtureFile(t, root, "model/model.h5", "binary\n")
 
 			inspector := NewBaselineInspector()
 			status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))
@@ -72,9 +77,14 @@ func TestInspectorAcceptsEitherIntegrationTestFileName(t *testing.T) {
 
 func TestInspectorNoIssuesWhenArtifactsExist(t *testing.T) {
 	root := t.TempDir()
-	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_binder.py\n")
+	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
+		"entryFile: leap_binder.py",
+		"modelPath: model/model.h5",
+		"",
+	}, "\n"))
 	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
 	writeFixtureFile(t, root, "integration_test.py", "print('test')\n")
+	writeFixtureFile(t, root, "model/model.h5", "binary\n")
 
 	inspector := NewBaselineInspector()
 	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))
@@ -162,10 +172,12 @@ func TestInspectorAllowsProjectAndSecretIdentifiersInLeapYAML(t *testing.T) {
 		"projectId: demo-project",
 		"secretId: demo-secret",
 		"entryFile: leap_binder.py",
+		"modelPath: model/model.h5",
 		"",
 	}, "\n"))
 	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
 	writeFixtureFile(t, root, "integration_test.py", "print('test')\n")
+	writeFixtureFile(t, root, "model/model.h5", "binary\n")
 
 	inspector := NewBaselineInspector()
 	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))
@@ -181,16 +193,19 @@ func TestInspectorAllowsEntryFileExcludedByLeapYAML(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
 		"entryFile: leap_binder.py",
+		"modelPath: model/model.h5",
 		"include:",
 		"  - leap.yaml",
 		"  - leap_binder.py",
 		"  - leap_custom_test.py",
+		"  - model/**",
 		"exclude:",
 		"  - leap_binder.py",
 		"",
 	}, "\n"))
 	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
 	writeFixtureFile(t, root, "leap_custom_test.py", "print('test')\n")
+	writeFixtureFile(t, root, "model/model.h5", "binary\n")
 
 	inspector := NewBaselineInspector()
 	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))

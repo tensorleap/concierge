@@ -413,6 +413,9 @@ func cloneIntegrationStatus(status core.IntegrationStatus) core.IntegrationStatu
 		if len(status.Contracts.IntegrationTestCalls) > 0 {
 			contracts.IntegrationTestCalls = append([]string(nil), status.Contracts.IntegrationTestCalls...)
 		}
+		if len(status.Contracts.ModelCandidates) > 0 {
+			contracts.ModelCandidates = append([]core.ModelCandidate(nil), status.Contracts.ModelCandidates...)
+		}
 		cloned.Contracts = &contracts
 	}
 	return cloned

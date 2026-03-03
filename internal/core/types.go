@@ -101,15 +101,23 @@ type IssueLocation struct {
 	Symbol string `json:"symbol,omitempty"`
 }
 
+// ModelCandidate captures one discovered model path candidate and its origin.
+type ModelCandidate struct {
+	Path   string `json:"path"`
+	Source string `json:"source,omitempty"`
+}
+
 // IntegrationContracts captures discovered interface symbols from the integration entry file.
 type IntegrationContracts struct {
-	EntryFile                string   `json:"entryFile"`
-	LoadModelFunctions       []string `json:"loadModelFunctions,omitempty"`
-	PreprocessFunctions      []string `json:"preprocessFunctions,omitempty"`
-	InputEncoders            []string `json:"inputEncoders,omitempty"`
-	GroundTruthEncoders      []string `json:"groundTruthEncoders,omitempty"`
-	IntegrationTestFunctions []string `json:"integrationTestFunctions,omitempty"`
-	IntegrationTestCalls     []string `json:"integrationTestCalls,omitempty"`
+	EntryFile                string           `json:"entryFile"`
+	LoadModelFunctions       []string         `json:"loadModelFunctions,omitempty"`
+	PreprocessFunctions      []string         `json:"preprocessFunctions,omitempty"`
+	InputEncoders            []string         `json:"inputEncoders,omitempty"`
+	GroundTruthEncoders      []string         `json:"groundTruthEncoders,omitempty"`
+	IntegrationTestFunctions []string         `json:"integrationTestFunctions,omitempty"`
+	IntegrationTestCalls     []string         `json:"integrationTestCalls,omitempty"`
+	ModelCandidates          []ModelCandidate `json:"modelCandidates,omitempty"`
+	ResolvedModelPath        string           `json:"resolvedModelPath,omitempty"`
 }
 
 // IntegrationStatus summarizes what is currently missing or invalid.

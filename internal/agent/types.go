@@ -4,10 +4,20 @@ import "github.com/tensorleap/concierge/internal/core"
 
 // AgentTask describes one task-scoped objective delegated to a coding agent.
 type AgentTask struct {
-	Objective      string   `json:"objective"`
-	Constraints    []string `json:"constraints,omitempty"`
-	RepoRoot       string   `json:"repoRoot"`
-	TranscriptPath string   `json:"transcriptPath"`
+	Objective      string            `json:"objective"`
+	Constraints    []string          `json:"constraints,omitempty"`
+	ScopePolicy    *AgentScopePolicy `json:"scopePolicy,omitempty"`
+	RepoRoot       string            `json:"repoRoot"`
+	TranscriptPath string            `json:"transcriptPath"`
+}
+
+// AgentScopePolicy defines explicit edit boundaries and Tensorleap rule slices for one task.
+type AgentScopePolicy struct {
+	AllowedFiles       []string `json:"allowedFiles,omitempty"`
+	ForbiddenAreas     []string `json:"forbiddenAreas,omitempty"`
+	RequiredOutcomes   []string `json:"requiredOutcomes,omitempty"`
+	StopAndAskTriggers []string `json:"stopAndAskTriggers,omitempty"`
+	DomainSections     []string `json:"domainSections,omitempty"`
 }
 
 // KnowledgeSource captures provenance metadata for one Tensorleap rule section.

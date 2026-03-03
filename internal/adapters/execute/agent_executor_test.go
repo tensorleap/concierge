@@ -47,11 +47,22 @@ func TestAgentExecutorDispatchesSupportedSteps(t *testing.T) {
 	if runner.lastTask.RepoRoot != repoRoot {
 		t.Fatalf("expected task repo root %q, got %q", repoRoot, runner.lastTask.RepoRoot)
 	}
+	if runner.lastTask.ScopePolicy == nil {
+		t.Fatal("expected scope policy to be attached to agent task")
+	}
+	if len(runner.lastTask.ScopePolicy.DomainSections) == 0 {
+		t.Fatalf("expected scope-policy domain sections, got %+v", runner.lastTask.ScopePolicy)
+	}
 
 	assertEvidence(t, result.Evidence, "executor.mode", "agent")
 	assertEvidencePresent(t, result.Evidence, "agent.transcript_path")
 	assertEvidence(t, result.Evidence, "agent.knowledge_pack.version", "tlkp-v1")
 	assertEvidencePresent(t, result.Evidence, "agent.knowledge_pack.section_ids")
+	assertEvidencePresent(t, result.Evidence, "agent.scope_policy.allowed_files")
+	assertEvidencePresent(t, result.Evidence, "agent.scope_policy.forbidden_areas")
+	assertEvidencePresent(t, result.Evidence, "agent.scope_policy.required_outcomes")
+	assertEvidencePresent(t, result.Evidence, "agent.scope_policy.stop_and_ask_triggers")
+	assertEvidencePresent(t, result.Evidence, "agent.scope_policy.domain_sections")
 }
 
 func TestAgentExecutorReturnsDeterministicErrorWhenUnavailable(t *testing.T) {

@@ -77,7 +77,7 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 9B: GitManager runtime integration (diff/approve/reject/commit) | `ACCEPTED` | 2026-02-26 (`main`) | Added audited branch-safe diff review, approval/reject handling, and commit flow in runtime. |
 | Step 9C: AgentRunner integration for complex ensure-steps | `ACCEPTED` | 2026-03-03 (`main`) | Added task-scoped coding-agent delegation with transcript evidence integration in executor flow. |
 | Step 10A0: Plan state sync after 9C merge | `ACCEPTED` | 2026-03-03 (`main`) | Synchronized plan tracking after `9C` merge and verified authoring-first tail consistency (`10A-14B`). |
-| Step 10A: Contract discovery core | `PENDING` | — | Add deterministic discovery of preprocess/encoders/integration-test contracts from entry file. |
+| Step 10A: Contract discovery core | `DONE` | 2026-03-03 (`PR #11`) | Added deterministic entry-file contract discovery for decorators and integration-test call symbols with graceful path-aware failures. |
 | Step 10B: Model discovery and need detection | `PENDING` | — | Add deterministic model discovery and issue emission for missing/ambiguous model contract. |
 | Step 10B1: Pre-commit integration quality gate (delta-scoped) | `PENDING` | — | Run step-local integration validation and changed-file syntax checks before commit approval is offered. |
 | Step 10C: Model contract authoring flow | `PENDING` | — | Add model-specific authoring objectives and deterministic recommendation/evidence path. |
@@ -510,7 +510,7 @@ Rollback boundary:
 
 ---
 
-### Step 10A: Contract discovery core (`PENDING`)
+### Step 10A: Contract discovery core (`DONE`)
 
 Objective:
 

@@ -50,11 +50,13 @@ func TestAgentExecutorDispatchesSupportedSteps(t *testing.T) {
 
 	assertEvidence(t, result.Evidence, "executor.mode", "agent")
 	assertEvidencePresent(t, result.Evidence, "agent.transcript_path")
+	assertEvidence(t, result.Evidence, "agent.knowledge_pack.version", "tlkp-v1")
+	assertEvidencePresent(t, result.Evidence, "agent.knowledge_pack.section_ids")
 }
 
 func TestAgentExecutorReturnsDeterministicErrorWhenUnavailable(t *testing.T) {
 	repoRoot := t.TempDir()
-	runner := &fakeAgentRunner{err: core.NewError(core.KindMissingDependency, "agent.runner.command_missing", "agent command not configured")}
+	runner := &fakeAgentRunner{err: core.NewError(core.KindMissingDependency, "agent.runner.command_lookup", "Claude CLI is unavailable")}
 	executor := NewAgentExecutor(runner)
 
 	step, ok := core.EnsureStepByID(core.EnsureStepInputEncoders)
@@ -71,6 +73,36 @@ func TestAgentExecutorReturnsDeterministicErrorWhenUnavailable(t *testing.T) {
 	}
 	if got := core.KindOf(err); got != core.KindMissingDependency {
 		t.Fatalf("expected error kind %q, got %q (err=%v)", core.KindMissingDependency, got, err)
+	}
+}
+
+func TestAgentExecutorFailsWhenKnowledgePackLoadFails(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &fakeAgentRunner{
+		result: agent.AgentResult{Applied: true, Summary: "unexpected"},
+	}
+	executor := NewAgentExecutor(runner)
+	executor.loadKnowledgePack = func() (agent.DomainKnowledgePack, error) {
+		return agent.DomainKnowledgePack{}, core.NewError(core.KindUnknown, "agent.context.load", "invalid knowledge pack")
+	}
+
+	step, ok := core.EnsureStepByID(core.EnsureStepInputEncoders)
+	if !ok {
+		t.Fatalf("expected step %q to exist", core.EnsureStepInputEncoders)
+	}
+
+	_, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		ID:         "snapshot-knowledge",
+		Repository: core.RepositoryState{Root: repoRoot},
+	}, step)
+	if err == nil {
+		t.Fatal("expected knowledge-pack load error")
+	}
+	if got := core.KindOf(err); got != core.KindUnknown {
+		t.Fatalf("expected error kind %q, got %q (err=%v)", core.KindUnknown, got, err)
+	}
+	if runner.runCount != 0 {
+		t.Fatalf("expected runner not to be invoked when knowledge load fails, got %d runs", runner.runCount)
 	}
 }
 
@@ -137,15 +169,49 @@ func TestAgentExecutorRejectsRemovedOptionalStepsInV1(t *testing.T) {
 	}
 }
 
+func TestAgentExecutorPreprocessObjectiveIncludesSelectedModelPath(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &fakeAgentRunner{
+		result: agent.AgentResult{Applied: true, Summary: "ok"},
+	}
+	executor := NewAgentExecutor(runner)
+	step, ok := core.EnsureStepByID(core.EnsureStepPreprocessContract)
+	if !ok {
+		t.Fatalf("expected step %q to exist", core.EnsureStepPreprocessContract)
+	}
+
+	_, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		ID:                "snapshot-model-hint",
+		SelectedModelPath: "model/demo.onnx",
+		Repository:        core.RepositoryState{Root: repoRoot},
+	}, step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	found := false
+	for _, constraint := range runner.lastTask.Constraints {
+		if constraint == `Use model path "model/demo.onnx" for @tensorleap_load_model unless repository code proves this path is invalid` {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected model-path constraint in task constraints, got %+v", runner.lastTask.Constraints)
+	}
+}
+
 type fakeAgentRunner struct {
 	result   agent.AgentResult
 	err      error
 	lastTask agent.AgentTask
 	onRun    func(task agent.AgentTask)
+	runCount int
 }
 
 func (f *fakeAgentRunner) Run(ctx context.Context, task agent.AgentTask) (agent.AgentResult, error) {
 	_ = ctx
+	f.runCount++
 	f.lastTask = task
 	if f.onRun != nil {
 		f.onRun(task)

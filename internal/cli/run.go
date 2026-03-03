@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -44,8 +46,7 @@ func newRunCommand() *cobra.Command {
 	var projectRootFlag string
 	var nonInteractive bool
 	var yes bool
-	var enableAgent bool
-	var agentCommand string
+	var modelPathFlag string
 	var noColor bool
 	var debugOutput bool
 
@@ -84,6 +85,25 @@ func newRunCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			selectedModelPath := strings.TrimSpace(loadedState.SelectedModelPath)
+			if override := strings.TrimSpace(modelPathFlag); override != "" {
+				selectedModelPath = override
+			}
+			selectedModelPath, err = normalizeModelPathOption(repoRoot, selectedModelPath)
+			if err != nil {
+				return err
+			}
+			var selectedModelPathMu sync.RWMutex
+			getSelectedModelPath := func() string {
+				selectedModelPathMu.RLock()
+				defer selectedModelPathMu.RUnlock()
+				return selectedModelPath
+			}
+			setSelectedModelPath := func(path string) {
+				selectedModelPathMu.Lock()
+				selectedModelPath = normalizeModelPathValue(path)
+				selectedModelPathMu.Unlock()
+			}
 
 			var iterationReporter ports.Reporter = report.NewStdoutReporterWithOptions(
 				writer,
@@ -107,17 +127,27 @@ func newRunCommand() *cobra.Command {
 			}
 
 			plannerAdapter := newPlanCapturePlanner(planner.NewDeterministicPlanner())
-			baseExecutor := execute.NewDispatcherExecutor()
-
-			if enableAgent {
-				agentRunner := agent.NewRunner(agent.RunnerOptions{Command: strings.TrimSpace(agentCommand)})
-				if err := agentRunner.CheckAvailability(); err != nil {
-					return err
-				}
-				baseExecutor = execute.NewDispatcherExecutorWithAgent(execute.NewAgentExecutor(agentRunner))
-			}
+			agentRunner := agent.NewRunner()
+			baseExecutor := execute.NewDispatcherExecutorWithAgent(execute.NewAgentExecutor(agentRunner))
 
 			stepApproval := func(step core.EnsureStep) (bool, error) {
+				snapshotValue, hasSnapshot := plannerAdapter.LastSnapshot()
+				status, hasStatus := plannerAdapter.LastStatus()
+
+				if err := ensureModelPathSelectionForStep(
+					step,
+					status,
+					hasStatus,
+					getSelectedModelPath,
+					setSelectedModelPath,
+					repoRoot,
+					nonInteractive || yes,
+					promptInput,
+					cmd.OutOrStdout(),
+				); err != nil {
+					return false, err
+				}
+
 				if step.ID == core.EnsureStepComplete {
 					return true, nil
 				}
@@ -131,8 +161,6 @@ func newRunCommand() *cobra.Command {
 						"this run requires approval before Concierge applies and commits changes; rerun with --yes to auto-approve in non-interactive mode",
 					)
 				}
-				snapshotValue, hasSnapshot := plannerAdapter.LastSnapshot()
-				status, hasStatus := plannerAdapter.LastStatus()
 				return promptApproval(
 					promptInput,
 					cmd.OutOrStdout(),
@@ -161,13 +189,22 @@ func newRunCommand() *cobra.Command {
 			}
 
 			engine, err := orchestrator.NewEngine(orchestrator.Dependencies{
-				Snapshotter: snapshot.NewGitSnapshotter(),
-				Inspector:   inspect.NewBaselineInspector(),
-				Planner:     plannerAdapter,
-				Executor:    execute.NewApprovalExecutor(baseExecutor, stepApproval),
-				GitManager:  gitmanager.NewManager(gitApproval, gitmanager.ManagerOptions{ColorDiff: renderOptions.EnableColor}),
-				Validator:   validate.NewBaselineValidator(),
-				Reporter:    iterationReporter,
+				Snapshotter: modelPathHintSnapshotter{
+					base:            snapshot.NewGitSnapshotter(),
+					selectedModelFn: getSelectedModelPath,
+				},
+				Inspector: inspect.NewBaselineInspector(),
+				Planner:   plannerAdapter,
+				Executor: execute.NewApprovalExecutor(
+					modelPathHintExecutor{
+						base:            baseExecutor,
+						selectedModelFn: getSelectedModelPath,
+					},
+					stepApproval,
+				),
+				GitManager: gitmanager.NewManager(gitApproval, gitmanager.ManagerOptions{ColorDiff: renderOptions.EnableColor}),
+				Validator:  validate.NewBaselineValidator(),
+				Reporter:   iterationReporter,
 			})
 			if err != nil {
 				return err
@@ -204,7 +241,14 @@ func newRunCommand() *cobra.Command {
 							initializedStateNotes = true
 						}
 
-						nextState := state.UpdateForIteration(currentState, snapshotValue, *report, repoRoot, invalidationReasons)
+						nextState := state.UpdateForIteration(
+							currentState,
+							snapshotValue,
+							*report,
+							repoRoot,
+							getSelectedModelPath(),
+							invalidationReasons,
+						)
 						if err := state.SaveState(repoRoot, nextState); err != nil {
 							return err
 						}
@@ -239,8 +283,7 @@ func newRunCommand() *cobra.Command {
 	cmd.Flags().StringVar(&projectRootFlag, "project-root", "", "Project root to operate on")
 	cmd.Flags().BoolVar(&nonInteractive, "non-interactive", false, "Fail instead of prompting for interactive decisions")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Auto-approve mutation/push prompts")
-	cmd.Flags().BoolVar(&enableAgent, "enable-agent", false, "Enable coding-agent delegation for complex ensure-steps")
-	cmd.Flags().StringVar(&agentCommand, "agent-command", "", "Agent command to run when --enable-agent is set (defaults to CONCIERGE_AGENT_COMMAND)")
+	cmd.Flags().StringVar(&modelPathFlag, "model-path", "", "Preferred model path for @tensorleap_load_model when multiple candidates exist")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colorized output")
 	cmd.Flags().BoolVar(&debugOutput, "debug-output", false, "Show internal debug details in run output")
 	return cmd
@@ -295,8 +338,8 @@ func stepApprovalMessage(
 	checklist = append(
 		checklist,
 		"",
-		"Concierge can help fix this now.",
-		"Allow Concierge to make changes for this check now?",
+		"Concierge can apply a focused fix for this blocker now.",
+		"Apply this fix now?",
 	)
 	return strings.Join(checklist, "\n")
 }
@@ -413,6 +456,9 @@ func cloneIntegrationStatus(status core.IntegrationStatus) core.IntegrationStatu
 		if len(status.Contracts.IntegrationTestCalls) > 0 {
 			contracts.IntegrationTestCalls = append([]string(nil), status.Contracts.IntegrationTestCalls...)
 		}
+		if len(status.Contracts.ModelCandidates) > 0 {
+			contracts.ModelCandidates = append([]core.ModelCandidate(nil), status.Contracts.ModelCandidates...)
+		}
 		cloned.Contracts = &contracts
 	}
 	return cloned
@@ -509,7 +555,7 @@ func approvalGuidanceForStep(stepID core.EnsureStepID) stepApprovalGuidance {
 		}
 	case core.EnsureStepModelContract:
 		return stepApprovalGuidance{
-			Explanation: "Tensorleap requires model artifacts and tensor shapes to follow supported integration contracts.",
+			Explanation: "Concierge must resolve one concrete .onnx/.h5 model path for @tensorleap_load_model before preprocess authoring can be completed.",
 			DocsURL:     stepGuideModelIntegrationURL,
 		}
 	case core.EnsureStepIntegrationScript:
@@ -519,7 +565,7 @@ func approvalGuidanceForStep(stepID core.EnsureStepID) stepApprovalGuidance {
 		}
 	case core.EnsureStepPreprocessContract:
 		return stepApprovalGuidance{
-			Explanation: "Preprocess must return valid dataset subsets so Tensorleap can iterate samples correctly.",
+			Explanation: "Concierge will author a decorated preprocess function and wire model loading in one step so Tensorleap can iterate train/validation subsets.",
 			DocsURL:     stepGuidePreprocessURL,
 		}
 	case core.EnsureStepInputEncoders:
@@ -576,4 +622,165 @@ func blockingIssuesForStep(issues []core.Issue, stepID core.EnsureStepID) []core
 		return filtered[i].Message < filtered[j].Message
 	})
 	return filtered
+}
+
+type modelPathHintSnapshotter struct {
+	base            ports.Snapshotter
+	selectedModelFn func() string
+}
+
+func (s modelPathHintSnapshotter) Snapshot(ctx context.Context, request core.SnapshotRequest) (core.WorkspaceSnapshot, error) {
+	if s.base == nil {
+		return core.WorkspaceSnapshot{}, core.NewError(core.KindMissingDependency, "cli.run.snapshotter", "snapshotter is required")
+	}
+	snapshotValue, err := s.base.Snapshot(ctx, request)
+	if err != nil {
+		return core.WorkspaceSnapshot{}, err
+	}
+	if s.selectedModelFn != nil {
+		snapshotValue.SelectedModelPath = normalizeModelPathValue(s.selectedModelFn())
+	}
+	return snapshotValue, nil
+}
+
+type modelPathHintExecutor struct {
+	base            ports.Executor
+	selectedModelFn func() string
+}
+
+func (e modelPathHintExecutor) Execute(ctx context.Context, snapshotValue core.WorkspaceSnapshot, step core.EnsureStep) (core.ExecutionResult, error) {
+	if e.base == nil {
+		return core.ExecutionResult{}, core.NewError(core.KindMissingDependency, "cli.run.executor", "executor is required")
+	}
+	if e.selectedModelFn != nil {
+		selectedPath := normalizeModelPathValue(e.selectedModelFn())
+		if selectedPath != "" {
+			snapshotValue.SelectedModelPath = selectedPath
+		}
+	}
+	return e.base.Execute(ctx, snapshotValue, step)
+}
+
+func ensureModelPathSelectionForStep(
+	step core.EnsureStep,
+	status core.IntegrationStatus,
+	hasStatus bool,
+	getSelected func() string,
+	setSelected func(string),
+	repoRoot string,
+	requireNonInteractive bool,
+	input *bufio.Reader,
+	out io.Writer,
+) error {
+	if step.ID != core.EnsureStepModelContract && step.ID != core.EnsureStepPreprocessContract {
+		return nil
+	}
+	if !hasStatus || status.Contracts == nil {
+		return nil
+	}
+
+	current := ""
+	if getSelected != nil {
+		current = normalizeModelPathValue(getSelected())
+	}
+	if current != "" {
+		return nil
+	}
+
+	candidates := selectableModelCandidates(status.Contracts.ModelCandidates)
+	if len(candidates) == 0 {
+		return nil
+	}
+	if len(candidates) == 1 {
+		if setSelected != nil {
+			setSelected(candidates[0])
+		}
+		return nil
+	}
+
+	if requireNonInteractive {
+		return core.NewError(
+			core.KindUnknown,
+			"cli.run.model_path_selection_required",
+			"multiple model files found; rerun with --model-path <path> to choose one in non-interactive mode",
+		)
+	}
+
+	selected, err := promptModelCandidateSelection(input, out, candidates)
+	if err != nil {
+		return err
+	}
+	normalized, err := normalizeModelPathOption(repoRoot, selected)
+	if err != nil {
+		return err
+	}
+	if setSelected != nil {
+		setSelected(normalized)
+	}
+	return nil
+}
+
+func selectableModelCandidates(candidates []core.ModelCandidate) []string {
+	if len(candidates) == 0 {
+		return nil
+	}
+	values := make([]string, 0, len(candidates))
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		path := normalizeModelPathValue(candidate.Path)
+		if path == "" {
+			continue
+		}
+		if strings.HasPrefix(path, "../") || strings.HasPrefix(path, "/") {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext != ".onnx" && ext != ".h5" {
+			continue
+		}
+		key := strings.ToLower(path)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		values = append(values, path)
+	}
+	sort.Strings(values)
+	return values
+}
+
+func normalizeModelPathOption(repoRoot string, rawPath string) (string, error) {
+	trimmed := strings.TrimSpace(rawPath)
+	if trimmed == "" {
+		return "", nil
+	}
+	path := filepath.FromSlash(trimmed)
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(repoRoot, path)
+	}
+	path = filepath.Clean(path)
+	relPath, err := filepath.Rel(repoRoot, path)
+	if err != nil {
+		return "", core.WrapError(core.KindUnknown, "cli.run.model_path_rel", err)
+	}
+	if strings.HasPrefix(relPath, "..") || strings.HasPrefix(filepath.ToSlash(relPath), "../") {
+		return "", core.NewError(core.KindUnknown, "cli.run.model_path_outside_repo", "model path must stay inside the project repository")
+	}
+	normalized := normalizeModelPathValue(relPath)
+	if normalized == "" {
+		return "", core.NewError(core.KindUnknown, "cli.run.model_path_invalid", "model path must not be empty")
+	}
+	ext := strings.ToLower(filepath.Ext(normalized))
+	if ext != ".onnx" && ext != ".h5" {
+		return "", core.NewError(core.KindUnknown, "cli.run.model_path_extension", "model path must end with .onnx or .h5")
+	}
+	return normalized, nil
+}
+
+func normalizeModelPathValue(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return ""
+	}
+	return filepath.ToSlash(filepath.Clean(filepath.FromSlash(trimmed)))
 }

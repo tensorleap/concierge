@@ -21,6 +21,7 @@ const (
 type RunState struct {
 	Version                 int               `json:"version"`
 	SelectedProjectRoot     string            `json:"selectedProjectRoot"`
+	SelectedModelPath       string            `json:"selectedModelPath,omitempty"`
 	LastSnapshotID          string            `json:"lastSnapshotId,omitempty"`
 	LastHead                string            `json:"lastHead,omitempty"`
 	LastWorktreeFingerprint string            `json:"lastWorktreeFingerprint,omitempty"`
@@ -59,10 +60,18 @@ func ComputeInvalidationReasons(previous RunState, snapshot core.WorkspaceSnapsh
 }
 
 // UpdateForIteration builds next persisted state from one iteration report.
-func UpdateForIteration(previous RunState, snapshot core.WorkspaceSnapshot, report core.IterationReport, selectedProjectRoot string, invalidationReasons []string) RunState {
+func UpdateForIteration(
+	previous RunState,
+	snapshot core.WorkspaceSnapshot,
+	report core.IterationReport,
+	selectedProjectRoot string,
+	selectedModelPath string,
+	invalidationReasons []string,
+) RunState {
 	next := previous
 	next.Version = CurrentVersion
 	next.SelectedProjectRoot = normalizeRoot(selectedProjectRoot)
+	next.SelectedModelPath = normalizeModelPath(selectedModelPath)
 	next.LastSnapshotID = snapshot.ID
 	next.LastHead = snapshot.Repository.Head
 	next.LastWorktreeFingerprint = snapshot.WorktreeFingerprint
@@ -70,6 +79,14 @@ func UpdateForIteration(previous RunState, snapshot core.WorkspaceSnapshot, repo
 	next.LastRunAt = report.GeneratedAt
 	next.InvalidationReasons = append([]string(nil), invalidationReasons...)
 	return next
+}
+
+func normalizeModelPath(modelPath string) string {
+	trimmed := strings.TrimSpace(modelPath)
+	if trimmed == "" {
+		return ""
+	}
+	return filepath.ToSlash(filepath.Clean(filepath.FromSlash(trimmed)))
 }
 
 func normalizeRoot(projectRoot string) string {

@@ -47,6 +47,45 @@ func promptProjectRootSelection(in io.Reader, out io.Writer, candidates []string
 	return candidates[selected-1], nil
 }
 
+func promptModelCandidateSelection(in io.Reader, out io.Writer, candidates []string) (string, error) {
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("no model candidates available")
+	}
+	if len(candidates) == 1 {
+		return candidates[0], nil
+	}
+
+	if out == nil {
+		out = io.Discard
+	}
+	if _, err := fmt.Fprintln(out, "Model Selection"); err != nil {
+		return "", err
+	}
+	if _, err := fmt.Fprintln(out, "Multiple model files were found. Choose one for @tensorleap_load_model:"); err != nil {
+		return "", err
+	}
+	for i, candidate := range candidates {
+		if _, err := fmt.Fprintf(out, "  %d. %s\n", i+1, candidate); err != nil {
+			return "", err
+		}
+	}
+	if _, err := fmt.Fprint(out, "Selection [1-", len(candidates), "]: "); err != nil {
+		return "", err
+	}
+
+	line, err := readPromptLine(in)
+	if err != nil {
+		return "", err
+	}
+
+	selected, err := strconv.Atoi(strings.TrimSpace(line))
+	if err != nil || selected < 1 || selected > len(candidates) {
+		return "", fmt.Errorf("invalid model selection %q", strings.TrimSpace(line))
+	}
+
+	return candidates[selected-1], nil
+}
+
 func promptApproval(in io.Reader, out io.Writer, message string) (bool, error) {
 	if out == nil {
 		out = io.Discard

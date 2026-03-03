@@ -20,6 +20,7 @@ This repository is implemented step by step.
 
 - Implement only one step at a time.
 - Before any `git commit` or `git push`, stop and let the user review changes locally; proceed only after explicit user approval.
+- If a change set does not modify code (for example markdown/docs-only edits), test execution is optional and may be skipped.
 - After finishing a step, update its status in `PLAN.md` to `DONE` only after commit, push, PR creation, and passing branch CI.
 - The agent may commit and push step changes on a non-main feature branch before acceptance.
 - The agent should trigger and monitor CI for the pushed branch and fix failures within the step scope.

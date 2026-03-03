@@ -158,6 +158,22 @@ func TestContractDiscoveryGracefullyHandlesSyntaxErrors(t *testing.T) {
 	}
 }
 
+func TestContractDiscoveryEmitsMissingPreprocessIssueForBinderEntryFile(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_binder.py\n")
+	writeFixtureFile(t, root, "leap_binder.py", "def not_preprocess():\n    return []\n")
+	writeFixtureFile(t, root, "integration_test.py", "print('test')\n")
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if !hasIssueCode(status.Issues, core.IssueCodePreprocessFunctionMissing) {
+		t.Fatalf("expected %q issue, got %+v", core.IssueCodePreprocessFunctionMissing, status.Issues)
+	}
+}
+
 func firstIssueByCode(issues []core.Issue, code core.IssueCode) (core.Issue, bool) {
 	for _, issue := range issues {
 		if issue.Code == code {

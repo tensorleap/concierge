@@ -21,6 +21,20 @@ func TestPromptProjectRootSelectionReturnsChosenCandidate(t *testing.T) {
 	}
 }
 
+func TestPromptModelCandidateSelectionReturnsChosenCandidate(t *testing.T) {
+	candidates := []string{"model/a.h5", "model/b.onnx"}
+	input := bytes.NewBufferString("2\n")
+	output := new(bytes.Buffer)
+
+	selected, err := promptModelCandidateSelection(input, output, candidates)
+	if err != nil {
+		t.Fatalf("promptModelCandidateSelection returned error: %v", err)
+	}
+	if selected != "model/b.onnx" {
+		t.Fatalf("expected selected candidate %q, got %q", "model/b.onnx", selected)
+	}
+}
+
 func TestPromptApprovalParsesYesNo(t *testing.T) {
 	approved, err := promptApproval(bytes.NewBufferString("yes\n"), new(bytes.Buffer), "approve")
 	if err != nil {

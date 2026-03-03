@@ -74,7 +74,7 @@ func TestInvalidationReasonsOnHeadAndWorktreeChange(t *testing.T) {
 	}
 
 	snapshot := core.WorkspaceSnapshot{
-		Repository: core.RepositoryState{Head: "head-new"},
+		Repository:          core.RepositoryState{Head: "head-new"},
 		WorktreeFingerprint: "fingerprint-new",
 	}
 
@@ -104,7 +104,7 @@ func TestStatePersistsAcrossMultipleIterations(t *testing.T) {
 		Step:        core.EnsureStep{ID: core.EnsureStepLeapYAML},
 	}
 
-	state = UpdateForIteration(state, firstSnapshot, firstReport, root, nil)
+	state = UpdateForIteration(state, firstSnapshot, firstReport, root, "", nil)
 	if err := SaveState(root, state); err != nil {
 		t.Fatalf("SaveState first iteration failed: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestStatePersistsAcrossMultipleIterations(t *testing.T) {
 		Step:        core.EnsureStep{ID: core.EnsureStepIntegrationScript},
 	}
 
-	updated := UpdateForIteration(loaded, secondSnapshot, secondReport, root, reasons)
+	updated := UpdateForIteration(loaded, secondSnapshot, secondReport, root, "", reasons)
 	if err := SaveState(root, updated); err != nil {
 		t.Fatalf("SaveState second iteration failed: %v", err)
 	}

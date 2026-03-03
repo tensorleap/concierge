@@ -47,7 +47,7 @@ const (
 
 	// Model contract.
 	IssueCodeModelFileMissing                 IssueCode = "model_file_missing"
-	IssueCodeModelPathNotIncluded             IssueCode = "model_path_not_included"
+	IssueCodeModelCandidatesAmbiguous         IssueCode = "model_candidates_ambiguous"
 	IssueCodeModelFormatUnsupported           IssueCode = "model_format_unsupported"
 	IssueCodeModelLoadFailed                  IssueCode = "model_load_failed"
 	IssueCodeModelInputBatchDimensionMissing  IssueCode = "model_input_batch_dimension_missing"
@@ -164,7 +164,7 @@ var knownIssueCodes = []IssueCode{
 	IssueCodeLeapYAMLPythonVersionMissing,
 	IssueCodeLeapYAMLPythonVersionInvalid,
 	IssueCodeModelFileMissing,
-	IssueCodeModelPathNotIncluded,
+	IssueCodeModelCandidatesAmbiguous,
 	IssueCodeModelFormatUnsupported,
 	IssueCodeModelLoadFailed,
 	IssueCodeModelInputBatchDimensionMissing,

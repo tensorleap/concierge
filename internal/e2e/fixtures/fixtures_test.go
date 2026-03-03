@@ -19,8 +19,6 @@ import (
 	"github.com/tensorleap/concierge/internal/orchestrator"
 )
 
-const fixtureE2EEnvVar = "CONCIERGE_RUN_FIXTURE_E2E"
-
 type fixtureManifest struct {
 	Fixtures []fixtureEntry `json:"fixtures"`
 }
@@ -30,7 +28,7 @@ type fixtureEntry struct {
 }
 
 func TestFixturePreVsPostIssueDeltas(t *testing.T) {
-	requireFixtureE2EEnabled(t)
+	requireFixtureReposPrepared(t)
 	t.Setenv(validate.HarnessEnableEnvVar, "0")
 
 	fixtures := loadFixtures(t)
@@ -42,16 +40,29 @@ func TestFixturePreVsPostIssueDeltas(t *testing.T) {
 			preStatus := inspectStatus(t, preRoot)
 			postStatus := inspectStatus(t, postRoot)
 
-			requiredMissingCodes := []core.IssueCode{
+			if !containsIssueCode(preStatus.Issues, core.IssueCodeIntegrationTestMissing) {
+				t.Fatalf("pre variant must include issue %q, got %+v", core.IssueCodeIntegrationTestMissing, preStatus.Issues)
+			}
+			if !containsAnyIssueCode(preStatus.Issues,
 				core.IssueCodeLeapYAMLMissing,
 				core.IssueCodeIntegrationScriptMissing,
-				core.IssueCodeIntegrationTestMissing,
+				core.IssueCodePreprocessFunctionMissing,
+			) {
+				t.Fatalf(
+					"pre variant must include at least one integration-contract bootstrap issue (%q, %q, or %q), got %+v",
+					core.IssueCodeLeapYAMLMissing,
+					core.IssueCodeIntegrationScriptMissing,
+					core.IssueCodePreprocessFunctionMissing,
+					preStatus.Issues,
+				)
 			}
 
-			for _, code := range requiredMissingCodes {
-				if !containsIssueCode(preStatus.Issues, code) {
-					t.Fatalf("pre variant must include issue %q, got %+v", code, preStatus.Issues)
-				}
+			for _, code := range []core.IssueCode{
+				core.IssueCodeLeapYAMLMissing,
+				core.IssueCodeIntegrationScriptMissing,
+				core.IssueCodePreprocessFunctionMissing,
+				core.IssueCodeIntegrationTestMissing,
+			} {
 				if containsIssueCode(postStatus.Issues, code) {
 					t.Fatalf("post variant must not include issue %q, got %+v", code, postStatus.Issues)
 				}
@@ -61,13 +72,14 @@ func TestFixturePreVsPostIssueDeltas(t *testing.T) {
 }
 
 func TestFixturePlannerPrimaryStepPreVariant(t *testing.T) {
-	requireFixtureE2EEnabled(t)
+	requireFixtureReposPrepared(t)
 	t.Setenv(validate.HarnessEnableEnvVar, "0")
 
 	fixtures := loadFixtures(t)
 	allowedPrimary := map[core.EnsureStepID]struct{}{
 		core.EnsureStepLeapYAML:                {},
 		core.EnsureStepIntegrationScript:       {},
+		core.EnsureStepPreprocessContract:      {},
 		core.EnsureStepIntegrationTestContract: {},
 	}
 
@@ -90,8 +102,39 @@ func TestFixturePlannerPrimaryStepPreVariant(t *testing.T) {
 	}
 }
 
+func TestFixturePostVariantsAreContractComplete(t *testing.T) {
+	requireFixtureReposPrepared(t)
+	t.Setenv(validate.HarnessEnableEnvVar, "0")
+
+	planAdapter := planner.NewDeterministicPlanner()
+	fixtures := loadFixtures(t)
+	for _, fixture := range fixtures {
+		fixture := fixture
+		t.Run(fixture.ID, func(t *testing.T) {
+			_, postRoot := resolveFixtureRoots(t, fixture.ID)
+			postSnapshot := core.WorkspaceSnapshot{
+				Repository: core.RepositoryState{Root: postRoot},
+			}
+
+			postStatus := inspectWithSnapshot(t, postSnapshot)
+			blockers := blockingIssues(postStatus.Issues)
+			if len(blockers) > 0 {
+				t.Fatalf("post variant must not have blocking issues, got %+v", blockers)
+			}
+
+			plan, err := planAdapter.Plan(context.Background(), postSnapshot, postStatus)
+			if err != nil {
+				t.Fatalf("Plan failed: %v", err)
+			}
+			if plan.Primary.ID != core.EnsureStepComplete {
+				t.Fatalf("expected post variant primary step %q, got %q (issues=%+v)", core.EnsureStepComplete, plan.Primary.ID, postStatus.Issues)
+			}
+		})
+	}
+}
+
 func TestFixturePersistenceArtifactsExistWhenEnabled(t *testing.T) {
-	requireFixtureE2EEnabled(t)
+	requireFixtureReposPrepared(t)
 	t.Setenv(validate.HarnessEnableEnvVar, "0")
 
 	fixtures := loadFixtures(t)
@@ -182,11 +225,23 @@ func containsIssueCode(issues []core.Issue, code core.IssueCode) bool {
 	return false
 }
 
-func requireFixtureE2EEnabled(t *testing.T) {
-	t.Helper()
-	if os.Getenv(fixtureE2EEnvVar) != "1" {
-		t.Skip("fixture e2e is opt-in; set CONCIERGE_RUN_FIXTURE_E2E=1")
+func containsAnyIssueCode(issues []core.Issue, codes ...core.IssueCode) bool {
+	for _, code := range codes {
+		if containsIssueCode(issues, code) {
+			return true
+		}
 	}
+	return false
+}
+
+func blockingIssues(issues []core.Issue) []core.Issue {
+	blocking := make([]core.Issue, 0, len(issues))
+	for _, issue := range issues {
+		if issue.Severity == core.SeverityError {
+			blocking = append(blocking, issue)
+		}
+	}
+	return blocking
 }
 
 func resolveFixtureRoots(t *testing.T, fixtureID string) (string, string) {
@@ -203,6 +258,26 @@ func resolveFixtureRoots(t *testing.T, fixtureID string) (string, string) {
 	}
 
 	return preRoot, postRoot
+}
+
+func requireFixtureReposPrepared(t *testing.T) {
+	t.Helper()
+
+	repoRoot := repoRootFromRuntime(t)
+	fixtures := loadFixtures(t)
+	for _, fixture := range fixtures {
+		preRoot := filepath.Join(repoRoot, ".fixtures", fixture.ID, "pre")
+		postRoot := filepath.Join(repoRoot, ".fixtures", fixture.ID, "post")
+
+		if _, err := os.Stat(filepath.Join(preRoot, ".git")); err != nil {
+			t.Skipf("fixture repositories are not prepared; run `make test-fixtures` or `bash scripts/fixtures_prepare.sh` (missing %q: %v)", preRoot, err)
+			return
+		}
+		if _, err := os.Stat(filepath.Join(postRoot, ".git")); err != nil {
+			t.Skipf("fixture repositories are not prepared; run `make test-fixtures` or `bash scripts/fixtures_prepare.sh` (missing %q: %v)", postRoot, err)
+			return
+		}
+	}
 }
 
 func loadFixtures(t *testing.T) []fixtureEntry {

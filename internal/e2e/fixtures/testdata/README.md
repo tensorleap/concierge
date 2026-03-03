@@ -1,15 +1,17 @@
 # Fixture E2E Notes
 
-Fixture E2E tests are opt-in and only run when `CONCIERGE_RUN_FIXTURE_E2E=1`.
+Fixture E2E tests are goal-driven. Run them via dedicated fixture commands.
 
-Before running them, materialize fixtures:
+Preferred:
+
+```bash
+make test-fixtures
+```
+
+Manual equivalent:
 
 ```bash
 bash scripts/fixtures_prepare.sh
-```
-
-Then run:
-
-```bash
-CONCIERGE_RUN_FIXTURE_E2E=1 go test ./internal/e2e/fixtures -v
+bash scripts/fixtures_verify.sh
+go test ./internal/e2e/fixtures -v
 ```

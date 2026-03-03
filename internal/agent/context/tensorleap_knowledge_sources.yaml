@@ -1,0 +1,54 @@
+version: tlkp-v1
+sources:
+  - section: leap_yaml_contract
+    section_label: leap.yaml mandatory configuration and upload boundaries
+    source_url: https://docs.tensorleap.ai/tensorleap-integration/leap.yaml
+    last_reviewed_at: "2026-03-03"
+  - section: preprocess_contract
+    section_label: preprocess function mandatory subset requirements
+    source_url: https://docs.tensorleap.ai/tensorleap-integration/writing-integration-code/preprocess-function
+    last_reviewed_at: "2026-03-03"
+  - section: preprocess_contract
+    section_label: PreprocessResponse and DataStateType contract definitions
+    source_url: https://docs.tensorleap.ai/tensorleap-integration/python-api/code_loader/contract/datasetclasses/preprocessresponse
+    last_reviewed_at: "2026-03-03"
+  - section: preprocess_contract
+    section_label: DataStateType enum values
+    source_url: https://docs.tensorleap.ai/tensorleap-integration/python-api/code_loader/contract/enums/datastatetype
+    last_reviewed_at: "2026-03-03"
+  - section: input_encoder_contract
+    section_label: input encoder decorator and execution contract
+    source_url: https://docs.tensorleap.ai/tensorleap-integration/writing-integration-code/input-encoder
+    last_reviewed_at: "2026-03-03"
+  - section: input_encoder_contract
+    section_label: tensorleap_input_encoder decorator signature
+    source_url: https://docs.tensorleap.ai/tensorleap-integration/python-api/code_loader/decorators/tensorleap_input_encoder
+    last_reviewed_at: "2026-03-03"
+  - section: ground_truth_encoder_contract
+    section_label: ground-truth encoder decorator and subset behavior
+    source_url: https://docs.tensorleap.ai/tensorleap-integration/writing-integration-code/ground-truth-encoder
+    last_reviewed_at: "2026-03-03"
+  - section: ground_truth_encoder_contract
+    section_label: tensorleap_gt_encoder decorator signature
+    source_url: https://docs.tensorleap.ai/tensorleap-integration/python-api/code_loader/decorators/tensorleap_gt_encoder
+    last_reviewed_at: "2026-03-03"
+  - section: integration_test_wiring_contract
+    section_label: integration test wiring and called-decorator rule
+    source_url: https://docs.tensorleap.ai/tensorleap-integration/integration-test
+    last_reviewed_at: "2026-03-03"
+  - section: integration_test_wiring_contract
+    section_label: tensorleap_integration_test decorator signature
+    source_url: https://docs.tensorleap.ai/tensorleap-integration/python-api/code_loader/decorators/tensorleap_integration_test
+    last_reviewed_at: "2026-03-03"
+  - section: load_model_contract
+    section_label: supported model formats and batch dimension requirements
+    source_url: https://docs.tensorleap.ai/tensorleap-integration/model-integration
+    last_reviewed_at: "2026-03-03"
+  - section: load_model_contract
+    section_label: tensorleap_load_model decorator signature and output mapping
+    source_url: https://docs.tensorleap.ai/tensorleap-integration/python-api/code_loader/decorators/tensorleap_load_model
+    last_reviewed_at: "2026-03-03"
+  - section: load_model_contract
+    section_label: PredictionTypeHandler dataclass definition
+    source_url: https://docs.tensorleap.ai/tensorleap-integration/python-api/code_loader/contract/datasetclasses/predictiontypehandler
+    last_reviewed_at: "2026-03-03"

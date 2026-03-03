@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bufio"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,17 +95,29 @@ func TestRunNonDryRunReturnsErrorOnMaxIterationsStop(t *testing.T) {
 	}
 }
 
-func TestRunEnableAgentFailsWhenCommandUnavailable(t *testing.T) {
-	disableHarness(t)
+func TestRunFailsWhenClaudeUnavailableWhenAgentStepIsNeeded(t *testing.T) {
 	repo := initRunTestRepo(t, true)
+	writeFile(t, filepath.Join(repo, "leap_binder.py"), "def helper():\n    return []\n")
+	disableHarnessWithoutClaude(t)
 	withWorkingDir(t, repo)
 
-	_, err := executeCLI(t, "run", "--enable-agent", "--agent-command=definitely-not-a-real-binary")
+	_, err := executeCLI(t, "run", "--yes", "--max-iterations=1")
 	if err == nil {
-		t.Fatal("expected run to fail when agent command is unavailable")
+		t.Fatal("expected run to fail when claude is unavailable")
 	}
 	if got := core.KindOf(err); got != core.KindMissingDependency {
 		t.Fatalf("expected missing dependency error kind, got %q (err=%v)", got, err)
+	}
+}
+
+func TestRunDoesNotRequireClaudeAtStartupWhenNotNeeded(t *testing.T) {
+	repo := initRunTestRepo(t, true)
+	disableHarnessWithoutClaude(t)
+	withWorkingDir(t, repo)
+
+	output, err := executeCLI(t, "run", "--max-iterations=1")
+	if err != nil {
+		t.Fatalf("expected run to succeed when no agent-backed step is needed, got: %v\noutput=%q", err, output)
 	}
 }
 
@@ -172,7 +186,7 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	if !strings.Contains(output, "Integration Checklist") {
 		t.Fatalf("expected checklist in output, got output: %q", output)
 	}
-	if !strings.Contains(output, "Allow Concierge to make changes for this check now?") {
+	if !strings.Contains(output, "Apply this fix now?") {
 		t.Fatalf("expected pre-change approval prompt, got output: %q", output)
 	}
 	if !strings.Contains(output, "Current blocker: leap.yaml should be present and valid") {
@@ -235,7 +249,7 @@ func TestStepApprovalMessageShowsOnlyChecklistThroughBlockingStep(t *testing.T) 
 	if strings.Contains(message, "Required secrets are configured") {
 		t.Fatalf("expected unverified checks to be hidden, got message: %q", message)
 	}
-	if strings.Contains(message, "Model artifact is Tensorleap-compatible") {
+	if strings.Contains(message, "Model path for @tensorleap_load_model is resolved and supported") {
 		t.Fatalf("expected model row to stay hidden until leap.yaml is present, got message: %q", message)
 	}
 	if strings.Contains(message, "Upload prerequisites are satisfied") {
@@ -286,7 +300,7 @@ func TestRunDeclineStepApprovalLeavesRepoUnchanged(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected max-iterations stop to return error")
 	}
-	if !strings.Contains(output, "Allow Concierge to make changes for this check now?") {
+	if !strings.Contains(output, "Apply this fix now?") {
 		t.Fatalf("expected pre-change approval prompt, got output: %q", output)
 	}
 	if strings.Contains(output, "Apply and commit these changes? [Y/n]:") {
@@ -356,6 +370,63 @@ func TestRunWithPersistWritesConciergeArtifacts(t *testing.T) {
 	}
 }
 
+func TestEnsureModelPathSelectionForStepNonInteractiveFailsOnAmbiguous(t *testing.T) {
+	status := core.IntegrationStatus{
+		Contracts: &core.IntegrationContracts{
+			ModelCandidates: []core.ModelCandidate{
+				{Path: "model/a.h5"},
+				{Path: "model/b.onnx"},
+			},
+		},
+	}
+	current := ""
+	err := ensureModelPathSelectionForStep(
+		core.EnsureStep{ID: core.EnsureStepPreprocessContract},
+		status,
+		true,
+		func() string { return current },
+		func(path string) { current = path },
+		t.TempDir(),
+		true,
+		bufio.NewReader(strings.NewReader("")),
+		io.Discard,
+	)
+	if err == nil {
+		t.Fatal("expected model selection error in non-interactive mode")
+	}
+	if !strings.Contains(err.Error(), "--model-path") {
+		t.Fatalf("expected --model-path guidance, got %v", err)
+	}
+}
+
+func TestEnsureModelPathSelectionForStepSelectsSingleCandidate(t *testing.T) {
+	status := core.IntegrationStatus{
+		Contracts: &core.IntegrationContracts{
+			ModelCandidates: []core.ModelCandidate{
+				{Path: "model/a.h5"},
+			},
+		},
+	}
+	current := ""
+	err := ensureModelPathSelectionForStep(
+		core.EnsureStep{ID: core.EnsureStepPreprocessContract},
+		status,
+		true,
+		func() string { return current },
+		func(path string) { current = path },
+		t.TempDir(),
+		false,
+		bufio.NewReader(strings.NewReader("")),
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if current != "model/a.h5" {
+		t.Fatalf("expected selected model path %q, got %q", "model/a.h5", current)
+	}
+}
+
 func initRunTestRepo(t *testing.T, complete bool) string {
 	t.Helper()
 
@@ -379,9 +450,20 @@ func initRunTestRepoAtPath(t *testing.T, repo string, complete bool) {
 	writeFile(t, filepath.Join(repo, "README.md"), "test repo\n")
 	writeFile(t, filepath.Join(repo, ".gitignore"), ".concierge/\n")
 	if complete {
-		writeFile(t, filepath.Join(repo, "leap.yaml"), "entryFile: leap_binder.py\n")
-		writeFile(t, filepath.Join(repo, "leap_binder.py"), "def noop():\n    return None\n")
+		writeFile(t, filepath.Join(repo, "leap.yaml"), strings.Join([]string{
+			"entryFile: leap_binder.py",
+			"",
+		}, "\n"))
+		writeFile(t, filepath.Join(repo, "leap_binder.py"), strings.Join([]string{
+			"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_preprocess",
+			"",
+			"@tensorleap_preprocess()",
+			"def preprocess():",
+			"    return []",
+			"",
+		}, "\n"))
 		writeFile(t, filepath.Join(repo, "leap_custom_test.py"), "def test_noop():\n    return None\n")
+		writeFile(t, filepath.Join(repo, "model", "model.h5"), "binary\n")
 	}
 
 	runGit(t, repo, "add", ".")
@@ -422,6 +504,9 @@ func runGit(t *testing.T, repo string, args ...string) string {
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed for %q: %v", path, err)
+	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile failed for %q: %v", path, err)
 	}
@@ -431,9 +516,17 @@ func disableHarness(t *testing.T) {
 	t.Helper()
 	t.Setenv("CONCIERGE_ENABLE_HARNESS", "0")
 	mockLeapCLIInstalled(t)
+	mockClaudeCLIInstalled(t)
 }
 
-func mockLeapCLIInstalled(t *testing.T) {
+func disableHarnessWithoutClaude(t *testing.T) {
+	t.Helper()
+	t.Setenv("CONCIERGE_ENABLE_HARNESS", "0")
+	binDir := mockLeapCLIInstalled(t)
+	t.Setenv("PATH", strings.Join([]string{binDir, "/usr/bin", "/bin"}, string(os.PathListSeparator)))
+}
+
+func mockLeapCLIInstalled(t *testing.T) string {
 	t.Helper()
 
 	binDir := t.TempDir()
@@ -471,6 +564,23 @@ esac
 `
 	if err := os.WriteFile(leapPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("WriteFile failed for mock leap CLI: %v", err)
+	}
+
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return binDir
+}
+
+func mockClaudeCLIInstalled(t *testing.T) {
+	t.Helper()
+
+	binDir := t.TempDir()
+	commandPath := filepath.Join(binDir, "claude")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+echo "claude mock: $*"
+`
+	if err := os.WriteFile(commandPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile failed for mock claude command: %v", err)
 	}
 
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))

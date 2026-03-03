@@ -10,6 +10,21 @@ type AgentTask struct {
 	TranscriptPath string   `json:"transcriptPath"`
 }
 
+// KnowledgeSource captures provenance metadata for one Tensorleap rule section.
+type KnowledgeSource struct {
+	Section        string `json:"section" yaml:"section"`
+	SectionLabel   string `json:"sectionLabel" yaml:"section_label"`
+	SourceURL      string `json:"sourceUrl" yaml:"source_url"`
+	LastReviewedAt string `json:"lastReviewedAt" yaml:"last_reviewed_at"`
+}
+
+// DomainKnowledgePack contains versioned Tensorleap rule sections and source metadata.
+type DomainKnowledgePack struct {
+	Version  string            `json:"version"`
+	Sections map[string]string `json:"sections"`
+	Sources  []KnowledgeSource `json:"sources"`
+}
+
 // AgentResult captures the outcome of an agent task execution.
 type AgentResult struct {
 	Applied        bool                `json:"applied"`

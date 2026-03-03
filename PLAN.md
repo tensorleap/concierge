@@ -12,6 +12,7 @@ This ExecPlan is a living document. Keep `Progress`, `Gap Analysis`, `Surprises 
 - 2026-03-03: Step `9C` was merged to `main` and is now `ACCEPTED`. Replaced the remaining tail with an authoring-first sequence (`10A0-14B`) that breaks model, preprocess, input-encoder, GT-encoder, and integration-test wiring into independent detection + authoring + fixture-E2E validation steps.
 - 2026-03-03: Integrated `VALIDATION.md` as Step `10B1` (delta-scoped pre-commit integration quality gate) and wired it into gap analysis, progress tracking, execution order, and phase acceptance criteria.
 - 2026-03-03: Completed Step `10A0` plan synchronization by marking it `ACCEPTED` and aligning execution-order metadata with the already-merged authoring-first sequence.
+- 2026-03-03: Renumbered authoring/context slices so agent context injection is a strict prerequisite sequence (`10C-10F`) before all downstream authoring steps (`10G-10O`), plus fixture-level context quality validation (`12H`).
 
 ## Purpose / Exit Target
 
@@ -27,23 +28,24 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 
 | Gap ID | Requirement Source | Current State | Impact | Closing Step |
 | --- | --- | --- | --- | --- |
-| G1 | README §8/§10: Ensure-step `Fix` must apply real actions | Implemented deterministic filesystem mutations for scaffoldable steps; non-supported steps still require dedicated authoring slices | Closed for scaffold scope; remaining authoring capabilities handled in `10C-10K` | 9A (`ACCEPTED`) |
+| G1 | README §8/§10: Ensure-step `Fix` must apply real actions | Implemented deterministic filesystem mutations for scaffoldable steps; non-supported steps still require dedicated authoring slices | Closed for scaffold scope; remaining authoring capabilities handled in `10C-10O` | 9A (`ACCEPTED`) |
 | G2 | README §10/§11: user approvals + diff review + commit workflow | Implemented runtime git diff approval/reject/commit flow | Closed; retain regression coverage | 9B (`ACCEPTED`) |
 | G3 | README §10: agent collaboration for focused objectives | Implemented and merged (`internal/agent/*`, agent executor dispatch, transcript evidence) | Closed; maintain with regression tests only | 9C (`ACCEPTED`) |
 | G4 | README §6.2: persistent mutable state (`.concierge/state.json`) | Implemented and persisted with invalidation reasons | Closed; retain regression coverage | 7A (`ACCEPTED`) |
-| G5 | README §6.1/§8.2: richer snapshot/inspection coverage | Implemented readiness expansion for runtime/model/CLI/auth/server probes | Partially closed; remaining contract-level detection gaps tracked in `10A-10J` | 8A (`ACCEPTED`), 10A-10J |
+| G5 | README §6.1/§8.2: richer snapshot/inspection coverage | Implemented readiness expansion for runtime/model/CLI/auth/server probes | Partially closed; remaining contract-level detection gaps tracked in `10A-10N` | 8A (`ACCEPTED`), 10A-10N |
 | G6 | README §8 planner semantics: deterministic next primary action with gate-aware ordering | Implemented severity-first planner policy with upload gate awareness | Closed for existing issue families; future families added in authoring slices | 8B (`ACCEPTED`) |
-| G7 | README §9 + user requirement: preprocess authoring must be detection-driven and individually tested | No inspector/validator emission path currently produces preprocess-specific issue codes from real repo analysis | Planner cannot deterministically trigger preprocess authoring from real deficits | 10D, 10E, 12C |
-| G8 | README §9 + user requirement: input-encoder authoring must be detection-driven and individually tested | No deterministic detector currently emits missing/coverage issues for specific input encoders from contract discovery | Concierge cannot reliably suggest missing input encoders before authoring | 10F, 10G, 12D |
-| G9 | README §9 + user requirement: GT-encoder authoring must be detection-driven and individually tested | No deterministic detector currently emits GT-specific deficits from discovered integration contracts | GT authoring remains under-specified and under-tested | 10H, 10I, 12E |
-| G10 | README §2.3/§8.2 model contract + user requirement: model discovery/selection/fixing must be explicit and tested | Inspector validates declared model path but lacks authoring-first model discovery strategy for missing/ambiguous model wiring | Model contract failures can remain opaque and difficult to fix deterministically | 10B, 10C, 12B |
+| G7 | README §9 + user requirement: preprocess authoring must be detection-driven and individually tested | No inspector/validator emission path currently produces preprocess-specific issue codes from real repo analysis | Planner cannot deterministically trigger preprocess authoring from real deficits | 10H, 10I, 12C |
+| G8 | README §9 + user requirement: input-encoder authoring must be detection-driven and individually tested | No deterministic detector currently emits missing/coverage issues for specific input encoders from contract discovery | Concierge cannot reliably suggest missing input encoders before authoring | 10J, 10K, 12D |
+| G9 | README §9 + user requirement: GT-encoder authoring must be detection-driven and individually tested | No deterministic detector currently emits GT-specific deficits from discovered integration contracts | GT authoring remains under-specified and under-tested | 10L, 10M, 12E |
+| G10 | README §2.3/§8.2 model contract + user requirement: model discovery/selection/fixing must be explicit and tested | Inspector validates declared model path but lacks authoring-first model discovery strategy for missing/ambiguous model wiring | Model contract failures can remain opaque and difficult to fix deterministically | 10B, 10G, 12B |
 | G11 | README §9: runtime harness is core validation layer | Harness is optional via env and currently stub-script-based | No high-resolution runtime correctness evidence in normal runs | 11A, 11B |
-| G12 | README §9.2: integration-test call coverage enforcement | No AST/runtime enforcement of required decorator calls in integration test | False positives possible despite incomplete wiring | 10J, 10K, 12F |
+| G12 | README §9.2: integration-test call coverage enforcement | No AST/runtime enforcement of required decorator calls in integration test | False positives possible despite incomplete wiring | 10N, 10O, 12F |
 | G13 | README §12: real `leap` workflow + upload gating + explicit confirmation | `concierge run` has no `leap` orchestration path and no push gate | Cannot complete actual Tensorleap integration flow | 13A |
-| G14 | README §13.4 + user request: capability-level fixture validation | Fixture E2E checks only artifact-missing deltas and persistence files | No proof that each authoring capability converges independently | 12A-12G |
+| G14 | README §13.4 + user request: capability-level fixture validation | Fixture E2E checks only artifact-missing deltas and persistence files | No proof that each authoring capability converges independently | 12A-12H |
 | G15 | PLAN quality gate requirement + user request: CI must run capability-level fixture E2E | CI prepares/verifies fixtures but does not run authoring-focused fixture suite on PRs | Regressions can merge without capability-level safety net | 13B |
 | G16 | README docs requirements + operator handoff | README/docs do not yet describe detection->suggest->author->validate authoring loop by capability | Onboarding and operations remain ambiguous for the core concierge value proposition | 14A |
 | G17 | V1 quality gate requirement: commit approval must run after delta-scoped integration checks | Engine currently calls git commit flow before validator result and has no step-local syntax gate over changed files | Broken step-local integration edits can be committed and approved too early | 10B1 |
+| G18 | README §10 + user requirement: agent tasks need Tensorleap domain context plus strict scoped edits | Agent tasks currently receive objective/constraints only; no injected Tensorleap knowledge pack or repo-specific context pack | Agent output can miss decorator/library contracts, causing avoidable iterative churn | 10C-10F, 12H |
 
 ## Progress
 
@@ -80,15 +82,19 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 10A: Contract discovery core | `DONE` | 2026-03-03 (`PR #11`) | Added deterministic entry-file contract discovery for decorators and integration-test call symbols with graceful path-aware failures. |
 | Step 10B: Model discovery and need detection | `DONE` | 2026-03-03 (`PR #12`) | Added deterministic model candidate discovery from `@tensorleap_load_model` and repo search, ambiguity/missing/format/outside-repo issues, and candidate evidence context without enforcing leap.yaml include/exclude for model artifacts. |
 | Step 10B1: Pre-commit integration quality gate (delta-scoped) | `PENDING` | — | Run step-local integration validation and changed-file syntax checks before commit approval is offered. |
-| Step 10C: Model contract authoring flow | `PENDING` | — | Add model-specific authoring objectives and deterministic recommendation/evidence path. |
-| Step 10D: Preprocess need detection | `PENDING` | — | Emit preprocess-specific issue codes from real contract inspection. |
-| Step 10E: Preprocess authoring flow | `PENDING` | — | Add preprocess authoring objective context, approvals, and evidence expectations. |
-| Step 10F: Input-encoder need detection | `PENDING` | — | Detect missing input encoders and per-symbol coverage gaps. |
-| Step 10G: Input-encoder suggestion and authoring flow | `PENDING` | — | Render missing-input suggestions to users and pass symbol-level context to authoring executor. |
-| Step 10H: GT-encoder need detection | `PENDING` | — | Detect GT encoder deficits and labeled-subset contract violations. |
-| Step 10I: GT-encoder suggestion and authoring flow | `PENDING` | — | Render GT-target suggestions and enforce labeled-subset constraints in authoring tasks. |
-| Step 10J: Integration-test wiring need detection | `PENDING` | — | Add AST-based required-call detection for `@tensorleap_integration_test` paths. |
-| Step 10K: Integration-test wiring authoring flow | `PENDING` | — | Add targeted authoring objective to wire missing integration-test calls deterministically. |
+| Step 10C: Tensorleap knowledge pack baseline | `PENDING` | — | Add checked-in Tensorleap integration knowledge pack + source manifest used for agent context injection. |
+| Step 10D: Step-scoped domain slice and edit-scope policy | `PENDING` | — | Map ensure-steps to minimal Tensorleap rule slices and strict allowed/forbidden edit scope contracts. |
+| Step 10E: Repo-specific context pack assembly | `PENDING` | — | Build deterministic repo-facts context bundles from snapshot/inspector/planner evidence for each agent task. |
+| Step 10F: Claude prompt/system-context wiring | `PENDING` | — | Inject stable system prompt plus structured step prompt sections (objective, scope, repo facts, Tensorleap rules, acceptance checks). |
+| Step 10G: Model contract authoring flow | `PENDING` | — | Add model-specific authoring objectives and deterministic recommendation/evidence path. |
+| Step 10H: Preprocess need detection | `PENDING` | — | Emit preprocess-specific issue codes from real contract inspection. |
+| Step 10I: Preprocess authoring flow | `PENDING` | — | Add preprocess authoring objective context, approvals, and evidence expectations. |
+| Step 10J: Input-encoder need detection | `PENDING` | — | Detect missing input encoders and per-symbol coverage gaps. |
+| Step 10K: Input-encoder suggestion and authoring flow | `PENDING` | — | Render missing-input suggestions to users and pass symbol-level context to authoring executor. |
+| Step 10L: GT-encoder need detection | `PENDING` | — | Detect GT encoder deficits and labeled-subset contract violations. |
+| Step 10M: GT-encoder suggestion and authoring flow | `PENDING` | — | Render GT-target suggestions and enforce labeled-subset constraints in authoring tasks. |
+| Step 10N: Integration-test wiring need detection | `PENDING` | — | Add AST-based required-call detection for `@tensorleap_integration_test` paths. |
+| Step 10O: Integration-test wiring authoring flow | `PENDING` | — | Add targeted authoring objective to wire missing integration-test calls deterministically. |
 | Step 11A: Real runtime harness core (Layer 2) | `PENDING` | — | Replace stub harness with runtime script, schema-v1 events, and default-on validation. |
 | Step 11B: Harness semantic coverage mapping | `PENDING` | — | Map runtime harness failures to preprocess/encoder/validation issues with per-symbol evidence. |
 | Step 12A: Fixture mutation framework for capability-isolated cases | `PENDING` | — | Generate fixture variants with exactly one broken capability per case. |
@@ -98,6 +104,7 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 12E: Capability E2E (GT encoders) | `PENDING` | — | Prove missing-GT-encoder detection and authoring convergence on fixture cases. |
 | Step 12F: Capability E2E (integration-test wiring) | `PENDING` | — | Prove missing required integration-test calls are detected and fixed in fixture flow. |
 | Step 12G: Multi-step recovery E2E | `PENDING` | — | Prove deterministic multi-capability convergence across ordered ensure-steps. |
+| Step 12H: Capability E2E (agent context injection quality) | `PENDING` | — | Prove agent task context bundles include step-relevant Tensorleap knowledge and repo facts while enforcing strict scope boundaries. |
 | Step 13A: Upload readiness and guarded `leap push` execution | `PENDING` | — | Implement full readiness probes and explicit push gate with auditable command evidence. |
 | Step 13B: CI expansion with capability E2E execution | `PENDING` | — | Add lint/test/build + capability-level fixture E2E as required CI jobs. |
 | Step 14A: Documentation sync (README + docs/*) | `PENDING` | — | Document capability-by-capability authoring workflow, trust model, and operational guidance. |
@@ -118,6 +125,7 @@ Out of scope for this release train:
 2. Full backend enforcement sandbox outside local trust model.
 3. Automatic Tensorleap server installation/provisioning.
 4. Optional integration asset assistance (metadata/visualizers/metrics/loss/custom layers), which is deferred to v2.
+5. Automated Tensorleap-doc auto-refresh tooling; knowledge-pack updates are manual/code-agent assisted PRs when needed.
 
 ## Detailed Step Specifications
 
@@ -733,7 +741,217 @@ Rollback boundary:
 
 ---
 
-### Step 10C: Model contract authoring flow (`PENDING`)
+### Step 10C: Tensorleap knowledge pack baseline (`PENDING`)
+
+Objective:
+
+Create a checked-in Tensorleap domain knowledge pack (mandatory integration contracts only) plus source manifest for deterministic agent context injection.
+
+Files to add:
+
+1. `internal/agent/context/tensorleap_knowledge_v1.md`
+2. `internal/agent/context/tensorleap_knowledge_sources.yaml`
+3. `internal/agent/context/loader.go`
+4. `internal/agent/context/loader_test.go`
+
+Files to modify:
+
+1. `internal/adapters/execute/agent_executor.go`
+2. `internal/agent/types.go`
+
+Interface/API changes:
+
+1. `type DomainKnowledgePack struct { Version string; Sections map[string]string; Sources []KnowledgeSource }`
+2. `LoadDomainKnowledgePack() (DomainKnowledgePack, error)`
+
+Locked behavior:
+
+1. Runtime reads only checked-in knowledge-pack files; no network/doc fetch during `concierge run`.
+2. Knowledge pack content is limited to Concierge v1 mandatory contracts (`leap.yaml`, preprocess, input encoders, GT encoders, integration test wiring, load model `.onnx/.h5` requirements).
+3. Source manifest includes source URL + section label + `last_reviewed_at` metadata for each included rule block.
+4. Missing/invalid required sections fail deterministically before agent invocation.
+
+Tests:
+
+1. `TestLoadDomainKnowledgePackSuccess`
+2. `TestLoadDomainKnowledgePackRejectsMissingRequiredSections`
+3. `TestLoadDomainKnowledgePackParsesSourceManifest`
+
+Validation commands:
+
+1. `go test ./internal/agent ./internal/adapters/execute -run KnowledgePack -v`
+2. `go test ./...`
+
+Acceptance criteria:
+
+1. Agent-authoring path can load a deterministic, versioned Tensorleap knowledge pack from repo-local files.
+2. Knowledge-pack provenance is auditable via the checked-in source manifest.
+
+Rollback boundary:
+
+- Revert `internal/agent/context/*` and direct loader wiring only.
+
+---
+
+### Step 10D: Step-scoped domain slice and edit-scope policy (`PENDING`)
+
+Objective:
+
+Enforce strict, step-specific authoring scope by mapping each ensure-step to minimal Tensorleap rule slices and explicit edit boundaries.
+
+Files to add:
+
+1. `internal/adapters/execute/agent_scope_policy.go`
+2. `internal/adapters/execute/agent_scope_policy_test.go`
+
+Files to modify:
+
+1. `internal/adapters/execute/agent_executor.go`
+2. `internal/agent/types.go`
+
+Interface/API changes:
+
+1. `type AgentScopePolicy struct { AllowedFiles []string; ForbiddenAreas []string; RequiredOutcomes []string; StopAndAskTriggers []string; DomainSections []string }`
+2. `PolicyForStep(step core.EnsureStepID, snapshot core.WorkspaceSnapshot, status core.IntegrationStatus) (AgentScopePolicy, error)`
+
+Locked behavior:
+
+1. `ensure.preprocess_contract` policy requires preprocess + model-loading rule sections and forbids unrelated encoder/integration-test rewiring edits.
+2. `ensure.input_encoders` policy includes input-encoder-only domain sections and excludes GT/integration-test-specific rules.
+3. `ensure.ground_truth_encoders` policy includes GT-only domain sections and excludes input/integration-test-specific rules.
+4. Policy is attached to agent task evidence so scope decisions are auditable.
+
+Tests:
+
+1. `TestPolicyForPreprocessIncludesModelLoadAndPreprocessSections`
+2. `TestPolicyForInputEncodersExcludesGTAndIntegrationTestSections`
+3. `TestPolicyForStepReturnsErrorWhenScopeCannotBeResolved`
+
+Validation commands:
+
+1. `go test ./internal/adapters/execute -run ScopePolicy -v`
+2. `go test ./...`
+
+Acceptance criteria:
+
+1. Every agent-backed ensure-step has deterministic allowed/forbidden edit scope and domain-rule slice coverage.
+2. Out-of-scope guidance is explicit and test-covered.
+
+Rollback boundary:
+
+- Revert scope-policy module and direct `agent_executor` wiring only.
+
+---
+
+### Step 10E: Repo-specific context pack assembly (`PENDING`)
+
+Objective:
+
+Assemble deterministic repo-facts context bundles from snapshot/inspector/planner/validator outputs so the agent gets relevant repository state without broad exploration overhead.
+
+Files to add:
+
+1. `internal/adapters/execute/repo_context_pack.go`
+2. `internal/adapters/execute/repo_context_pack_test.go`
+
+Files to modify:
+
+1. `internal/adapters/execute/agent_executor.go`
+2. `internal/core/types.go`
+
+Interface/API changes:
+
+1. `type AgentRepoContext struct { RepoRoot string; EntryFile string; BinderFile string; LeapYAMLBoundary string; SelectedModelPath string; ModelCandidates []string; DecoratorInventory []string; IntegrationTestCalls []string; BlockingIssues []string; ValidationFindings []string }`
+2. `BuildAgentRepoContext(step core.EnsureStepID, snapshot core.WorkspaceSnapshot, status core.IntegrationStatus, validation core.ValidationResult) (AgentRepoContext, error)`
+
+Locked behavior:
+
+1. Context includes step-relevant repository facts only (entry file, integration script location, model candidate state, current blockers, and relevant validation findings).
+2. Context builder applies deterministic truncation/ordering to avoid prompt bloat and preserve reproducibility.
+3. When required context is missing for the selected step, execution fails before agent invocation with an actionable deterministic error.
+4. Context pack is persisted as evidence artifact per iteration.
+
+Tests:
+
+1. `TestBuildAgentRepoContextIncludesSelectedModelAndCandidates`
+2. `TestBuildAgentRepoContextDeterministicOrderingAndTruncation`
+3. `TestBuildAgentRepoContextFailsWhenRequiredStepContextMissing`
+
+Validation commands:
+
+1. `go test ./internal/adapters/execute ./internal/core -run RepoContext -v`
+2. `go test ./...`
+
+Acceptance criteria:
+
+1. Agent tasks receive deterministic, step-relevant repo context without relying on implicit repo rediscovery.
+2. Missing context blockers are surfaced before agent execution begins.
+
+Rollback boundary:
+
+- Revert repo-context pack builder and `agent_executor`/`core` wiring only.
+
+---
+
+### Step 10F: Claude prompt/system-context wiring (`PENDING`)
+
+Objective:
+
+Inject a stable system prompt plus structured user prompt sections combining objective, strict scope policy, repo context, and Tensorleap domain slices.
+
+Files to add:
+
+1. `internal/agent/prompt_contract.go`
+2. `internal/agent/prompt_contract_test.go`
+
+Files to modify:
+
+1. `internal/agent/runner.go`
+2. `internal/agent/runner_test.go`
+3. `internal/adapters/execute/agent_executor.go`
+4. `internal/agent/types.go`
+
+Interface/API changes:
+
+1. Extend `agent.AgentTask` with explicit context payload fields (scope policy, repo context, domain knowledge slice IDs/version).
+2. `BuildClaudeSystemPrompt() string` and `BuildClaudeTaskPrompt(task AgentTask) string`.
+
+Locked behavior:
+
+1. Runner passes explicit `--system-prompt` for global operating policy (scope discipline, ambiguity handling, and Tensorleap contract fidelity).
+2. Task prompt uses fixed section order:
+   1. Objective
+   2. Edit Scope
+   3. Repository Facts
+   4. Tensorleap Rules
+   5. Acceptance Checks
+3. Prompt assembly is deterministic and includes knowledge-pack version metadata.
+4. No runtime auto-refresh/doc-fetch behavior is introduced.
+
+Tests:
+
+1. `TestRunnerInvokesClaudeWithSystemPrompt`
+2. `TestBuildClaudeTaskPromptIncludesAllRequiredSections`
+3. `TestBuildClaudeTaskPromptForInputStepExcludesOutOfScopeRuleSections`
+4. `TestRunnerFailsFastWhenRequiredContextPayloadIsMissing`
+
+Validation commands:
+
+1. `go test ./internal/agent ./internal/adapters/execute -run Prompt -v`
+2. `go test ./...`
+
+Acceptance criteria:
+
+1. Agent invocation includes a stable system prompt and structured step-specific task prompt.
+2. Prompt contents are narrow, deterministic, and auditable via transcript/evidence artifacts.
+
+Rollback boundary:
+
+- Revert prompt-contract module and direct runner/executor task wiring only.
+
+---
+
+### Step 10G: Model contract authoring flow (`PENDING`)
 
 Objective:
 
@@ -760,9 +978,10 @@ Interface/API changes:
 
 Locked behavior:
 
-1. For model issues, CLI prompt must show recommended model target before approval.
-2. Agent objective must include a strict “do not touch unrelated training logic” constraint.
-3. Execution evidence must include selected model path and rationale.
+1. Precondition: Steps `10C-10F` are complete; model authoring does not run without injected knowledge pack, scope policy, repo context pack, and structured prompt wiring.
+2. For model issues, CLI prompt must show recommended model target before approval.
+3. Agent objective must include a strict “do not touch unrelated training logic” constraint.
+4. Execution evidence must include selected model path and rationale.
 
 Tests:
 
@@ -786,7 +1005,7 @@ Rollback boundary:
 
 ---
 
-### Step 10D: Preprocess need detection (`PENDING`)
+### Step 10H: Preprocess need detection (`PENDING`)
 
 Objective:
 
@@ -832,7 +1051,7 @@ Rollback boundary:
 
 ---
 
-### Step 10E: Preprocess authoring flow (`PENDING`)
+### Step 10I: Preprocess authoring flow (`PENDING`)
 
 Objective:
 
@@ -851,12 +1070,13 @@ Files to modify:
 
 Locked behavior:
 
-1. Agent objective for preprocess must include:
+1. Precondition: Steps `10C-10F` are complete; preprocess authoring does not run without injected knowledge pack, scope policy, repo context pack, and structured prompt wiring.
+2. Agent objective for preprocess must include:
    1. mandatory train + validation subsets
    2. deterministic, non-empty subset expectation when feasible
    3. prohibition against unrelated refactors
-2. Approval prompt must explicitly describe preprocess-specific intended change.
-3. Evidence must capture preprocess symbol(s) targeted.
+3. Approval prompt must explicitly describe preprocess-specific intended change.
+4. Evidence must capture preprocess symbol(s) targeted.
 
 Tests:
 
@@ -880,7 +1100,7 @@ Rollback boundary:
 
 ---
 
-### Step 10F: Input-encoder need detection (`PENDING`)
+### Step 10J: Input-encoder need detection (`PENDING`)
 
 Objective:
 
@@ -928,7 +1148,7 @@ Rollback boundary:
 
 ---
 
-### Step 10G: Input-encoder suggestion and authoring flow (`PENDING`)
+### Step 10K: Input-encoder suggestion and authoring flow (`PENDING`)
 
 Objective:
 
@@ -947,9 +1167,10 @@ Files to modify:
 
 Locked behavior:
 
-1. Approval prompt lists missing input encoder symbols.
-2. Agent objective includes those exact symbols and model-shape constraints.
-3. Evidence captures recommendation list and resolved authored symbols.
+1. Precondition: Steps `10C-10F` are complete; input-encoder authoring does not run without injected knowledge pack, scope policy, repo context pack, and structured prompt wiring.
+2. Approval prompt lists missing input encoder symbols.
+3. Agent objective includes those exact symbols and model-shape constraints.
+4. Evidence captures recommendation list and resolved authored symbols.
 
 Tests:
 
@@ -973,7 +1194,7 @@ Rollback boundary:
 
 ---
 
-### Step 10H: GT-encoder need detection (`PENDING`)
+### Step 10L: GT-encoder need detection (`PENDING`)
 
 Objective:
 
@@ -1018,7 +1239,7 @@ Rollback boundary:
 
 ---
 
-### Step 10I: GT-encoder suggestion and authoring flow (`PENDING`)
+### Step 10M: GT-encoder suggestion and authoring flow (`PENDING`)
 
 Objective:
 
@@ -1037,9 +1258,10 @@ Files to modify:
 
 Locked behavior:
 
-1. Prompt and agent context must distinguish GT targets from input targets.
-2. Agent objective must include “run on labeled subsets only” guidance.
-3. Evidence must record GT symbols authored/repaired.
+1. Precondition: Steps `10C-10F` are complete; GT-encoder authoring does not run without injected knowledge pack, scope policy, repo context pack, and structured prompt wiring.
+2. Prompt and agent context must distinguish GT targets from input targets.
+3. Agent objective must include “run on labeled subsets only” guidance.
+4. Evidence must record GT symbols authored/repaired.
 
 Tests:
 
@@ -1063,7 +1285,7 @@ Rollback boundary:
 
 ---
 
-### Step 10J: Integration-test wiring need detection (`PENDING`)
+### Step 10N: Integration-test wiring need detection (`PENDING`)
 
 Objective:
 
@@ -1108,7 +1330,7 @@ Rollback boundary:
 
 ---
 
-### Step 10K: Integration-test wiring authoring flow (`PENDING`)
+### Step 10O: Integration-test wiring authoring flow (`PENDING`)
 
 Objective:
 
@@ -1127,9 +1349,10 @@ Files to modify:
 
 Locked behavior:
 
-1. Suggestion text lists missing required calls and unknown calls separately.
-2. Agent objective includes strict scope: repair call wiring only.
-3. Evidence captures required-call set before and after authoring.
+1. Precondition: Steps `10C-10F` are complete; integration-test wiring authoring does not run without injected knowledge pack, scope policy, repo context pack, and structured prompt wiring.
+2. Suggestion text lists missing required calls and unknown calls separately.
+3. Agent objective includes strict scope: repair call wiring only.
+4. Evidence captures required-call set before and after authoring.
 
 Tests:
 
@@ -1555,6 +1778,51 @@ Rollback boundary:
 
 ---
 
+### Step 12H: Capability E2E (agent context injection quality) (`PENDING`)
+
+Objective:
+
+Prove that agent task context injection is step-relevant, Tensorleap-correct, and scope-bounded across capability flows.
+
+Files to add:
+
+1. `internal/e2e/fixtures/case_agent_context_quality_test.go`
+2. `internal/e2e/fixtures/testdata/cases/agent_context/*.golden.json`
+
+Files to modify:
+
+1. `internal/e2e/fixtures/fixtures_test.go`
+2. `scripts/fixtures_run_checks.sh`
+
+Locked assertions:
+
+1. Preprocess authoring case injects preprocess + model-loading Tensorleap rule sections and selected model-path context.
+2. Input-encoder authoring case excludes GT/integration-test-only rule sections from injected context.
+3. Agent scope policy in prompt/evidence lists allowed/forbidden edit boundaries for the selected capability.
+4. Missing knowledge-pack/context prerequisites fail deterministically before agent invocation.
+
+Tests:
+
+1. `TestFixtureCaseAgentContextPreprocessIncludesRequiredDomainSections`
+2. `TestFixtureCaseAgentContextInputEncoderExcludesOutOfScopeSections`
+3. `TestFixtureCaseAgentContextMissingPackFailsFast`
+
+Validation commands:
+
+1. `go test ./internal/e2e/fixtures -run AgentContext -v`
+2. `bash scripts/fixtures_run_checks.sh`
+
+Acceptance criteria:
+
+1. Context injection quality is proven end-to-end with deterministic fixture assertions.
+2. Step-specific context boundaries prevent cross-capability prompt contamination.
+
+Rollback boundary:
+
+- Revert agent-context E2E test/golden files only.
+
+---
+
 ### Step 13A: Upload readiness and guarded `leap push` execution (`PENDING`)
 
 Objective:
@@ -1738,7 +2006,7 @@ Final acceptance checklist commands:
 3. `make build`
 4. `make test-fixtures`
 5. Manual smoke: `go run ./cmd/concierge run --max-iterations=3 --persist`
-6. Manual smoke (agent-enabled): `go run ./cmd/concierge run --enable-agent --max-iterations=3 --persist`
+6. Manual smoke (agent-backed step requiring Claude CLI): `go run ./cmd/concierge run --max-iterations=3 --persist`
 
 Acceptance criteria:
 
@@ -1772,19 +2040,24 @@ Rollback boundary:
 18. Implement Step 10I.
 19. Implement Step 10J.
 20. Implement Step 10K.
-21. Implement Step 11A.
-22. Implement Step 11B.
-23. Implement Step 12A.
-24. Implement Step 12B.
-25. Implement Step 12C.
-26. Implement Step 12D.
-27. Implement Step 12E.
-28. Implement Step 12F.
-29. Implement Step 12G.
-30. Implement Step 13A.
-31. Implement Step 13B.
-32. Implement Step 14A.
-33. Implement Step 14B.
+21. Implement Step 10L.
+22. Implement Step 10M.
+23. Implement Step 10N.
+24. Implement Step 10O.
+25. Implement Step 11A.
+26. Implement Step 11B.
+27. Implement Step 12A.
+28. Implement Step 12B.
+29. Implement Step 12C.
+30. Implement Step 12D.
+31. Implement Step 12E.
+32. Implement Step 12F.
+33. Implement Step 12G.
+34. Implement Step 12H.
+35. Implement Step 13A.
+36. Implement Step 13B.
+37. Implement Step 14A.
+38. Implement Step 14B.
 
 Each step follows this gate:
 
@@ -1805,7 +2078,7 @@ Status semantics:
 
 Phase acceptance condition:
 
-1. Steps `1` through `14B` (including `10A0`, `10A`, `10B`, `10B1`, `10C-10K`, `11A-11B`, `12A-12G`, `13A-13B`, `14A-14B`) are `ACCEPTED`.
+1. Steps `1` through `14B` (including `10A0`, `10A`, `10B`, `10B1`, `10C-10O`, `11A-11B`, `12A-12H`, `13A-13B`, `14A-14B`) are `ACCEPTED`.
 2. Capability-level fixture E2E jobs are part of required CI and green.
 3. Concierge can perform user-approved detection->suggest->author->validate loops for model/preprocess/input-encoder/GT-encoder/integration-test wiring and complete guarded upload workflow end-to-end.
 
@@ -1839,15 +2112,18 @@ Phase acceptance condition:
 - Decision: Mark Step `9C` as `ACCEPTED` and re-plan remaining work around authoring-first capability slices instead of batching broad runtime/fixture changes.
   Rationale: The primary product value is guided code authoring for mandatory onboarding contracts; each capability must be independently detectable, fixable, and testable.
   Date/Author: 2026-03-03 / user + assistant.
-- Decision: Sequence detection and authoring steps (`10A-10K`) before runtime harness deepening and capability E2E assertions (`11A-12G`).
+- Decision: Sequence detection and authoring steps (`10A-10O`) before runtime harness deepening and capability E2E assertions (`11A-12H`).
   Rationale: Harness and fixture suites must validate capability-level behavior that is already concretely implemented and wired in planner/executor paths.
   Date/Author: 2026-03-03 / assistant.
 - Decision: Insert a dedicated delta-scoped pre-commit integration quality gate step (`10B1`) before authoring-heavy slices continue.
   Rationale: Commit approval must run only after step-local integration validation and changed-file syntax checks so broken step deltas are not committed prematurely.
   Date/Author: 2026-03-03 / user + assistant.
-- Decision: Use identifier `10B1` for the pre-commit gate instead of renumbering downstream authoring steps.
-  Rationale: Preserve referential stability for already-reviewed `10C-14B` capability slices while inserting the gate at the correct sequence point between `10B` and `10C`.
+- Decision: Use identifier `10B1` for the pre-commit gate.
+  Rationale: Keep a dedicated pre-commit quality gate between model discovery and context/authoring slices so commit approval cannot bypass step-local validation.
   Date/Author: 2026-03-03 / assistant.
+- Decision: Introduce explicit agent context-injection steps (`10C-10F`) using a checked-in Tensorleap knowledge pack and repo-specific context bundles; do not add runtime auto-refresh tooling.
+  Rationale: Agent tasks must be domain-correct and scope-bounded without adding online/runtime volatility; knowledge updates can be manual/code-agent assisted via normal PR flow.
+  Date/Author: 2026-03-03 / user + assistant.
 
 ## Outcomes & Retrospective
 
@@ -1861,9 +2137,9 @@ Primary residual risks:
 
 Mitigations:
 
-1. Implement detector slices first (`10A-10J`) and assert mapped primary-step expectations in unit tests.
-2. Gate authoring context with explicit recommendation payload tests (`10C`, `10E`, `10G`, `10I`, `10K`).
-3. Introduce deterministic fixture case generation before capability E2E tests (`12A` before `12B-12G`).
+1. Implement detector slices first (`10A-10N`) and assert mapped primary-step expectations in unit tests.
+2. Add explicit context-injection pipeline steps (`10C-10F`) and keep recommendation payload tests (`10G`, `10I`, `10K`, `10M`, `10O`) strict and deterministic.
+3. Introduce deterministic fixture case generation before capability E2E tests (`12A` before `12B-12H`).
 
 ## Interfaces and Dependencies
 

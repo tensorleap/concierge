@@ -78,7 +78,7 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 9C: AgentRunner integration for complex ensure-steps | `ACCEPTED` | 2026-03-03 (`main`) | Added task-scoped coding-agent delegation with transcript evidence integration in executor flow. |
 | Step 10A0: Plan state sync after 9C merge | `ACCEPTED` | 2026-03-03 (`main`) | Synchronized plan tracking after `9C` merge and verified authoring-first tail consistency (`10A-14B`). |
 | Step 10A: Contract discovery core | `DONE` | 2026-03-03 (`PR #11`) | Added deterministic entry-file contract discovery for decorators and integration-test call symbols with graceful path-aware failures. |
-| Step 10B: Model discovery and need detection | `PENDING` | — | Add deterministic model discovery and issue emission for missing/ambiguous model contract. |
+| Step 10B: Model discovery and need detection | `DONE` | 2026-03-03 (`PR #12`) | Added deterministic model candidate discovery (leap.yaml + load-model analysis + repo search), ambiguity/missing/format/outside-repo issues, and candidate evidence context without enforcing leap.yaml include/exclude for model artifacts. |
 | Step 10B1: Pre-commit integration quality gate (delta-scoped) | `PENDING` | — | Run step-local integration validation and changed-file syntax checks before commit approval is offered. |
 | Step 10C: Model contract authoring flow | `PENDING` | — | Add model-specific authoring objectives and deterministic recommendation/evidence path. |
 | Step 10D: Preprocess need detection | `PENDING` | — | Emit preprocess-specific issue codes from real contract inspection. |
@@ -569,7 +569,7 @@ Rollback boundary:
 
 ---
 
-### Step 10B: Model discovery and need detection (`PENDING`)
+### Step 10B: Model discovery and need detection (`DONE`)
 
 Objective:
 

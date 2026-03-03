@@ -393,6 +393,28 @@ func cloneIntegrationStatus(status core.IntegrationStatus) core.IntegrationStatu
 	if len(status.Issues) > 0 {
 		cloned.Issues = append([]core.Issue(nil), status.Issues...)
 	}
+	if status.Contracts != nil {
+		contracts := *status.Contracts
+		if len(status.Contracts.LoadModelFunctions) > 0 {
+			contracts.LoadModelFunctions = append([]string(nil), status.Contracts.LoadModelFunctions...)
+		}
+		if len(status.Contracts.PreprocessFunctions) > 0 {
+			contracts.PreprocessFunctions = append([]string(nil), status.Contracts.PreprocessFunctions...)
+		}
+		if len(status.Contracts.InputEncoders) > 0 {
+			contracts.InputEncoders = append([]string(nil), status.Contracts.InputEncoders...)
+		}
+		if len(status.Contracts.GroundTruthEncoders) > 0 {
+			contracts.GroundTruthEncoders = append([]string(nil), status.Contracts.GroundTruthEncoders...)
+		}
+		if len(status.Contracts.IntegrationTestFunctions) > 0 {
+			contracts.IntegrationTestFunctions = append([]string(nil), status.Contracts.IntegrationTestFunctions...)
+		}
+		if len(status.Contracts.IntegrationTestCalls) > 0 {
+			contracts.IntegrationTestCalls = append([]string(nil), status.Contracts.IntegrationTestCalls...)
+		}
+		cloned.Contracts = &contracts
+	}
 	return cloned
 }
 

@@ -11,6 +11,7 @@ This ExecPlan is a living document. Keep `Progress`, `Gap Analysis`, `Surprises 
 - 2026-03-03: Locked v1 product scope to mandatory onboarding contracts only. Optional asset assistance (metadata/visualizers/metrics/loss/custom layers) is deferred to v2 and removed from v1 ensure-step taxonomy.
 - 2026-03-03: Step `9C` was merged to `main` and is now `ACCEPTED`. Replaced the remaining tail with an authoring-first sequence (`10A0-14B`) that breaks model, preprocess, input-encoder, GT-encoder, and integration-test wiring into independent detection + authoring + fixture-E2E validation steps.
 - 2026-03-03: Integrated `VALIDATION.md` as Step `10B1` (delta-scoped pre-commit integration quality gate) and wired it into gap analysis, progress tracking, execution order, and phase acceptance criteria.
+- 2026-03-03: Completed Step `10A0` plan synchronization by marking it `ACCEPTED` and aligning execution-order metadata with the already-merged authoring-first sequence.
 
 ## Purpose / Exit Target
 
@@ -75,7 +76,7 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 9A: Deterministic executor implementations (non-agent) | `ACCEPTED` | 2026-02-26 (`main`) | Implemented deterministic filesystem-backed ensure-step fixes for scaffoldable contracts. |
 | Step 9B: GitManager runtime integration (diff/approve/reject/commit) | `ACCEPTED` | 2026-02-26 (`main`) | Added audited branch-safe diff review, approval/reject handling, and commit flow in runtime. |
 | Step 9C: AgentRunner integration for complex ensure-steps | `ACCEPTED` | 2026-03-03 (`main`) | Added task-scoped coding-agent delegation with transcript evidence integration in executor flow. |
-| Step 10A0: Plan state sync after 9C merge | `PENDING` | — | Update plan tracking to mark `9C` accepted and replace remaining tail with authoring-first steps. |
+| Step 10A0: Plan state sync after 9C merge | `ACCEPTED` | 2026-03-03 (`main`) | Synchronized plan tracking after `9C` merge and verified authoring-first tail consistency (`10A-14B`). |
 | Step 10A: Contract discovery core | `PENDING` | — | Add deterministic discovery of preprocess/encoders/integration-test contracts from entry file. |
 | Step 10B: Model discovery and need detection | `PENDING` | — | Add deterministic model discovery and issue emission for missing/ambiguous model contract. |
 | Step 10B1: Pre-commit integration quality gate (delta-scoped) | `PENDING` | — | Run step-local integration validation and changed-file syntax checks before commit approval is offered. |
@@ -478,7 +479,7 @@ Rollback boundary:
 
 ---
 
-### Step 10A0: Plan state sync after Step 9C merge (`PENDING`)
+### Step 10A0: Plan state sync after Step 9C merge (`ACCEPTED`)
 
 Objective:
 
@@ -1759,7 +1760,7 @@ Rollback boundary:
 5. Implement Step 9A.
 6. Implement Step 9B.
 7. Step 9C is already `ACCEPTED` (no implementation action required).
-8. Implement Step 10A0.
+8. Step 10A0 is already `ACCEPTED` (no implementation action required).
 9. Implement Step 10A.
 10. Implement Step 10B.
 11. Implement Step 10B1.
@@ -1851,7 +1852,7 @@ Phase acceptance condition:
 
 ## Outcomes & Retrospective
 
-Current state: baseline architecture through Step `9C` is accepted and merged; remaining work is now decomposed into capability-level authoring slices with explicit detection, suggestion, authoring, and fixture validation phases.
+Current state: baseline architecture through Step `10A0` is accepted and merged; remaining work is now decomposed into capability-level authoring slices with explicit detection, suggestion, authoring, and fixture validation phases.
 
 Primary residual risks:
 

@@ -12,15 +12,19 @@ func inspectGTEncoderContract(repoRoot string, status *core.IntegrationStatus) {
 		return
 	}
 
-	entryFilePath, source, ok := loadContractEntrySource(repoRoot, status.Contracts)
-	if !ok {
+	sources := loadContractSources(repoRoot, status.Contracts)
+	if len(sources) == 0 {
 		return
 	}
 
-	registrations := discoverEncoderRegistrations(source, "tensorleap_gt_encoder")
+	registrations := make([]encoderRegistration, 0, 8)
+	for _, source := range sources {
+		registrations = append(registrations, discoverEncoderRegistrations(source.Contents, "tensorleap_gt_encoder")...)
+	}
 	expected := expectedGTEncoderSymbols(status.Contracts, registrations)
 	actual := encoderRegistrationSymbols(registrations)
 	missing := missingContractSymbols(expected, actual)
+	issuePath := primaryContractSourcePath(sources, registrations)
 
 	if len(missing) > 0 {
 		issueCode := core.IssueCodeGTEncoderCoverageIncomplete
@@ -37,7 +41,7 @@ func inspectGTEncoderContract(repoRoot string, status *core.IntegrationStatus) {
 				Severity: core.SeverityError,
 				Scope:    core.IssueScopeGroundTruthEncoder,
 				Location: &core.IssueLocation{
-					Path:   entryFilePath,
+					Path:   issuePath,
 					Symbol: symbol,
 				},
 			})
@@ -52,7 +56,7 @@ func inspectGTEncoderContract(repoRoot string, status *core.IntegrationStatus) {
 				Severity: core.SeverityError,
 				Scope:    core.IssueScopeGroundTruthEncoder,
 				Location: &core.IssueLocation{
-					Path:   entryFilePath,
+					Path:   issuePath,
 					Line:   registration.Line,
 					Symbol: registration.Function,
 				},
@@ -70,7 +74,7 @@ func inspectGTEncoderContract(repoRoot string, status *core.IntegrationStatus) {
 				Severity: core.SeverityError,
 				Scope:    core.IssueScopeGroundTruthEncoder,
 				Location: &core.IssueLocation{
-					Path:   entryFilePath,
+					Path:   issuePath,
 					Line:   registration.Line,
 					Symbol: target,
 				},

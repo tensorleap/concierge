@@ -278,7 +278,7 @@ func newRunCommand() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview orchestration stages without making changes")
-	cmd.Flags().IntVar(&maxIterations, "max-iterations", 1, "Maximum guided rounds before stopping")
+	cmd.Flags().IntVar(&maxIterations, "max-iterations", 0, "Maximum guided rounds before stopping (0 means unlimited)")
 	cmd.Flags().BoolVar(&persist, "persist", false, "Persist reports and evidence under .concierge")
 	cmd.Flags().StringVar(&projectRootFlag, "project-root", "", "Project root to operate on")
 	cmd.Flags().BoolVar(&nonInteractive, "non-interactive", false, "Fail instead of prompting for interactive decisions")

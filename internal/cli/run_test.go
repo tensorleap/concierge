@@ -86,12 +86,23 @@ func TestRunNonDryRunReturnsErrorOnMaxIterationsStop(t *testing.T) {
 	repo := initRunTestRepo(t, false)
 	withWorkingDir(t, repo)
 
-	_, err := executeCLI(t, "run", "--yes")
+	_, err := executeCLI(t, "run", "--yes", "--max-iterations=1")
 	if err == nil {
 		t.Fatal("expected run to fail on max-iterations stop")
 	}
 	if !strings.Contains(strings.ToLower(err.Error()), "pending requirements") {
 		t.Fatalf("expected user-facing max-iterations message, got: %v", err)
+	}
+}
+
+func TestRunMaxIterationsDefaultsToUnlimited(t *testing.T) {
+	cmd := newRunCommand()
+	flag := cmd.Flags().Lookup("max-iterations")
+	if flag == nil {
+		t.Fatal("expected max-iterations flag to be registered")
+	}
+	if flag.DefValue != "0" {
+		t.Fatalf("expected max-iterations default to be 0 (unlimited), got %q", flag.DefValue)
 	}
 }
 

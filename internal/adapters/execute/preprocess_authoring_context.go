@@ -30,7 +30,7 @@ func BuildPreprocessAuthoringRecommendation(snapshot core.WorkspaceSnapshot, sta
 	recommendation := core.AuthoringRecommendation{
 		StepID: core.EnsureStepPreprocessContract,
 		Constraints: []string{
-			"Implement a preprocess contract that returns both train and validation subsets.",
+			"Implement a preprocess function that returns both train and validation subsets.",
 			"When feasible, each requested subset must produce non-empty output values.",
 			"Do not refactor unrelated training or business logic.",
 		},

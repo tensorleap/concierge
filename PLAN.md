@@ -16,6 +16,7 @@ This ExecPlan is a living document. Keep `Progress`, `Gap Analysis`, `Surprises 
 - 2026-03-03: Marked Steps `10B1` and `10C` as `ACCEPTED` per user direction; `10C` merged via PR #13.
 - 2026-03-04: Marked Steps `10A`, `10B`, `10F`, and `10G` as `ACCEPTED` per user direction to begin Step `10H`.
 - 2026-03-04: Merged `feature/step-10h-preprocess-need-detection` to `main`; marked Step `10H` as `ACCEPTED` (all steps through `10H` now `ACCEPTED`).
+- 2026-03-04: Merged `feature/step-10i-fix-tests` to `main`; marked Step `10I` as `ACCEPTED` after fixing preprocess authoring prompt/test drift.
 
 ## Purpose / Exit Target
 
@@ -91,7 +92,7 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 10F: Claude prompt/system-context wiring | `ACCEPTED` | 2026-03-04 (`user-directed state sync`) | Inject stable system prompt plus structured step prompt sections (objective, scope, repo facts, Tensorleap rules, acceptance checks). |
 | Step 10G: Model contract authoring flow | `ACCEPTED` | 2026-03-04 (`user-directed state sync`) | Add model-specific authoring objectives and deterministic recommendation/evidence path. |
 | Step 10H: Preprocess need detection | `ACCEPTED` | 2026-03-04 (`main`) | Emit preprocess-specific issue codes from real contract inspection. |
-| Step 10I: Preprocess authoring flow | `PENDING` | — | Add preprocess authoring objective context, approvals, and evidence expectations. |
+| Step 10I: Preprocess authoring flow | `ACCEPTED` | 2026-03-04 (`main`) | Add preprocess authoring objective context, approvals, and evidence expectations. |
 | Step 10J: Input-encoder need detection | `PENDING` | — | Detect missing input encoders and per-symbol coverage gaps. |
 | Step 10K: Input-encoder suggestion and authoring flow | `PENDING` | — | Render missing-input suggestions to users and pass symbol-level context to authoring executor. |
 | Step 10L: GT-encoder need detection | `PENDING` | — | Detect GT encoder deficits and labeled-subset contract violations. |

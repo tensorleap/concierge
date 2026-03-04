@@ -158,13 +158,14 @@ func newRunCommand() *cobra.Command {
 					return false, core.NewError(
 						core.KindUnknown,
 						"cli.run.non_interactive.step_approval_required",
-						"this run requires approval before Concierge applies and commits changes; rerun with --yes to auto-approve in non-interactive mode",
+						"this run requires approval before I apply and commit changes; rerun with --yes to auto-approve in non-interactive mode",
 					)
 				}
 				return promptApproval(
 					promptInput,
 					cmd.OutOrStdout(),
 					stepApprovalMessage(step, snapshotValue, hasSnapshot, status, hasStatus, renderOptions.EnableColor),
+					renderOptions.EnableColor,
 				)
 			}
 
@@ -278,7 +279,7 @@ func newRunCommand() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview orchestration stages without making changes")
-	cmd.Flags().IntVar(&maxIterations, "max-iterations", 1, "Maximum guided rounds before stopping")
+	cmd.Flags().IntVar(&maxIterations, "max-iterations", 0, "Maximum guided rounds before stopping (0 means unlimited)")
 	cmd.Flags().BoolVar(&persist, "persist", false, "Persist reports and evidence under .concierge")
 	cmd.Flags().StringVar(&projectRootFlag, "project-root", "", "Project root to operate on")
 	cmd.Flags().BoolVar(&nonInteractive, "non-interactive", false, "Fail instead of prompting for interactive decisions")
@@ -299,139 +300,41 @@ func stepApprovalMessage(
 ) string {
 	checklist := checklistRowsForPrompt(step, snapshot, hasSnapshot, status, hasStatus, enableColor)
 
-	if step.ID == core.EnsureStepModelContract && hasSnapshot {
-		recommendationStatus := core.IntegrationStatus{}
-		if hasStatus {
-			recommendationStatus = status
-		}
-		recommendation, err := execute.BuildModelAuthoringRecommendation(snapshot, recommendationStatus)
-		if err == nil {
-			target := strings.TrimSpace(recommendation.Target)
-			if target == "" {
-				target = "<none>"
-			}
-			checklist = append(checklist,
-				"",
-				"Model recommendation:",
-				"- Recommended target: "+target,
-				"- Rationale: "+strings.TrimSpace(recommendation.Rationale),
-				"- Candidates: "+renderInlinePromptValues(recommendation.Candidates),
-			)
-		}
-	}
-	if step.ID == core.EnsureStepPreprocessContract && hasSnapshot {
-		recommendationStatus := core.IntegrationStatus{}
-		if hasStatus {
-			recommendationStatus = status
-		}
-		recommendation, err := execute.BuildPreprocessAuthoringRecommendation(snapshot, recommendationStatus)
-		if err == nil {
-			target := strings.TrimSpace(recommendation.Target)
-			if target == "" {
-				target = "<none>"
-			}
-			checklist = append(checklist,
-				"",
-				"Preprocess recommendation:",
-				"- Recommended target: "+target,
-				"- Rationale: "+strings.TrimSpace(recommendation.Rationale),
-				"- Target symbols: "+renderInlinePromptValues(recommendation.Candidates),
-			)
-			for _, constraint := range recommendation.Constraints {
-				trimmed := strings.TrimSpace(constraint)
-				if trimmed == "" {
-					continue
-				}
-				checklist = append(checklist, "- "+trimmed)
-			}
-		}
-	}
-	if step.ID == core.EnsureStepInputEncoders && hasSnapshot {
-		recommendationStatus := core.IntegrationStatus{}
-		if hasStatus {
-			recommendationStatus = status
-		}
-		recommendation, err := execute.BuildInputEncoderAuthoringRecommendation(snapshot, recommendationStatus)
-		if err == nil {
-			target := strings.TrimSpace(recommendation.Target)
-			if target == "" {
-				target = "<none>"
-			}
-			checklist = append(checklist,
-				"",
-				"Input-encoder recommendation:",
-				"- Recommended target: "+target,
-				"- Rationale: "+strings.TrimSpace(recommendation.Rationale),
-				"- Missing symbols: "+renderInlinePromptValues(recommendation.Candidates),
-			)
-			for _, constraint := range recommendation.Constraints {
-				trimmed := strings.TrimSpace(constraint)
-				if trimmed == "" {
-					continue
-				}
-				checklist = append(checklist, "- "+trimmed)
-			}
-		}
-	}
-	if step.ID == core.EnsureStepGroundTruthEncoders && hasSnapshot {
-		recommendationStatus := core.IntegrationStatus{}
-		if hasStatus {
-			recommendationStatus = status
-		}
-		recommendation, err := execute.BuildGTEncoderAuthoringRecommendation(snapshot, recommendationStatus)
-		if err == nil {
-			target := strings.TrimSpace(recommendation.Target)
-			if target == "" {
-				target = "<none>"
-			}
-			checklist = append(checklist,
-				"",
-				"Ground-truth recommendation:",
-				"- Recommended target: "+target,
-				"- Rationale: "+strings.TrimSpace(recommendation.Rationale),
-				"- Target symbols: "+renderInlinePromptValues(recommendation.Candidates),
-			)
-			for _, constraint := range recommendation.Constraints {
-				trimmed := strings.TrimSpace(constraint)
-				if trimmed == "" {
-					continue
-				}
-				checklist = append(checklist, "- "+trimmed)
-			}
-		}
-	}
-
 	blockers := []core.Issue(nil)
 	if hasStatus {
 		blockers = blockingIssuesForStep(status.Issues, step.ID)
 	}
 
 	checkLabel := core.HumanEnsureStepLabel(step.ID)
-	checkHeading := "Current check"
+	checkHeading := "Current step"
 	if len(blockers) > 0 {
 		checkLabel = core.HumanEnsureStepRequirementLabel(step.ID)
-		checkHeading = "Current blocker"
+		checkHeading = "Missing integration step"
 	}
-	checklist = append(checklist, "", fmt.Sprintf("%s: %s", checkHeading, checkLabel))
+	headingColor := ansiBold + ansiCyan
+	if len(blockers) > 0 {
+		headingColor = ansiBold + ansiYellow
+	}
+	checklist = append(checklist, "", paint(fmt.Sprintf("%s: %s", checkHeading, checkLabel), headingColor, enableColor))
 
 	guidance := approvalGuidanceForStep(step.ID)
 	if guidance.Explanation != "" {
-		checklist = append(checklist, "Why it matters: "+guidance.Explanation)
+		checklist = append(checklist, "Why this step matters: "+guidance.Explanation)
 	}
 	if guidance.DocsURL != "" {
 		checklist = append(checklist, "Docs: "+guidance.DocsURL)
 	}
 
 	if len(blockers) > 0 {
-		checklist = append(checklist, "What failed:")
+		checklist = append(checklist, "What I'm seeing:")
 		for i, issue := range blockers {
 			if i >= 3 {
-				checklist = append(checklist, "- Additional blocking details were omitted for brevity.")
+				checklist = append(checklist, "- Additional missing-step details were omitted for brevity.")
 				break
 			}
 			message := strings.TrimSpace(issue.Message)
 			if message == "" {
-				message = "A required check is failing."
+				message = "A required integration detail is still missing."
 			}
 			checklist = append(checklist, "- "+message)
 		}
@@ -440,31 +343,9 @@ func stepApprovalMessage(
 	checklist = append(
 		checklist,
 		"",
-		"Concierge can apply a focused fix for this blocker now.",
-		"Apply this fix now?",
+		"I can continue by addressing this missing step now.",
 	)
 	return strings.Join(checklist, "\n")
-}
-
-func renderInlinePromptValues(values []string) string {
-	trimmed := make([]string, 0, len(values))
-	seen := map[string]struct{}{}
-	for _, value := range values {
-		item := strings.TrimSpace(value)
-		if item == "" {
-			continue
-		}
-		key := strings.ToLower(item)
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-		trimmed = append(trimmed, item)
-	}
-	if len(trimmed) == 0 {
-		return "<none>"
-	}
-	return strings.Join(trimmed, ", ")
 }
 
 func humanInvalidationSummary(reasons []string) string {
@@ -486,7 +367,7 @@ func humanInvalidationSummary(reasons []string) string {
 		}
 	}
 
-	return fmt.Sprintf("Your workspace changed since the previous run (%s), so Concierge re-checked everything.", strings.Join(labels, ", "))
+	return fmt.Sprintf("Your workspace changed since the previous run (%s), so I re-checked everything.", strings.Join(labels, ", "))
 }
 
 type planCapturePlanner struct {
@@ -595,7 +476,7 @@ func checklistRowsForPrompt(
 	hasStatus bool,
 	enableColor bool,
 ) []string {
-	checklist := []string{"Integration checks:"}
+	checklist := []string{paint("I'm checking the Tensorleap integration's progress:", ansiCyan, enableColor)}
 	if !hasSnapshot || !hasStatus {
 		return checklist
 	}
@@ -605,8 +486,9 @@ func checklistRowsForPrompt(
 		icon := promptCheckIcon(check.Status, enableColor)
 		label := promptCheckLabel(check)
 		if check.Blocking {
-			label += " (blocking)"
+			label += " (missing step)"
 		}
+		label = paint(label, promptCheckLabelColor(check.Status), enableColor)
 		checklist = append(checklist, fmt.Sprintf("%s %s", icon, label))
 	}
 
@@ -640,6 +522,19 @@ func promptCheckLabel(check core.VerifiedCheck) string {
 	return core.HumanEnsureStepRequirementLabel(check.StepID)
 }
 
+func promptCheckLabelColor(status core.CheckStatus) string {
+	switch status {
+	case core.CheckStatusPass:
+		return ansiGreen
+	case core.CheckStatusWarning:
+		return ansiYellow
+	case core.CheckStatusFail:
+		return ansiBold + ansiYellow
+	default:
+		return ansiDim
+	}
+}
+
 type stepApprovalGuidance struct {
 	Explanation string
 	DocsURL     string
@@ -649,7 +544,7 @@ func approvalGuidanceForStep(stepID core.EnsureStepID) stepApprovalGuidance {
 	switch stepID {
 	case core.EnsureStepRepositoryContext:
 		return stepApprovalGuidance{
-			Explanation: "Concierge needs a valid Git project root and a safe working branch before applying fixes.",
+			Explanation: "I need a valid Git project root and a safe working branch before applying fixes.",
 		}
 	case core.EnsureStepPythonRuntime:
 		return stepApprovalGuidance{
@@ -658,12 +553,12 @@ func approvalGuidanceForStep(stepID core.EnsureStepID) stepApprovalGuidance {
 		}
 	case core.EnsureStepLeapCLIAuth:
 		return stepApprovalGuidance{
-			Explanation: "Concierge needs a working and authenticated leap CLI to validate and upload integrations.",
+			Explanation: "I need a working and authenticated leap CLI to validate and upload integrations.",
 			DocsURL:     leapCLIInstallGuideURL,
 		}
 	case core.EnsureStepServerConnectivity:
 		return stepApprovalGuidance{
-			Explanation: "The Tensorleap server must be reachable so Concierge can verify mounts and run upload readiness checks.",
+			Explanation: "The Tensorleap server must be reachable so I can verify mounts and run upload readiness checks.",
 			DocsURL:     tensorleapUploadGuideURL,
 		}
 	case core.EnsureStepSecretsContext:
@@ -678,7 +573,7 @@ func approvalGuidanceForStep(stepID core.EnsureStepID) stepApprovalGuidance {
 		}
 	case core.EnsureStepModelContract:
 		return stepApprovalGuidance{
-			Explanation: "Concierge must resolve one concrete .onnx/.h5 model path for @tensorleap_load_model before preprocess authoring can be completed.",
+			Explanation: "I need one concrete .onnx/.h5 model path for @tensorleap_load_model before preprocessing can be completed.",
 			DocsURL:     stepGuideModelIntegrationURL,
 		}
 	case core.EnsureStepIntegrationScript:
@@ -688,7 +583,7 @@ func approvalGuidanceForStep(stepID core.EnsureStepID) stepApprovalGuidance {
 		}
 	case core.EnsureStepPreprocessContract:
 		return stepApprovalGuidance{
-			Explanation: "Concierge will author a decorated preprocess function and wire model loading in one step so Tensorleap can iterate train/validation subsets.",
+			Explanation: "Tensorleap needs preprocessing that produces both train and validation subsets so integration checks can run end-to-end.",
 			DocsURL:     stepGuidePreprocessURL,
 		}
 	case core.EnsureStepInputEncoders:
@@ -718,7 +613,7 @@ func approvalGuidanceForStep(stepID core.EnsureStepID) stepApprovalGuidance {
 		}
 	case core.EnsureStepInvestigate:
 		return stepApprovalGuidance{
-			Explanation: "Concierge found an unmapped blocker and needs to inspect it before suggesting the next deterministic fix.",
+			Explanation: "I found an unmapped missing step and need to inspect it before suggesting the next deterministic fix.",
 		}
 	default:
 		return stepApprovalGuidance{}

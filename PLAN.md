@@ -17,6 +17,7 @@ This ExecPlan is a living document. Keep `Progress`, `Gap Analysis`, `Surprises 
 - 2026-03-04: Marked Steps `10A`, `10B`, `10F`, and `10G` as `ACCEPTED` per user direction to begin Step `10H`.
 - 2026-03-04: Merged `feature/step-10h-preprocess-need-detection` to `main`; marked Step `10H` as `ACCEPTED` (all steps through `10H` now `ACCEPTED`).
 - 2026-03-04: Merged `feature/step-10i-fix-tests` to `main`; marked Step `10I` as `ACCEPTED` after fixing preprocess authoring prompt/test drift.
+- 2026-03-04: Landed commit `2b90758` on `main`; marked Steps `10J`, `10K`, `10L`, and `10M` as `ACCEPTED` (input/GT encoder detection + authoring flow now merged).
 
 ## Purpose / Exit Target
 
@@ -38,18 +39,18 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | G4 | README §6.2: persistent mutable state (`.concierge/state.json`) | Implemented and persisted with invalidation reasons | Closed; retain regression coverage | 7A (`ACCEPTED`) |
 | G5 | README §6.1/§8.2: richer snapshot/inspection coverage | Implemented readiness expansion for runtime/model/CLI/auth/server probes | Partially closed; remaining contract-level detection gaps tracked in `10A-10N` | 8A (`ACCEPTED`), 10A-10N |
 | G6 | README §8 planner semantics: deterministic next primary action with gate-aware ordering | Implemented severity-first planner policy with upload gate awareness | Closed for existing issue families; future families added in authoring slices | 8B (`ACCEPTED`) |
-| G7 | README §9 + user requirement: preprocess authoring must be detection-driven and individually tested | No inspector/validator emission path currently produces preprocess-specific issue codes from real repo analysis | Planner cannot deterministically trigger preprocess authoring from real deficits | 10H, 10I, 12C |
-| G8 | README §9 + user requirement: input-encoder authoring must be detection-driven and individually tested | No deterministic detector currently emits missing/coverage issues for specific input encoders from contract discovery | Concierge cannot reliably suggest missing input encoders before authoring | 10J, 10K, 12D |
-| G9 | README §9 + user requirement: GT-encoder authoring must be detection-driven and individually tested | No deterministic detector currently emits GT-specific deficits from discovered integration contracts | GT authoring remains under-specified and under-tested | 10L, 10M, 12E |
-| G10 | README §2.3/§8.2 model contract + user requirement: model discovery/selection/fixing must be explicit and tested | Inspector validates declared model path but lacks authoring-first model discovery strategy for missing/ambiguous model wiring | Model contract failures can remain opaque and difficult to fix deterministically | 10B, 10G, 12B |
+| G7 | README §9 + user requirement: preprocess authoring must be detection-driven and individually tested | Deterministic preprocess detection + authoring flow are implemented and merged (`10H`, `10I`) | Remaining gap is capability-level fixture proof that preprocess flows converge end-to-end | 10H (`ACCEPTED`), 10I (`ACCEPTED`), 12C |
+| G8 | README §9 + user requirement: input-encoder authoring must be detection-driven and individually tested | Deterministic input-encoder detector + symbol-scoped authoring flow are implemented and merged (`10J`, `10K`) | Remaining gap is fixture-backed convergence proof for input-encoder capabilities | 10J (`ACCEPTED`), 10K (`ACCEPTED`), 12D |
+| G9 | README §9 + user requirement: GT-encoder authoring must be detection-driven and individually tested | Deterministic GT-encoder detector + authoring flow are implemented and merged (`10L`, `10M`) | Remaining gap is fixture-backed convergence proof for GT-encoder capabilities | 10L (`ACCEPTED`), 10M (`ACCEPTED`), 12E |
+| G10 | README §2.3/§8.2 model contract + user requirement: model discovery/selection/fixing must be explicit and tested | Model discovery and authoring-first remediation are implemented and merged (`10B`, `10G`) | Remaining gap is capability-level fixture E2E coverage for model remediation | 10B (`ACCEPTED`), 10G (`ACCEPTED`), 12B |
 | G11 | README §9: runtime harness is core validation layer | Harness is optional via env and currently stub-script-based | No high-resolution runtime correctness evidence in normal runs | 11A, 11B |
 | G12 | README §9.2: integration-test call coverage enforcement | No AST/runtime enforcement of required decorator calls in integration test | False positives possible despite incomplete wiring | 10N, 10O, 12F |
 | G13 | README §12: real `leap` workflow + upload gating + explicit confirmation | `concierge run` has no `leap` orchestration path and no push gate | Cannot complete actual Tensorleap integration flow | 13A |
 | G14 | README §13.4 + user request: capability-level fixture validation | Fixture E2E checks only artifact-missing deltas and persistence files | No proof that each authoring capability converges independently | 12A-12H |
 | G15 | PLAN quality gate requirement + user request: CI must run capability-level fixture E2E | CI prepares/verifies fixtures but does not run authoring-focused fixture suite on PRs | Regressions can merge without capability-level safety net | 13B |
 | G16 | README docs requirements + operator handoff | README/docs do not yet describe detection->suggest->author->validate authoring loop by capability | Onboarding and operations remain ambiguous for the core concierge value proposition | 14A |
-| G17 | V1 quality gate requirement: commit approval must run after delta-scoped integration checks | Engine currently calls git commit flow before validator result and has no step-local syntax gate over changed files | Broken step-local integration edits can be committed and approved too early | 10B1 |
-| G18 | README §10 + user requirement: agent tasks need Tensorleap domain context plus strict scoped edits | Agent tasks currently receive objective/constraints only; no injected Tensorleap knowledge pack or repo-specific context pack | Agent output can miss decorator/library contracts, causing avoidable iterative churn | 10C-10F, 12H |
+| G17 | V1 quality gate requirement: commit approval must run after delta-scoped integration checks | Pre-commit stage is implemented with step-local validation and changed-file syntax gates (`10B1`) | Closed for runtime commit ordering and delta quality gates; keep regression coverage | 10B1 (`ACCEPTED`) |
+| G18 | README §10 + user requirement: agent tasks need Tensorleap domain context plus strict scoped edits | Agent context pipeline is implemented and merged (knowledge pack, scoped policy, repo context pack, structured prompt wiring) | Closed for context injection baseline; fixture-level context-quality assertions remain pending | 10C-10F (`ACCEPTED`), 12H |
 
 ## Progress
 
@@ -93,10 +94,10 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 10G: Model contract authoring flow | `ACCEPTED` | 2026-03-04 (`user-directed state sync`) | Add model-specific authoring objectives and deterministic recommendation/evidence path. |
 | Step 10H: Preprocess need detection | `ACCEPTED` | 2026-03-04 (`main`) | Emit preprocess-specific issue codes from real contract inspection. |
 | Step 10I: Preprocess authoring flow | `ACCEPTED` | 2026-03-04 (`main`) | Add preprocess authoring objective context, approvals, and evidence expectations. |
-| Step 10J: Input-encoder need detection | `PENDING` | — | Detect missing input encoders and per-symbol coverage gaps. |
-| Step 10K: Input-encoder suggestion and authoring flow | `PENDING` | — | Render missing-input suggestions to users and pass symbol-level context to authoring executor. |
-| Step 10L: GT-encoder need detection | `PENDING` | — | Detect GT encoder deficits and labeled-subset contract violations. |
-| Step 10M: GT-encoder suggestion and authoring flow | `PENDING` | — | Render GT-target suggestions and enforce labeled-subset constraints in authoring tasks. |
+| Step 10J: Input-encoder need detection | `ACCEPTED` | 2026-03-04 (`main`, commit `2b90758`) | Detect missing input encoders and per-symbol coverage gaps. |
+| Step 10K: Input-encoder suggestion and authoring flow | `ACCEPTED` | 2026-03-04 (`main`, commit `2b90758`) | Render missing-input suggestions to users and pass symbol-level context to authoring executor. |
+| Step 10L: GT-encoder need detection | `ACCEPTED` | 2026-03-04 (`main`, commit `2b90758`) | Detect GT encoder deficits and labeled-subset contract violations. |
+| Step 10M: GT-encoder suggestion and authoring flow | `ACCEPTED` | 2026-03-04 (`main`, commit `2b90758`) | Render GT-target suggestions and enforce labeled-subset constraints in authoring tasks. |
 | Step 10N: Integration-test wiring need detection | `PENDING` | — | Add AST-based required-call detection for `@tensorleap_integration_test` paths. |
 | Step 10O: Integration-test wiring authoring flow | `PENDING` | — | Add targeted authoring objective to wire missing integration-test calls deterministically. |
 | Step 11A: Real runtime harness core (Layer 2) | `PENDING` | — | Replace stub harness with runtime script, schema-v1 events, and default-on validation. |
@@ -557,7 +558,7 @@ Rollback boundary:
 
 ---
 
-### Step 10I: Preprocess authoring flow (`PENDING`)
+### Step 10I: Preprocess authoring flow (`ACCEPTED`)
 
 Objective:
 
@@ -606,7 +607,7 @@ Rollback boundary:
 
 ---
 
-### Step 10J: Input-encoder need detection (`PENDING`)
+### Step 10J: Input-encoder need detection (`ACCEPTED`)
 
 Objective:
 
@@ -654,7 +655,7 @@ Rollback boundary:
 
 ---
 
-### Step 10K: Input-encoder suggestion and authoring flow (`PENDING`)
+### Step 10K: Input-encoder suggestion and authoring flow (`ACCEPTED`)
 
 Objective:
 
@@ -700,7 +701,7 @@ Rollback boundary:
 
 ---
 
-### Step 10L: GT-encoder need detection (`PENDING`)
+### Step 10L: GT-encoder need detection (`ACCEPTED`)
 
 Objective:
 
@@ -745,7 +746,7 @@ Rollback boundary:
 
 ---
 
-### Step 10M: GT-encoder suggestion and authoring flow (`PENDING`)
+### Step 10M: GT-encoder suggestion and authoring flow (`ACCEPTED`)
 
 Objective:
 
@@ -1526,28 +1527,28 @@ Rollback boundary:
 
 ## Concrete Step Execution Order
 
-1. Implement Step 7A.
-2. Implement Step 7B.
-3. Implement Step 8A.
-4. Implement Step 8B.
-5. Implement Step 9A.
-6. Implement Step 9B.
+1. Step 7A is already `ACCEPTED` (no implementation action required).
+2. Step 7B is already `ACCEPTED` (no implementation action required).
+3. Step 8A is already `ACCEPTED` (no implementation action required).
+4. Step 8B is already `ACCEPTED` (no implementation action required).
+5. Step 9A is already `ACCEPTED` (no implementation action required).
+6. Step 9B is already `ACCEPTED` (no implementation action required).
 7. Step 9C is already `ACCEPTED` (no implementation action required).
 8. Step 10A0 is already `ACCEPTED` (no implementation action required).
-9. Implement Step 10A.
-10. Implement Step 10B.
+9. Step 10A is already `ACCEPTED` (no implementation action required).
+10. Step 10B is already `ACCEPTED` (no implementation action required).
 11. Step 10B1 is already `ACCEPTED` (no implementation action required).
 12. Step 10C is already `ACCEPTED` (no implementation action required).
-13. Implement Step 10D.
+13. Step 10D is already `ACCEPTED` (no implementation action required).
 14. Step 10E is already `ACCEPTED` (no implementation action required).
 15. Step 10F is already `ACCEPTED` (no implementation action required).
 16. Step 10G is already `ACCEPTED` (no implementation action required).
-17. Implement Step 10H.
-18. Implement Step 10I.
-19. Implement Step 10J.
-20. Implement Step 10K.
-21. Implement Step 10L.
-22. Implement Step 10M.
+17. Step 10H is already `ACCEPTED` (no implementation action required).
+18. Step 10I is already `ACCEPTED` (no implementation action required).
+19. Step 10J is already `ACCEPTED` (no implementation action required).
+20. Step 10K is already `ACCEPTED` (no implementation action required).
+21. Step 10L is already `ACCEPTED` (no implementation action required).
+22. Step 10M is already `ACCEPTED` (no implementation action required).
 23. Implement Step 10N.
 24. Implement Step 10O.
 25. Implement Step 11A.
@@ -1597,7 +1598,7 @@ Phase acceptance condition:
 
 ## Surprises & Discoveries
 
-- Step `9C` is implemented and merged, but planner-triggered authoring for preprocess/input/GT/integration-test wiring is still under-specified because detector paths do not yet emit those issue families from live repo contracts.
+- Steps `10H-10M` are implemented and merged, so preprocess/input/GT detector + authoring paths now emit capability-specific issue families and recommendations from live contracts.
 - Existing fixture E2E covers artifact deltas and persistence, but it does not yet prove capability-isolated authoring convergence (model/preprocess/input/GT/wiring) one-by-one.
 - Runtime harness integration exists only as a stub baseline; it must become default runtime evidence before capability E2E can assert semantic behavior robustly.
 
@@ -1633,18 +1634,18 @@ Phase acceptance condition:
 
 ## Outcomes & Retrospective
 
-Current state: baseline architecture through Step `10A0` is accepted and merged; remaining work is now decomposed into capability-level authoring slices with explicit detection, suggestion, authoring, and fixture validation phases.
+Current state: baseline architecture through Step `10M` is accepted and merged; remaining work is concentrated on integration-test wiring (`10N-10O`), runtime harness deepening (`11A-11B`), capability E2E/CI hardening (`12A-13B`), and release documentation/hardening (`14A-14B`).
 
 Primary residual risks:
 
-1. Detector-to-planner mapping gaps may prevent expected authoring steps from being selected.
+1. Remaining detector-to-planner mapping gaps are now concentrated in integration-test wiring coverage (`10N`/`10O`).
 2. Agent-authoring prompts may be too generic unless they receive symbol-level context from detectors.
 3. Capability E2E may become flaky unless fixture mutation tooling is strictly deterministic.
 
 Mitigations:
 
-1. Implement detector slices first (`10A-10N`) and assert mapped primary-step expectations in unit tests.
-2. Add explicit context-injection pipeline steps (`10C-10F`) and keep recommendation payload tests (`10G`, `10I`, `10K`, `10M`, `10O`) strict and deterministic.
+1. Complete integration-test wiring detection/authoring (`10N-10O`) and assert mapped primary-step expectations in unit tests.
+2. Keep existing context-injection pipeline (`10C-10F`) under regression coverage while finalizing recommendation payload tests (`10O` + fixture context tests in `12H`).
 3. Introduce deterministic fixture case generation before capability E2E tests (`12A` before `12B-12H`).
 
 ## Interfaces and Dependencies

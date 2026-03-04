@@ -86,12 +86,23 @@ func TestRunNonDryRunReturnsErrorOnMaxIterationsStop(t *testing.T) {
 	repo := initRunTestRepo(t, false)
 	withWorkingDir(t, repo)
 
-	_, err := executeCLI(t, "run", "--yes")
+	_, err := executeCLI(t, "run", "--yes", "--max-iterations=1")
 	if err == nil {
 		t.Fatal("expected run to fail on max-iterations stop")
 	}
 	if !strings.Contains(strings.ToLower(err.Error()), "pending requirements") {
 		t.Fatalf("expected user-facing max-iterations message, got: %v", err)
+	}
+}
+
+func TestRunMaxIterationsDefaultsToUnlimited(t *testing.T) {
+	cmd := newRunCommand()
+	flag := cmd.Flags().Lookup("max-iterations")
+	if flag == nil {
+		t.Fatal("expected max-iterations flag to be registered")
+	}
+	if flag.DefValue != "0" {
+		t.Fatalf("expected max-iterations default to be 0 (unlimited), got %q", flag.DefValue)
 	}
 }
 
@@ -186,11 +197,11 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	if !strings.Contains(output, "Integration Checklist") {
 		t.Fatalf("expected checklist in output, got output: %q", output)
 	}
-	if !strings.Contains(output, "Apply this fix now?") {
+	if !strings.Contains(output, "You > Continue now? [y/N]:") {
 		t.Fatalf("expected pre-change approval prompt, got output: %q", output)
 	}
-	if !strings.Contains(output, "Current blocker: leap.yaml should be present and valid") {
-		t.Fatalf("expected blocker heading in pre-change prompt, got output: %q", output)
+	if !strings.Contains(output, "Missing integration step: leap.yaml should be present and valid") {
+		t.Fatalf("expected missing-step heading in pre-change prompt, got output: %q", output)
 	}
 	if !strings.Contains(output, "Proposed Changes") {
 		t.Fatalf("expected styled change review heading, got output: %q", output)
@@ -243,8 +254,11 @@ func TestStepApprovalMessageShowsOnlyChecklistThroughBlockingStep(t *testing.T) 
 
 	snapshot := core.WorkspaceSnapshot{}
 	message := stepApprovalMessage(step, snapshot, true, status, true, false)
-	if !strings.Contains(message, "☐ leap.yaml should be present and valid (blocking)") {
-		t.Fatalf("expected blocking check row, got message: %q", message)
+	if !strings.Contains(message, "I'm checking the Tensorleap integration's progress:") {
+		t.Fatalf("expected progress heading in prompt, got message: %q", message)
+	}
+	if !strings.Contains(message, "☐ leap.yaml should be present and valid (missing step)") {
+		t.Fatalf("expected missing-step check row, got message: %q", message)
 	}
 	if strings.Contains(message, "Required secrets are configured") {
 		t.Fatalf("expected unverified checks to be hidden, got message: %q", message)
@@ -257,7 +271,7 @@ func TestStepApprovalMessageShowsOnlyChecklistThroughBlockingStep(t *testing.T) 
 	}
 }
 
-func TestStepApprovalMessageIncludesBlockerContext(t *testing.T) {
+func TestStepApprovalMessageUsesMissingStepContext(t *testing.T) {
 	step, ok := core.EnsureStepByID(core.EnsureStepLeapYAML)
 	if !ok {
 		t.Fatal("expected leap.yaml ensure-step in catalog")
@@ -274,11 +288,11 @@ func TestStepApprovalMessageIncludesBlockerContext(t *testing.T) {
 
 	snapshot := core.WorkspaceSnapshot{}
 	message := stepApprovalMessage(step, snapshot, true, status, true, false)
-	if !strings.Contains(message, "Current blocker: leap.yaml should be present and valid") {
-		t.Fatalf("expected blocker heading, got message: %q", message)
+	if !strings.Contains(message, "Missing integration step: leap.yaml should be present and valid") {
+		t.Fatalf("expected missing-step heading, got message: %q", message)
 	}
-	if !strings.Contains(message, "What failed:\n- leap.yaml is required at repository root") {
-		t.Fatalf("expected failure details, got message: %q", message)
+	if !strings.Contains(message, "What I'm seeing:\n- leap.yaml is required at repository root") {
+		t.Fatalf("expected missing details, got message: %q", message)
 	}
 	if !strings.Contains(message, "Docs: "+stepGuideLeapYAMLURL) {
 		t.Fatalf("expected docs link, got message: %q", message)
@@ -289,9 +303,12 @@ func TestStepApprovalMessageIncludesBlockerContext(t *testing.T) {
 	if strings.Contains(message, "(No changes will be made before approval.)") {
 		t.Fatalf("expected redundant approval note to be removed, got message: %q", message)
 	}
+	if !strings.Contains(message, "I can continue by addressing this missing step now.") {
+		t.Fatalf("expected journey-style continuation prompt, got message: %q", message)
+	}
 }
 
-func TestModelAuthoringRecommendationRenderedInApprovalPrompt(t *testing.T) {
+func TestStepApprovalPromptDoesNotExposeModelRecommendationDetails(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeFile(t, filepath.Join(repoRoot, "model", "b.h5"), "binary")
 	writeFile(t, filepath.Join(repoRoot, "model", "a.onnx"), "binary")
@@ -322,21 +339,15 @@ func TestModelAuthoringRecommendationRenderedInApprovalPrompt(t *testing.T) {
 	}
 
 	message := stepApprovalMessage(step, snapshot, true, status, true, false)
-	if !strings.Contains(message, "Model recommendation:") {
-		t.Fatalf("expected model recommendation section, got message: %q", message)
+	if strings.Contains(strings.ToLower(message), "recommendation:") {
+		t.Fatalf("did not expect recommendation details in prompt, got message: %q", message)
 	}
-	if !strings.Contains(message, "- Recommended target: model/a.onnx") {
-		t.Fatalf("expected recommended target in prompt, got message: %q", message)
-	}
-	if !strings.Contains(message, "- Rationale: ambiguous_supported_candidates_lexical_fallback") {
-		t.Fatalf("expected rationale in prompt, got message: %q", message)
-	}
-	if !strings.Contains(message, "- Candidates: model/a.onnx, model/b.h5") {
-		t.Fatalf("expected candidate list in prompt, got message: %q", message)
+	if strings.Contains(strings.ToLower(message), "ambiguous_supported_candidates_lexical_fallback") {
+		t.Fatalf("did not expect internal recommendation rationale in prompt, got message: %q", message)
 	}
 }
 
-func TestPreprocessAuthoringRecommendationRenderedInApprovalPrompt(t *testing.T) {
+func TestStepApprovalPromptUsesUserFacingPreprocessLanguage(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeFile(t, filepath.Join(repoRoot, "leap_binder.py"), "from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_preprocess\n\n@tensorleap_preprocess()\ndef preprocess_data():\n    return []\n")
 
@@ -350,24 +361,21 @@ func TestPreprocessAuthoringRecommendationRenderedInApprovalPrompt(t *testing.T)
 	}
 	status := core.IntegrationStatus{}
 	message := stepApprovalMessage(step, snapshot, true, status, true, false)
-	if !strings.Contains(message, "Preprocess recommendation:") {
-		t.Fatalf("expected preprocess recommendation section, got message: %q", message)
+	if strings.Contains(strings.ToLower(message), "preprocess recommendation:") {
+		t.Fatalf("did not expect preprocess recommendation section, got message: %q", message)
 	}
-	if !strings.Contains(message, "- Recommended target: preprocess_data") {
-		t.Fatalf("expected recommended target in prompt, got message: %q", message)
+	if strings.Contains(strings.ToLower(message), "target symbols:") {
+		t.Fatalf("did not expect internal symbol targeting details in prompt, got message: %q", message)
 	}
-	if !strings.Contains(message, "- Target symbols: preprocess_data") {
-		t.Fatalf("expected target symbol list in prompt, got message: %q", message)
+	if !strings.Contains(message, "Current step: Dataset preprocessing is configured") {
+		t.Fatalf("expected user-facing preprocess copy in prompt, got message: %q", message)
 	}
-	if !strings.Contains(message, "Implement a preprocess function that returns both train and validation subsets.") {
-		t.Fatalf("expected preprocess constraint in prompt, got message: %q", message)
-	}
-	if !strings.Contains(message, "non-empty output values") {
-		t.Fatalf("expected non-empty subset guidance in prompt, got message: %q", message)
+	if !strings.Contains(message, "Why this step matters: Tensorleap needs preprocessing that produces both train and validation subsets so integration checks can run end-to-end.") {
+		t.Fatalf("expected user-facing preprocess explanation in prompt, got message: %q", message)
 	}
 }
 
-func TestInputEncoderAuthoringRecommendationRenderedInApprovalPrompt(t *testing.T) {
+func TestStepApprovalPromptDoesNotExposeInputEncoderRecommendationDetails(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeFile(t, filepath.Join(repoRoot, "leap_binder.py"), strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_input_encoder, tensorleap_integration_test",
@@ -393,21 +401,15 @@ func TestInputEncoderAuthoringRecommendationRenderedInApprovalPrompt(t *testing.
 	}
 	status := core.IntegrationStatus{}
 	message := stepApprovalMessage(step, snapshot, true, status, true, false)
-	if !strings.Contains(message, "Input-encoder recommendation:") {
-		t.Fatalf("expected input-encoder recommendation section, got message: %q", message)
+	if strings.Contains(strings.ToLower(message), "input-encoder recommendation:") {
+		t.Fatalf("did not expect input-encoder recommendation section, got message: %q", message)
 	}
-	if !strings.Contains(message, "- Recommended target: meta") {
-		t.Fatalf("expected recommended target in prompt, got message: %q", message)
-	}
-	if !strings.Contains(message, "- Missing symbols: meta") {
-		t.Fatalf("expected missing-symbol list in prompt, got message: %q", message)
-	}
-	if !strings.Contains(message, "@tensorleap_input_encoder") {
-		t.Fatalf("expected input-encoder constraint context in prompt, got message: %q", message)
+	if strings.Contains(strings.ToLower(message), "missing symbols:") {
+		t.Fatalf("did not expect internal missing-symbol details in prompt, got message: %q", message)
 	}
 }
 
-func TestGTEncoderAuthoringRecommendationRenderedInApprovalPrompt(t *testing.T) {
+func TestStepApprovalPromptDoesNotExposeGTRecommendationDetails(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeFile(t, filepath.Join(repoRoot, "leap_binder.py"), strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_gt_encoder, tensorleap_integration_test",
@@ -433,17 +435,11 @@ func TestGTEncoderAuthoringRecommendationRenderedInApprovalPrompt(t *testing.T) 
 	}
 	status := core.IntegrationStatus{}
 	message := stepApprovalMessage(step, snapshot, true, status, true, false)
-	if !strings.Contains(message, "Ground-truth recommendation:") {
-		t.Fatalf("expected GT recommendation section, got message: %q", message)
+	if strings.Contains(strings.ToLower(message), "ground-truth recommendation:") {
+		t.Fatalf("did not expect GT recommendation section, got message: %q", message)
 	}
-	if !strings.Contains(message, "- Recommended target: mask") {
-		t.Fatalf("expected recommended target in prompt, got message: %q", message)
-	}
-	if !strings.Contains(message, "- Target symbols: mask") {
-		t.Fatalf("expected target-symbol list in prompt, got message: %q", message)
-	}
-	if !strings.Contains(strings.ToLower(message), "labeled subsets only") {
-		t.Fatalf("expected labeled-subset constraint in prompt, got message: %q", message)
+	if strings.Contains(strings.ToLower(message), "target symbols:") {
+		t.Fatalf("did not expect internal GT target-symbol details in prompt, got message: %q", message)
 	}
 }
 
@@ -456,7 +452,7 @@ func TestRunDeclineStepApprovalLeavesRepoUnchanged(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected max-iterations stop to return error")
 	}
-	if !strings.Contains(output, "Apply this fix now?") {
+	if !strings.Contains(output, "You > Continue now? [y/N]:") {
 		t.Fatalf("expected pre-change approval prompt, got output: %q", output)
 	}
 	if strings.Contains(output, "Apply and commit these changes? [Y/n]:") {

@@ -88,7 +88,7 @@ func writeSummaryLine(writer io.Writer, report core.IterationReport, options Out
 
 		label := renderedCheckLabel(check)
 		if check.Blocking {
-			label += " (blocking)"
+			label += " (missing step)"
 		}
 		if _, err := fmt.Fprintf(writer, "%s %s\n", paint(checkbox, checkboxColor, colorEnabled), label); err != nil {
 			return err
@@ -125,8 +125,8 @@ func writeSummaryLine(writer io.Writer, report core.IterationReport, options Out
 		heading := "Warning:"
 		defaultMessage := "A warning was reported for this check."
 		if attentionCheck.Status == core.CheckStatusFail {
-			heading = "Blocked on:"
-			defaultMessage = "A required verification is failing."
+			heading = "Missing integration step:"
+			defaultMessage = "A required integration step is still missing."
 		}
 
 		if _, err := fmt.Fprintf(writer, "%s %s\n", heading, attentionLabel); err != nil {
@@ -140,7 +140,7 @@ func writeSummaryLine(writer io.Writer, report core.IterationReport, options Out
 			}
 			for i, issue := range details {
 				if i >= 3 {
-					if _, err := fmt.Fprintln(writer, "- Additional blocking details were omitted for brevity."); err != nil {
+					if _, err := fmt.Fprintln(writer, "- Additional missing-step details were omitted for brevity."); err != nil {
 						return err
 					}
 					break
@@ -159,7 +159,7 @@ func writeSummaryLine(writer io.Writer, report core.IterationReport, options Out
 			}
 		}
 		if shouldOfferInteractiveHelp(report, attentionCheck) {
-			if _, err := fmt.Fprintln(writer, "Concierge can help with this step interactively and will ask before making any changes."); err != nil {
+			if _, err := fmt.Fprintln(writer, "I can help with this step interactively and will ask before making any changes."); err != nil {
 				return err
 			}
 		} else {
@@ -337,14 +337,14 @@ func selfServiceGuidanceLines(report core.IterationReport, stepID core.EnsureSte
 	}
 
 	lines := []string{
-		"Concierge cannot apply an automated fix for this check in the current run.",
+		"I cannot apply an automated fix for this check in the current run.",
 	}
 	return append(lines, stepGuidanceLines(stepID, issues)...)
 }
 
 func warningFollowUpLines(stepID core.EnsureStepID, issues []core.Issue) []string {
 	lines := []string{
-		"This warning is advisory in the current run, so Concierge did not apply a fix automatically.",
+		"This warning is advisory in the current run, so I did not apply a fix automatically.",
 	}
 	return append(lines, stepGuidanceLines(stepID, issues)...)
 }

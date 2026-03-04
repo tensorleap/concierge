@@ -31,12 +31,12 @@ type RunResult struct {
 // Run executes the outer loop until completion, cancellation, or max-iteration limit.
 func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOptions) (RunResult, error) {
 	maxIterations := opts.MaxIterations
-	if maxIterations <= 0 {
-		maxIterations = 1
-	}
 
-	reports := make([]core.IterationReport, 0, maxIterations)
-	for i := 0; i < maxIterations; i++ {
+	reports := make([]core.IterationReport, 0)
+	if maxIterations > 0 {
+		reports = make([]core.IterationReport, 0, maxIterations)
+	}
+	for i := 0; maxIterations <= 0 || i < maxIterations; i++ {
 		if err := ctx.Err(); err != nil {
 			return RunResult{
 				Reports:    reports,

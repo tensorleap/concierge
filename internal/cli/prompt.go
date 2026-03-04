@@ -86,18 +86,25 @@ func promptModelCandidateSelection(in io.Reader, out io.Writer, candidates []str
 	return candidates[selected-1], nil
 }
 
-func promptApproval(in io.Reader, out io.Writer, message string) (bool, error) {
+func promptApproval(in io.Reader, out io.Writer, message string, enableColor bool) (bool, error) {
 	if out == nil {
 		out = io.Discard
 	}
 	trimmedMessage := strings.TrimSpace(message)
 	if trimmedMessage == "" {
-		trimmedMessage = "Approve these changes?"
+		trimmedMessage = "I have a suggested next step."
 	}
-	if _, err := fmt.Fprintf(out, "%s\n", trimmedMessage); err != nil {
+	if _, err := fmt.Fprintln(out, paint("I >", ansiBold+ansiCyan, enableColor)); err != nil {
 		return false, err
 	}
-	return promptYesNo(in, out, "Proceed? [y/N]:", false)
+	for _, line := range strings.Split(trimmedMessage, "\n") {
+		if _, err := fmt.Fprintf(out, "  %s\n", line); err != nil {
+			return false, err
+		}
+	}
+
+	promptText := fmt.Sprintf("%s Continue now? [y/N]:", paint("You >", ansiBold+ansiBlue, enableColor))
+	return promptYesNo(in, out, promptText, false)
 }
 
 func promptYesNo(in io.Reader, out io.Writer, prompt string, defaultYes bool) (bool, error) {

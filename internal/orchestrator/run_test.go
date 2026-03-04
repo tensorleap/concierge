@@ -107,7 +107,7 @@ func (h *runHarness) currentStepID() core.EnsureStepID {
 	return h.stepSequence[index]
 }
 
-func TestEngineRunDefaultsToSingleIterationWhenMaxIterationsZero(t *testing.T) {
+func TestEngineRunTreatsMaxIterationsZeroAsUnlimited(t *testing.T) {
 	harness := newRunHarness([]core.EnsureStepID{core.EnsureStepLeapYAML, core.EnsureStepComplete})
 	engine := newRunTestEngine(t, harness)
 
@@ -115,14 +115,14 @@ func TestEngineRunDefaultsToSingleIterationWhenMaxIterationsZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
-	if result.StopReason != RunStopReasonMaxIterations {
-		t.Fatalf("expected stop reason %q, got %q", RunStopReasonMaxIterations, result.StopReason)
+	if result.StopReason != RunStopReasonSuccess {
+		t.Fatalf("expected stop reason %q, got %q", RunStopReasonSuccess, result.StopReason)
 	}
-	if len(result.Reports) != 1 {
-		t.Fatalf("expected one report, got %d", len(result.Reports))
+	if len(result.Reports) != 2 {
+		t.Fatalf("expected two reports, got %d", len(result.Reports))
 	}
-	if harness.iteration != 1 {
-		t.Fatalf("expected one iteration, got %d", harness.iteration)
+	if harness.iteration != 2 {
+		t.Fatalf("expected two iterations, got %d", harness.iteration)
 	}
 }
 

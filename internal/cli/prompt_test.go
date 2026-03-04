@@ -36,7 +36,7 @@ func TestPromptModelCandidateSelectionReturnsChosenCandidate(t *testing.T) {
 }
 
 func TestPromptApprovalParsesYesNo(t *testing.T) {
-	approved, err := promptApproval(bytes.NewBufferString("yes\n"), new(bytes.Buffer), "approve")
+	approved, err := promptApproval(bytes.NewBufferString("yes\n"), new(bytes.Buffer), "approve", false)
 	if err != nil {
 		t.Fatalf("promptApproval yes returned error: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestPromptApprovalParsesYesNo(t *testing.T) {
 		t.Fatal("expected approval for yes")
 	}
 
-	rejected, err := promptApproval(bytes.NewBufferString("n\n"), new(bytes.Buffer), "approve")
+	rejected, err := promptApproval(bytes.NewBufferString("n\n"), new(bytes.Buffer), "approve", false)
 	if err != nil {
 		t.Fatalf("promptApproval no returned error: %v", err)
 	}

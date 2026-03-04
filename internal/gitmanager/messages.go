@@ -26,6 +26,10 @@ type ChangeReview struct {
 
 // ReviewFocus returns user-facing wording for what Concierge is fixing.
 func ReviewFocus(step core.EnsureStep) string {
+	switch step.ID {
+	case core.EnsureStepPreprocessContract:
+		return "Implement preprocess with train and validation subsets"
+	}
 	focus := strings.TrimSpace(core.HumanEnsureStepRequirementLabel(step.ID))
 	if focus == "" {
 		focus = strings.TrimSpace(step.Description)

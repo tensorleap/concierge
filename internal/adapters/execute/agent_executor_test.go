@@ -309,6 +309,71 @@ func TestModelAuthoringEvidenceContainsSelectedModelPath(t *testing.T) {
 	}
 }
 
+func TestPreprocessAuthoringTaskIncludesTrainValidationConstraint(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &fakeAgentRunner{
+		result: agent.AgentResult{
+			Applied: true,
+			Summary: "preprocess contract fixed",
+		},
+	}
+	executor := NewAgentExecutor(runner)
+	step, ok := core.EnsureStepByID(core.EnsureStepPreprocessContract)
+	if !ok {
+		t.Fatalf("expected step %q to exist", core.EnsureStepPreprocessContract)
+	}
+
+	_, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		ID:         "snapshot-preprocess-constraints",
+		Repository: core.RepositoryState{Root: repoRoot},
+	}, step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	foundTrain := false
+	foundValidation := false
+	for _, constraint := range runner.lastTask.Constraints {
+		if strings.Contains(constraint, "train") {
+			foundTrain = true
+		}
+		if strings.Contains(constraint, "validation") {
+			foundValidation = true
+		}
+	}
+	if !foundTrain || !foundValidation {
+		t.Fatalf("expected constraints to include train/validation requirements, got %+v", runner.lastTask.Constraints)
+	}
+}
+
+func TestPreprocessAuthoringEvidenceCapturesTargetSymbols(t *testing.T) {
+	repoRoot := t.TempDir()
+	binderPath := filepath.Join(repoRoot, "leap_binder.py")
+	writePreprocessFixtureFile(t, binderPath, "preprocess_data")
+
+	runner := &fakeAgentRunner{
+		result: agent.AgentResult{
+			Applied: true,
+			Summary: "preprocess contract fixed",
+		},
+	}
+	executor := NewAgentExecutor(runner)
+	step, ok := core.EnsureStepByID(core.EnsureStepPreprocessContract)
+	if !ok {
+		t.Fatalf("expected step %q to exist", core.EnsureStepPreprocessContract)
+	}
+
+	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		ID:         "snapshot-preprocess-evidence",
+		Repository: core.RepositoryState{Root: repoRoot},
+	}, step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	assertEvidence(t, result.Evidence, "authoring.recommendation.preprocess.target_symbols", "preprocess_data")
+}
+
 type fakeAgentRunner struct {
 	result   agent.AgentResult
 	err      error
@@ -362,6 +427,19 @@ func writeTestFile(t *testing.T, path string) {
 		t.Fatalf("MkdirAll failed for %q: %v", path, err)
 	}
 	if err := os.WriteFile(path, []byte("binary"), 0o644); err != nil {
+		t.Fatalf("WriteFile failed for %q: %v", path, err)
+	}
+}
+
+func writePreprocessFixtureFile(t *testing.T, path, functionName string) {
+	t.Helper()
+	content := `from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_preprocess
+
+@tensorleap_preprocess()
+def ` + functionName + `():
+    return []`
+	writeTestFile(t, path)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile failed for %q: %v", path, err)
 	}
 }

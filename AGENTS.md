@@ -33,6 +33,8 @@ This repository is implemented step by step.
 - Never commit directly to `main` or `master` unless specifically instructed to do so by the user.
 - Never push directly to `main` or `master` unless specifically instructed to do so by the user.
 - All implementation work must be done on a feature branch and merged via PR.
+- Use `git worktree` as the default mechanism for branch creation and branch switching.
+- Do not rely on regular branch checkouts (`git checkout` / `git switch`) for implementation flow between branches.
 
 ### Required pre-implementation git checks
 
@@ -41,9 +43,10 @@ Run these before any file edits or commits:
 1. `git rev-parse --abbrev-ref HEAD`
 2. `git status --short --branch`
 
-If current branch is `main` or `master`, create and switch immediately:
+If current branch is `main` or `master`, create and switch immediately using a new worktree:
 
-- `git checkout -b feature/step-<step-id>-<short-name>`
+- `git worktree add ../concierge-step-<step-id>-<short-name> -b feature/step-<step-id>-<short-name>`
+- `cd ../concierge-step-<step-id>-<short-name>`
 
 ### Required pre-commit gate
 

@@ -319,6 +319,33 @@ func stepApprovalMessage(
 			)
 		}
 	}
+	if step.ID == core.EnsureStepPreprocessContract && hasSnapshot {
+		recommendationStatus := core.IntegrationStatus{}
+		if hasStatus {
+			recommendationStatus = status
+		}
+		recommendation, err := execute.BuildPreprocessAuthoringRecommendation(snapshot, recommendationStatus)
+		if err == nil {
+			target := strings.TrimSpace(recommendation.Target)
+			if target == "" {
+				target = "<none>"
+			}
+			checklist = append(checklist,
+				"",
+				"Preprocess recommendation:",
+				"- Recommended target: "+target,
+				"- Rationale: "+strings.TrimSpace(recommendation.Rationale),
+				"- Target symbols: "+renderInlinePromptValues(recommendation.Candidates),
+			)
+			for _, constraint := range recommendation.Constraints {
+				trimmed := strings.TrimSpace(constraint)
+				if trimmed == "" {
+					continue
+				}
+				checklist = append(checklist, "- "+trimmed)
+			}
+		}
+	}
 
 	blockers := []core.Issue(nil)
 	if hasStatus {

@@ -62,6 +62,13 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 			ResolvedModelPath: strings.TrimSpace(recommendation.Target),
 		}
 	}
+	if canonicalStep.ID == core.EnsureStepPreprocessContract {
+		recommendation, err := BuildPreprocessAuthoringRecommendation(taskSnapshot, taskStatus)
+		if err != nil {
+			return core.ExecutionResult{}, err
+		}
+		recommendations = append(recommendations, recommendation)
+	}
 
 	scopePolicy, err := PolicyForStep(canonicalStep.ID, taskSnapshot, taskStatus)
 	if err != nil {
@@ -148,14 +155,24 @@ func recommendationEvidence(recommendations []core.AuthoringRecommendation) []co
 	}
 	evidence := make([]core.EvidenceItem, 0, 3)
 	for _, recommendation := range recommendations {
-		if recommendation.StepID != core.EnsureStepModelContract {
+		if recommendation.StepID != core.EnsureStepModelContract && recommendation.StepID != core.EnsureStepPreprocessContract {
 			continue
 		}
-		evidence = append(evidence,
-			core.EvidenceItem{Name: "authoring.recommendation.model.target", Value: strings.TrimSpace(recommendation.Target)},
-			core.EvidenceItem{Name: "authoring.recommendation.model.rationale", Value: strings.TrimSpace(recommendation.Rationale)},
-			core.EvidenceItem{Name: "authoring.recommendation.model.candidates", Value: strings.Join(recommendation.Candidates, ",")},
-		)
+		switch recommendation.StepID {
+		case core.EnsureStepModelContract:
+			evidence = append(evidence,
+				core.EvidenceItem{Name: "authoring.recommendation.model.target", Value: strings.TrimSpace(recommendation.Target)},
+				core.EvidenceItem{Name: "authoring.recommendation.model.rationale", Value: strings.TrimSpace(recommendation.Rationale)},
+				core.EvidenceItem{Name: "authoring.recommendation.model.candidates", Value: strings.Join(recommendation.Candidates, ",")},
+			)
+		case core.EnsureStepPreprocessContract:
+			evidence = append(evidence,
+				core.EvidenceItem{Name: "authoring.recommendation.preprocess.target", Value: strings.TrimSpace(recommendation.Target)},
+				core.EvidenceItem{Name: "authoring.recommendation.preprocess.rationale", Value: strings.TrimSpace(recommendation.Rationale)},
+				core.EvidenceItem{Name: "authoring.recommendation.preprocess.target_symbols", Value: strings.Join(recommendation.Candidates, ",")},
+				core.EvidenceItem{Name: "authoring.recommendation.preprocess.constraints", Value: strings.Join(recommendation.Constraints, " | ")},
+			)
+		}
 	}
 	return evidence
 }
@@ -304,14 +321,27 @@ func objectiveForStep(
 		return "Remediate Tensorleap model contract by fixing @tensorleap_load_model path selection", constraints, true
 	case core.EnsureStepPreprocessContract:
 		constraints := []string{
-			"Author preprocess in one pass: include @tensorleap_preprocess and required train/validation subset handling",
-			"Ensure @tensorleap_load_model exists and preprocess wiring references the resolved model path",
+			"Implement a preprocess function that returns both train and validation subsets.",
+			"Keep preprocess outputs deterministic and non-empty for each feasible subset.",
+			"Ensure @tensorleap_load_model exists and preprocess wiring references the resolved model path.",
 			"Avoid changing unrelated project behavior",
+		}
+		for _, recommendation := range recommendations {
+			if recommendation.StepID != core.EnsureStepPreprocessContract {
+				continue
+			}
+			if target := strings.TrimSpace(recommendation.Target); target != "" {
+				constraints = append(constraints, fmt.Sprintf("Recommended preprocess target: %q (%s)", target, recommendation.Rationale))
+			}
+			if len(recommendation.Candidates) > 0 {
+				constraints = append(constraints, fmt.Sprintf("Suggested preprocess symbols: %s", strings.Join(recommendation.Candidates, ", ")))
+			}
+			break
 		}
 		if selectedModelPath := strings.TrimSpace(snapshot.SelectedModelPath); selectedModelPath != "" {
 			constraints = append(constraints, fmt.Sprintf("Use model path %q for @tensorleap_load_model unless repository code proves this path is invalid", selectedModelPath))
 		}
-		return "Implement preprocess contract with decorator-correct model loading in one pass", constraints, true
+		return "Implement preprocess contract with required train/validation subset handling and deterministic outputs", constraints, true
 	case core.EnsureStepInputEncoders:
 		return "Implement and repair Tensorleap input encoders", []string{
 			"Ensure encoders execute for multiple indices without exceptions",

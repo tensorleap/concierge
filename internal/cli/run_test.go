@@ -336,6 +336,37 @@ func TestModelAuthoringRecommendationRenderedInApprovalPrompt(t *testing.T) {
 	}
 }
 
+func TestPreprocessAuthoringRecommendationRenderedInApprovalPrompt(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeFile(t, filepath.Join(repoRoot, "leap_binder.py"), "from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_preprocess\n\n@tensorleap_preprocess()\ndef preprocess_data():\n    return []\n")
+
+	step, ok := core.EnsureStepByID(core.EnsureStepPreprocessContract)
+	if !ok {
+		t.Fatal("expected preprocess ensure-step in catalog")
+	}
+
+	snapshot := core.WorkspaceSnapshot{
+		Repository: core.RepositoryState{Root: repoRoot},
+	}
+	status := core.IntegrationStatus{}
+	message := stepApprovalMessage(step, snapshot, true, status, true, false)
+	if !strings.Contains(message, "Preprocess recommendation:") {
+		t.Fatalf("expected preprocess recommendation section, got message: %q", message)
+	}
+	if !strings.Contains(message, "- Recommended target: preprocess_data") {
+		t.Fatalf("expected recommended target in prompt, got message: %q", message)
+	}
+	if !strings.Contains(message, "- Target symbols: preprocess_data") {
+		t.Fatalf("expected target symbol list in prompt, got message: %q", message)
+	}
+	if !strings.Contains(message, "Implement a preprocess function that returns both train and validation subsets.") {
+		t.Fatalf("expected preprocess constraint in prompt, got message: %q", message)
+	}
+	if !strings.Contains(message, "non-empty output values") {
+		t.Fatalf("expected non-empty subset guidance in prompt, got message: %q", message)
+	}
+}
+
 func TestRunDeclineStepApprovalLeavesRepoUnchanged(t *testing.T) {
 	disableHarness(t)
 	repo := initRunTestRepo(t, false)

@@ -15,6 +15,7 @@ This ExecPlan is a living document. Keep `Progress`, `Gap Analysis`, `Surprises 
 - 2026-03-03: Renumbered authoring/context slices so agent context injection is a strict prerequisite sequence (`10C-10F`) before all downstream authoring steps (`10G-10O`), plus fixture-level context quality validation (`12H`).
 - 2026-03-03: Marked Steps `10B1` and `10C` as `ACCEPTED` per user direction; `10C` merged via PR #13.
 - 2026-03-04: Marked Steps `10A`, `10B`, `10F`, and `10G` as `ACCEPTED` per user direction to begin Step `10H`.
+- 2026-03-04: Merged `feature/step-10h-preprocess-need-detection` to `main`; marked Step `10H` as `ACCEPTED` (all steps through `10H` now `ACCEPTED`).
 
 ## Purpose / Exit Target
 
@@ -89,7 +90,7 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 10E: Repo-specific context pack assembly | `ACCEPTED` | 2026-03-04 (`PR #15`) | Build deterministic repo-facts context bundles from snapshot/inspector/planner evidence for each agent task. |
 | Step 10F: Claude prompt/system-context wiring | `ACCEPTED` | 2026-03-04 (`user-directed state sync`) | Inject stable system prompt plus structured step prompt sections (objective, scope, repo facts, Tensorleap rules, acceptance checks). |
 | Step 10G: Model contract authoring flow | `ACCEPTED` | 2026-03-04 (`user-directed state sync`) | Add model-specific authoring objectives and deterministic recommendation/evidence path. |
-| Step 10H: Preprocess need detection | `PENDING` | — | Emit preprocess-specific issue codes from real contract inspection. |
+| Step 10H: Preprocess need detection | `ACCEPTED` | 2026-03-04 (`main`) | Emit preprocess-specific issue codes from real contract inspection. |
 | Step 10I: Preprocess authoring flow | `PENDING` | — | Add preprocess authoring objective context, approvals, and evidence expectations. |
 | Step 10J: Input-encoder need detection | `PENDING` | — | Detect missing input encoders and per-symbol coverage gaps. |
 | Step 10K: Input-encoder suggestion and authoring flow | `PENDING` | — | Render missing-input suggestions to users and pass symbol-level context to authoring executor. |
@@ -509,7 +510,7 @@ Rollback boundary:
 
 ---
 
-### Step 10H: Preprocess need detection (`PENDING`)
+### Step 10H: Preprocess need detection (`ACCEPTED`)
 
 Objective:
 

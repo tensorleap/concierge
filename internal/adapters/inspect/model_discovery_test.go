@@ -77,7 +77,18 @@ func TestModelDiscoveryReportsAmbiguousCandidates(t *testing.T) {
 		"",
 	}, "\n"))
 	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", simpleIntegrationTestSource())
+	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_preprocess, tensorleap_integration_test",
+		"",
+		"@tensorleap_preprocess()",
+		"def preprocess_data():",
+		"    return []",
+		"",
+		"@tensorleap_integration_test()",
+		"def run_flow():",
+		"    return None",
+		"",
+	}, "\n"))
 	writeFixtureFile(t, root, "model/a.h5", "binary")
 	writeFixtureFile(t, root, "model/b.onnx", "binary")
 

@@ -156,7 +156,7 @@ func HumanEnsureStepLabel(stepID EnsureStepID) string {
 	case EnsureStepIntegrationScript:
 		return "Integration script is present and importable"
 	case EnsureStepPreprocessContract:
-		return "Preprocess contract is satisfied"
+		return "Dataset preprocessing is configured"
 	case EnsureStepInputEncoders:
 		return "Input encoders run successfully"
 	case EnsureStepGroundTruthEncoders:
@@ -204,7 +204,7 @@ func HumanEnsureStepRequirementLabel(stepID EnsureStepID) string {
 	case EnsureStepIntegrationScript:
 		return "Integration script should be present and importable"
 	case EnsureStepPreprocessContract:
-		return "Preprocess contract should be satisfied"
+		return "Dataset preprocessing should be configured"
 	case EnsureStepInputEncoders:
 		return "Input encoders should run successfully"
 	case EnsureStepGroundTruthEncoders:

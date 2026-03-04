@@ -56,10 +56,10 @@ func TestReporterWritesSingleLineSummary(t *testing.T) {
 	output := sink.String()
 	expectedSnippets := []string{
 		"Integration Checklist",
-		"leap.yaml should be present and valid (blocking)",
-		"Blocked on: leap.yaml should be present and valid",
+		"leap.yaml should be present and valid (missing step)",
+		"Missing integration step: leap.yaml should be present and valid",
 		"leap.yaml is required at repository root",
-		"Concierge can help with this step interactively and will ask before making any changes.",
+		"I can help with this step interactively and will ask before making any changes.",
 		"Changes: No changes were applied.",
 	}
 	for _, snippet := range expectedSnippets {
@@ -135,15 +135,15 @@ func TestReporterShowsWarningStateWhenChecksHaveWarnings(t *testing.T) {
 	expectedSnippets := []string{
 		"⚠ Leap CLI should be installed and authenticated",
 		"Warning: Leap CLI should be installed and authenticated",
-		"Concierge can help with this step interactively and will ask before making any changes.",
+		"I can help with this step interactively and will ask before making any changes.",
 	}
 	for _, snippet := range expectedSnippets {
 		if !strings.Contains(output, snippet) {
 			t.Fatalf("expected output to contain %q, got %q", snippet, output)
 		}
 	}
-	if strings.Contains(output, "Blocked on:") {
-		t.Fatalf("did not expect blocker heading for warning-only checks, got %q", output)
+	if strings.Contains(output, "Missing integration step:") {
+		t.Fatalf("did not expect missing-step heading for warning-only checks, got %q", output)
 	}
 }
 
@@ -192,7 +192,7 @@ func TestReporterStopsAtFirstWarningAndPrintsWarningDetails(t *testing.T) {
 		"Warning: Leap CLI should be installed and authenticated",
 		"Details:",
 		"leap CLI is not authenticated",
-		"This warning is advisory in the current run, so Concierge did not apply a fix automatically.",
+		"This warning is advisory in the current run, so I did not apply a fix automatically.",
 		"Next step: run `leap auth login`, then rerun `concierge run`.",
 	}
 	for _, snippet := range expectedSnippets {
@@ -203,7 +203,7 @@ func TestReporterStopsAtFirstWarningAndPrintsWarningDetails(t *testing.T) {
 	if strings.Contains(output, "leap.yaml is present and valid") {
 		t.Fatalf("expected output to stop at first warning, got %q", output)
 	}
-	if strings.Contains(output, "Concierge can help with this step interactively and will ask before making any changes.") {
+	if strings.Contains(output, "I can help with this step interactively and will ask before making any changes.") {
 		t.Fatalf("did not expect interactive-help claim for warning-only completed run, got %q", output)
 	}
 }
@@ -243,7 +243,7 @@ func TestReporterShowsManualGuidanceWhenExecutorCannotApplyFix(t *testing.T) {
 	expectedSnippets := []string{
 		"Warning: Leap CLI should be installed and authenticated",
 		"leap CLI was not found in PATH",
-		"Concierge cannot apply an automated fix for this check in the current run.",
+		"I cannot apply an automated fix for this check in the current run.",
 		"Next step: install the Leap CLI, then run `leap --version` and `leap auth login`, and rerun `concierge run`.",
 	}
 	for _, snippet := range expectedSnippets {
@@ -251,7 +251,7 @@ func TestReporterShowsManualGuidanceWhenExecutorCannotApplyFix(t *testing.T) {
 			t.Fatalf("expected output to contain %q, got %q", snippet, output)
 		}
 	}
-	if strings.Contains(output, "Concierge can help with this step interactively and will ask before making any changes.") {
+	if strings.Contains(output, "I can help with this step interactively and will ask before making any changes.") {
 		t.Fatalf("did not expect interactive-help claim when executor mode is stub, got %q", output)
 	}
 }

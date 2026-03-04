@@ -372,19 +372,3 @@ func runGitCombined(ctx context.Context, dir string, args ...string) (string, er
 	}
 	return trimmed, nil
 }
-
-func IsProtectedBranchError(err error) bool {
-	if err == nil {
-		return false
-	}
-	return core.KindOf(err) == core.KindUnknown && strings.Contains(strings.ToLower(err.Error()), "protected branch")
-}
-
-func IsApprovalRejected(decision core.GitDecision) bool {
-	for _, evidence := range decision.Evidence {
-		if evidence.Name == "git.approval" && evidence.Value == "rejected" {
-			return true
-		}
-	}
-	return false
-}

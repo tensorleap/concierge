@@ -86,49 +86,6 @@ func inspectLeapYAMLContract(repoRoot string, leapYAMLPath string, status *core.
 	return &contract, nil
 }
 
-func matchesAnyPattern(path string, patterns []string) bool {
-	normalizedPath := filepath.ToSlash(filepath.Clean(path))
-	for _, pattern := range patterns {
-		if matchesPattern(normalizedPath, pattern) {
-			return true
-		}
-	}
-	return false
-}
-
-func matchesPattern(path string, pattern string) bool {
-	normalizedPattern := filepath.ToSlash(strings.TrimSpace(pattern))
-	normalizedPattern = strings.TrimPrefix(normalizedPattern, "./")
-	normalizedPattern = strings.TrimPrefix(normalizedPattern, "/")
-	if normalizedPattern == "" {
-		return false
-	}
-
-	if strings.HasSuffix(normalizedPattern, "/**") {
-		prefix := strings.TrimSuffix(normalizedPattern, "/**")
-		return path == prefix || strings.HasPrefix(path, prefix+"/")
-	}
-
-	if strings.HasSuffix(normalizedPattern, "/*") {
-		prefix := strings.TrimSuffix(normalizedPattern, "/*")
-		if !strings.HasPrefix(path, prefix+"/") {
-			return false
-		}
-		remaining := strings.TrimPrefix(path, prefix+"/")
-		return !strings.Contains(remaining, "/")
-	}
-
-	matched, err := filepath.Match(normalizedPattern, path)
-	if err == nil && matched {
-		return true
-	}
-
-	if !strings.ContainsAny(normalizedPattern, "*?[") {
-		return path == normalizedPattern
-	}
-	return false
-}
-
 func isPathWithinRepo(repoRoot string, path string) bool {
 	repo := filepath.Clean(repoRoot)
 	target := filepath.Clean(path)

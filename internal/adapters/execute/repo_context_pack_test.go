@@ -144,10 +144,10 @@ func TestBuildAgentRepoContextDeterministicOrderingAndTruncation(t *testing.T) {
 	}
 }
 
-func TestBuildAgentRepoContextFailsWhenRequiredStepContextMissing(t *testing.T) {
+func TestBuildAgentRepoContextAllowsModelStepWithoutResolvedCandidates(t *testing.T) {
 	repoRoot := t.TempDir()
 
-	_, err := BuildAgentRepoContext(
+	context, err := BuildAgentRepoContext(
 		core.EnsureStepModelContract,
 		core.WorkspaceSnapshot{
 			Repository: core.RepositoryState{Root: repoRoot},
@@ -156,14 +156,14 @@ func TestBuildAgentRepoContextFailsWhenRequiredStepContextMissing(t *testing.T) 
 		core.IntegrationStatus{},
 		core.ValidationResult{},
 	)
-	if err == nil {
-		t.Fatal("expected missing model context error")
+	if err != nil {
+		t.Fatalf("BuildAgentRepoContext returned error: %v", err)
 	}
-	if got := core.KindOf(err); got != core.KindUnknown {
-		t.Fatalf("expected error kind %q, got %q (err=%v)", core.KindUnknown, got, err)
+	if context.SelectedModelPath != "" {
+		t.Fatalf("expected empty selected model path, got %q", context.SelectedModelPath)
 	}
-	if !strings.Contains(err.Error(), "model authoring context requires") {
-		t.Fatalf("expected missing-context message, got: %v", err)
+	if len(context.ModelCandidates) != 0 {
+		t.Fatalf("expected no model candidates, got %+v", context.ModelCandidates)
 	}
 }
 

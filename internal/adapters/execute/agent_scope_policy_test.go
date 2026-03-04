@@ -38,6 +38,17 @@ func TestPolicyForInputEncodersExcludesGTAndIntegrationTestSections(t *testing.T
 	TestScopePolicyForInputEncodersExcludesGTAndIntegrationTestSections(t)
 }
 
+func TestScopePolicyForModelContractUsesLoadModelSection(t *testing.T) {
+	policy, err := PolicyForStep(core.EnsureStepModelContract, core.WorkspaceSnapshot{}, core.IntegrationStatus{})
+	if err != nil {
+		t.Fatalf("PolicyForStep returned error: %v", err)
+	}
+
+	assertContains(t, policy.DomainSections, "load_model_contract")
+	assertNotContains(t, policy.DomainSections, "preprocess_contract")
+	assertContainsSubstring(t, policy.ForbiddenAreas, "training/business logic")
+}
+
 func TestScopePolicyForStepReturnsErrorWhenScopeCannotBeResolved(t *testing.T) {
 	_, err := PolicyForStep(core.EnsureStepUploadPush, core.WorkspaceSnapshot{}, core.IntegrationStatus{})
 	if err == nil {

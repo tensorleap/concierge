@@ -21,6 +21,25 @@ func PolicyForStep(step core.EnsureStepID, snapshot core.WorkspaceSnapshot, stat
 	allowedFiles := resolveAgentAllowedFiles(snapshot, status)
 
 	switch step {
+	case core.EnsureStepModelContract:
+		return agent.AgentScopePolicy{
+			AllowedFiles: allowedFiles,
+			ForbiddenAreas: []string{
+				"Do not modify @tensorleap_preprocess definitions or subset semantics in this step",
+				"Do not modify @tensorleap_input_encoder or @tensorleap_gt_encoder definitions in this step",
+				"Do not modify unrelated training/business logic",
+			},
+			RequiredOutcomes: []string{
+				"Resolve one concrete @tensorleap_load_model path pointing to a supported .onnx or .h5 artifact",
+			},
+			StopAndAskTriggers: []string{
+				"No supported .onnx/.h5 candidates can be resolved from repository evidence",
+				"Fix requires refactoring unrelated training/business logic",
+			},
+			DomainSections: []string{
+				"load_model_contract",
+			},
+		}, nil
 	case core.EnsureStepPreprocessContract:
 		return agent.AgentScopePolicy{
 			AllowedFiles: allowedFiles,

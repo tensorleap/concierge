@@ -45,12 +45,30 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		)
 	}
 
-	scopePolicy, err := PolicyForStep(canonicalStep.ID, snapshot, core.IntegrationStatus{})
+	taskSnapshot := snapshot
+	taskStatus := core.IntegrationStatus{}
+	recommendations := make([]core.AuthoringRecommendation, 0, 1)
+	if canonicalStep.ID == core.EnsureStepModelContract {
+		recommendation, err := BuildModelAuthoringRecommendation(snapshot, taskStatus)
+		if err != nil {
+			return core.ExecutionResult{}, err
+		}
+		recommendations = append(recommendations, recommendation)
+		if strings.TrimSpace(taskSnapshot.SelectedModelPath) == "" {
+			taskSnapshot.SelectedModelPath = strings.TrimSpace(recommendation.Target)
+		}
+		taskStatus.Contracts = &core.IntegrationContracts{
+			ModelCandidates:   recommendationCandidatesAsModelCandidates(recommendation.Candidates),
+			ResolvedModelPath: strings.TrimSpace(recommendation.Target),
+		}
+	}
+
+	scopePolicy, err := PolicyForStep(canonicalStep.ID, taskSnapshot, taskStatus)
 	if err != nil {
 		return core.ExecutionResult{}, err
 	}
 
-	repoContext, err := BuildAgentRepoContext(canonicalStep.ID, snapshot, core.IntegrationStatus{}, core.ValidationResult{})
+	repoContext, err := BuildAgentRepoContext(canonicalStep.ID, taskSnapshot, taskStatus, core.ValidationResult{})
 	if err != nil {
 		return core.ExecutionResult{}, err
 	}
@@ -67,7 +85,7 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		return core.ExecutionResult{}, err
 	}
 
-	task, err := agentTaskForStep(snapshot, canonicalStep, scopePolicy, repoContext, knowledgePack)
+	task, err := agentTaskForStep(taskSnapshot, canonicalStep, scopePolicy, repoContext, knowledgePack, recommendations)
 	if err != nil {
 		return core.ExecutionResult{}, err
 	}
@@ -97,14 +115,49 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 	}
 	evidence = append(evidence, scopePolicyEvidence(scopePolicy)...)
 	evidence = append(evidence, repoContextEvidence(repoContext)...)
+	evidence = append(evidence, recommendationEvidence(recommendations)...)
 	evidence = append(evidence, runnerResult.Evidence...)
 
 	return core.ExecutionResult{
-		Step:     canonicalStep,
-		Applied:  runnerResult.Applied,
-		Summary:  summary,
-		Evidence: evidence,
+		Step:            canonicalStep,
+		Applied:         runnerResult.Applied,
+		Summary:         summary,
+		Evidence:        evidence,
+		Recommendations: append([]core.AuthoringRecommendation(nil), recommendations...),
 	}, nil
+}
+
+func recommendationCandidatesAsModelCandidates(values []string) []core.ModelCandidate {
+	if len(values) == 0 {
+		return nil
+	}
+	candidates := make([]core.ModelCandidate, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		candidates = append(candidates, core.ModelCandidate{Path: trimmed, Source: "authoring_recommendation"})
+	}
+	return candidates
+}
+
+func recommendationEvidence(recommendations []core.AuthoringRecommendation) []core.EvidenceItem {
+	if len(recommendations) == 0 {
+		return nil
+	}
+	evidence := make([]core.EvidenceItem, 0, 3)
+	for _, recommendation := range recommendations {
+		if recommendation.StepID != core.EnsureStepModelContract {
+			continue
+		}
+		evidence = append(evidence,
+			core.EvidenceItem{Name: "authoring.recommendation.model.target", Value: strings.TrimSpace(recommendation.Target)},
+			core.EvidenceItem{Name: "authoring.recommendation.model.rationale", Value: strings.TrimSpace(recommendation.Rationale)},
+			core.EvidenceItem{Name: "authoring.recommendation.model.candidates", Value: strings.Join(recommendation.Candidates, ",")},
+		)
+	}
+	return evidence
 }
 
 func (e *AgentExecutor) loadPack() (agent.DomainKnowledgePack, error) {
@@ -182,13 +235,14 @@ func agentTaskForStep(
 	policy agent.AgentScopePolicy,
 	repoContext core.AgentRepoContext,
 	knowledgePack agent.DomainKnowledgePack,
+	recommendations []core.AuthoringRecommendation,
 ) (agent.AgentTask, error) {
 	repoRoot := strings.TrimSpace(snapshot.Repository.Root)
 	if repoRoot == "" {
 		return agent.AgentTask{}, core.NewError(core.KindUnknown, "execute.agent.repo_root", "snapshot repository root is empty")
 	}
 
-	objective, acceptanceChecks, supported := objectiveForStep(snapshot, step.ID)
+	objective, acceptanceChecks, supported := objectiveForStep(snapshot, step.ID, recommendations)
 	if !supported {
 		return agent.AgentTask{}, core.WrapError(
 			core.KindStepNotApplicable,
@@ -220,8 +274,34 @@ func agentTaskForStep(
 	}, nil
 }
 
-func objectiveForStep(snapshot core.WorkspaceSnapshot, stepID core.EnsureStepID) (string, []string, bool) {
+func objectiveForStep(
+	snapshot core.WorkspaceSnapshot,
+	stepID core.EnsureStepID,
+	recommendations []core.AuthoringRecommendation,
+) (string, []string, bool) {
 	switch stepID {
+	case core.EnsureStepModelContract:
+		constraints := []string{
+			"Resolve @tensorleap_load_model to exactly one concrete .onnx/.h5 model path",
+			"Do not modify unrelated training/business logic",
+			"Model binaries are uploaded by leap CLI; leap.yaml include/exclude governs integration code",
+		}
+		if selectedModelPath := strings.TrimSpace(snapshot.SelectedModelPath); selectedModelPath != "" {
+			constraints = append(constraints, fmt.Sprintf("Use model path %q unless repository evidence proves it invalid", selectedModelPath))
+		}
+		for _, recommendation := range recommendations {
+			if recommendation.StepID != core.EnsureStepModelContract {
+				continue
+			}
+			if target := strings.TrimSpace(recommendation.Target); target != "" {
+				constraints = append(constraints, fmt.Sprintf("Recommended model target: %q (%s)", target, recommendation.Rationale))
+			}
+			if len(recommendation.Candidates) > 0 {
+				constraints = append(constraints, fmt.Sprintf("Candidate model paths: %s", strings.Join(recommendation.Candidates, ", ")))
+			}
+			break
+		}
+		return "Remediate Tensorleap model contract by fixing @tensorleap_load_model path selection", constraints, true
 	case core.EnsureStepPreprocessContract:
 		constraints := []string{
 			"Author preprocess in one pass: include @tensorleap_preprocess and required train/validation subset handling",

@@ -294,16 +294,8 @@ func leapYAMLBoundarySummary(snapshot core.WorkspaceSnapshot) string {
 }
 
 func validateRequiredRepoContext(step core.EnsureStepID, context core.AgentRepoContext) error {
-	switch step {
-	case core.EnsureStepModelContract:
-		if strings.TrimSpace(context.SelectedModelPath) == "" && len(context.ModelCandidates) == 0 {
-			return core.NewError(
-				core.KindUnknown,
-				"execute.agent.repo_context.missing",
-				"model authoring context requires a selected model path or discovered model candidates",
-			)
-		}
-	}
+	_ = step
+	_ = context
 	return nil
 }
 

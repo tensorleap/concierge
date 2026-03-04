@@ -86,7 +86,7 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 10C: Tensorleap knowledge pack baseline | `ACCEPTED` | 2026-03-03 (`main`, PR #13) | Add checked-in Tensorleap integration knowledge pack + source manifest used for agent context injection. |
 | Step 10D: Step-scoped domain slice and edit-scope policy | `ACCEPTED` | 2026-03-03 (`main`, PR #14) | Map ensure-steps to minimal Tensorleap rule slices and strict allowed/forbidden edit scope contracts. |
 | Step 10E: Repo-specific context pack assembly | `ACCEPTED` | 2026-03-04 (`PR #15`) | Build deterministic repo-facts context bundles from snapshot/inspector/planner evidence for each agent task. |
-| Step 10F: Claude prompt/system-context wiring | `PENDING` | — | Inject stable system prompt plus structured step prompt sections (objective, scope, repo facts, Tensorleap rules, acceptance checks). |
+| Step 10F: Claude prompt/system-context wiring | `ACCEPTED` | 2026-03-04 (`main`) | Inject stable system prompt plus structured step prompt sections (objective, scope, repo facts, Tensorleap rules, acceptance checks). |
 | Step 10G: Model contract authoring flow | `PENDING` | — | Add model-specific authoring objectives and deterministic recommendation/evidence path. |
 | Step 10H: Preprocess need detection | `PENDING` | — | Emit preprocess-specific issue codes from real contract inspection. |
 | Step 10I: Preprocess authoring flow | `PENDING` | — | Add preprocess authoring objective context, approvals, and evidence expectations. |

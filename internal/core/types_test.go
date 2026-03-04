@@ -81,3 +81,35 @@ func TestIssueLocationIsOptional(t *testing.T) {
 		t.Fatalf("expected location when provided, got: %s", string(raw))
 	}
 }
+
+func TestExecutionResultRecommendationsOptionalJSON(t *testing.T) {
+	result := ExecutionResult{
+		Step:    EnsureStep{ID: EnsureStepModelContract},
+		Applied: false,
+		Summary: "model recommendation ready",
+	}
+
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal without recommendations failed: %v", err)
+	}
+	if strings.Contains(string(raw), "\"recommendations\"") {
+		t.Fatalf("did not expect recommendations when omitted, got: %s", string(raw))
+	}
+
+	result.Recommendations = []AuthoringRecommendation{
+		{
+			StepID:     EnsureStepModelContract,
+			Target:     "model/demo.h5",
+			Rationale:  "single_supported_candidate",
+			Candidates: []string{"model/demo.h5"},
+		},
+	}
+	raw, err = json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal with recommendations failed: %v", err)
+	}
+	if !strings.Contains(string(raw), "\"recommendations\"") {
+		t.Fatalf("expected recommendations when provided, got: %s", string(raw))
+	}
+}

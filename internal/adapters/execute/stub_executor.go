@@ -66,11 +66,11 @@ func (d *DispatcherExecutor) Execute(ctx context.Context, snapshot core.Workspac
 	if isFilesystemStep(step.ID) {
 		return d.filesystem.Execute(ctx, snapshot, step)
 	}
-	if step.ID == core.EnsureStepPreprocessContract && d.agent == nil {
+	if (step.ID == core.EnsureStepPreprocessContract || step.ID == core.EnsureStepModelContract) && d.agent == nil {
 		return core.ExecutionResult{}, core.NewError(
 			core.KindMissingDependency,
-			"execute.dispatcher.preprocess_agent_required",
-			"preprocess authoring requires Claude CLI (`claude`) to be installed and available on PATH",
+			"execute.dispatcher.agent_required",
+			"this authoring step requires Claude CLI (`claude`) to be installed and available on PATH",
 		)
 	}
 	if d.agent != nil {
@@ -87,7 +87,7 @@ func (d *DispatcherExecutor) Execute(ctx context.Context, snapshot core.Workspac
 
 func isFilesystemStep(stepID core.EnsureStepID) bool {
 	switch stepID {
-	case core.EnsureStepLeapYAML, core.EnsureStepModelContract, core.EnsureStepIntegrationScript, core.EnsureStepIntegrationTestContract:
+	case core.EnsureStepLeapYAML, core.EnsureStepIntegrationScript, core.EnsureStepIntegrationTestContract:
 		return true
 	default:
 		return false

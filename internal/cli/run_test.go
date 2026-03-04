@@ -291,6 +291,51 @@ func TestStepApprovalMessageIncludesBlockerContext(t *testing.T) {
 	}
 }
 
+func TestModelAuthoringRecommendationRenderedInApprovalPrompt(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeFile(t, filepath.Join(repoRoot, "model", "b.h5"), "binary")
+	writeFile(t, filepath.Join(repoRoot, "model", "a.onnx"), "binary")
+
+	step, ok := core.EnsureStepByID(core.EnsureStepModelContract)
+	if !ok {
+		t.Fatal("expected model ensure-step in catalog")
+	}
+
+	snapshot := core.WorkspaceSnapshot{
+		Repository: core.RepositoryState{Root: repoRoot},
+	}
+	status := core.IntegrationStatus{
+		Contracts: &core.IntegrationContracts{
+			ModelCandidates: []core.ModelCandidate{
+				{Path: "model/b.h5"},
+				{Path: "model/a.onnx"},
+			},
+		},
+		Issues: []core.Issue{
+			{
+				Code:     core.IssueCodeModelCandidatesAmbiguous,
+				Message:  "multiple model candidates found",
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopeModel,
+			},
+		},
+	}
+
+	message := stepApprovalMessage(step, snapshot, true, status, true, false)
+	if !strings.Contains(message, "Model recommendation:") {
+		t.Fatalf("expected model recommendation section, got message: %q", message)
+	}
+	if !strings.Contains(message, "- Recommended target: model/a.onnx") {
+		t.Fatalf("expected recommended target in prompt, got message: %q", message)
+	}
+	if !strings.Contains(message, "- Rationale: ambiguous_supported_candidates_lexical_fallback") {
+		t.Fatalf("expected rationale in prompt, got message: %q", message)
+	}
+	if !strings.Contains(message, "- Candidates: model/a.onnx, model/b.h5") {
+		t.Fatalf("expected candidate list in prompt, got message: %q", message)
+	}
+}
+
 func TestRunDeclineStepApprovalLeavesRepoUnchanged(t *testing.T) {
 	disableHarness(t)
 	repo := initRunTestRepo(t, false)

@@ -299,6 +299,27 @@ func stepApprovalMessage(
 ) string {
 	checklist := checklistRowsForPrompt(step, snapshot, hasSnapshot, status, hasStatus, enableColor)
 
+	if step.ID == core.EnsureStepModelContract && hasSnapshot {
+		recommendationStatus := core.IntegrationStatus{}
+		if hasStatus {
+			recommendationStatus = status
+		}
+		recommendation, err := execute.BuildModelAuthoringRecommendation(snapshot, recommendationStatus)
+		if err == nil {
+			target := strings.TrimSpace(recommendation.Target)
+			if target == "" {
+				target = "<none>"
+			}
+			checklist = append(checklist,
+				"",
+				"Model recommendation:",
+				"- Recommended target: "+target,
+				"- Rationale: "+strings.TrimSpace(recommendation.Rationale),
+				"- Candidates: "+renderInlinePromptValues(recommendation.Candidates),
+			)
+		}
+	}
+
 	blockers := []core.Issue(nil)
 	if hasStatus {
 		blockers = blockingIssuesForStep(status.Issues, step.ID)
@@ -342,6 +363,27 @@ func stepApprovalMessage(
 		"Apply this fix now?",
 	)
 	return strings.Join(checklist, "\n")
+}
+
+func renderInlinePromptValues(values []string) string {
+	trimmed := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		item := strings.TrimSpace(value)
+		if item == "" {
+			continue
+		}
+		key := strings.ToLower(item)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		trimmed = append(trimmed, item)
+	}
+	if len(trimmed) == 0 {
+		return "<none>"
+	}
+	return strings.Join(trimmed, ", ")
 }
 
 func humanInvalidationSummary(reasons []string) string {

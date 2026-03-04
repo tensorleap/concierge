@@ -147,6 +147,15 @@ type AgentRepoContext struct {
 	ValidationFindings   []string `json:"validationFindings,omitempty"`
 }
 
+// AuthoringRecommendation captures deterministic, step-scoped remediation guidance.
+type AuthoringRecommendation struct {
+	StepID      EnsureStepID `json:"stepId"`
+	Target      string       `json:"target,omitempty"`
+	Rationale   string       `json:"rationale,omitempty"`
+	Candidates  []string     `json:"candidates,omitempty"`
+	Constraints []string     `json:"constraints,omitempty"`
+}
+
 // EnsureStep is one deterministic action the engine can apply.
 type EnsureStep struct {
 	ID          EnsureStepID `json:"id"`
@@ -167,10 +176,11 @@ type EvidenceItem struct {
 
 // ExecutionResult describes the output of running a single ensure-step.
 type ExecutionResult struct {
-	Step     EnsureStep     `json:"step"`
-	Applied  bool           `json:"applied"`
-	Summary  string         `json:"summary"`
-	Evidence []EvidenceItem `json:"evidence,omitempty"`
+	Step            EnsureStep                `json:"step"`
+	Applied         bool                      `json:"applied"`
+	Summary         string                    `json:"summary"`
+	Evidence        []EvidenceItem            `json:"evidence,omitempty"`
+	Recommendations []AuthoringRecommendation `json:"recommendations,omitempty"`
 }
 
 // CommitMetadata describes an audited git commit created for one iteration.
@@ -213,13 +223,14 @@ type VerifiedCheck struct {
 
 // IterationReport is the final stage payload for one orchestration loop.
 type IterationReport struct {
-	GeneratedAt time.Time        `json:"generatedAt"`
-	SnapshotID  string           `json:"snapshotId"`
-	Step        EnsureStep       `json:"step"`
-	Applied     bool             `json:"applied"`
-	Evidence    []EvidenceItem   `json:"evidence,omitempty"`
-	Checks      []VerifiedCheck  `json:"checks,omitempty"`
-	Validation  ValidationResult `json:"validation"`
-	Commit      *CommitMetadata  `json:"commit,omitempty"`
-	Notes       []string         `json:"notes,omitempty"`
+	GeneratedAt     time.Time                 `json:"generatedAt"`
+	SnapshotID      string                    `json:"snapshotId"`
+	Step            EnsureStep                `json:"step"`
+	Applied         bool                      `json:"applied"`
+	Evidence        []EvidenceItem            `json:"evidence,omitempty"`
+	Recommendations []AuthoringRecommendation `json:"recommendations,omitempty"`
+	Checks          []VerifiedCheck           `json:"checks,omitempty"`
+	Validation      ValidationResult          `json:"validation"`
+	Commit          *CommitMetadata           `json:"commit,omitempty"`
+	Notes           []string                  `json:"notes,omitempty"`
 }

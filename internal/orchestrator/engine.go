@@ -127,15 +127,16 @@ func (e *Engine) runIteration(
 	evidence = append(evidence, decision.Evidence...)
 
 	report := core.IterationReport{
-		GeneratedAt: e.clock(),
-		SnapshotID:  snapshot.ID,
-		Step:        finalResult.Step,
-		Applied:     finalResult.Applied,
-		Evidence:    evidence,
-		Checks:      core.BuildVerifiedChecks(snapshot, status.Issues, validation.Issues, finalResult.Step.ID),
-		Validation:  validation,
-		Commit:      decision.Commit,
-		Notes:       append([]string(nil), decision.Notes...),
+		GeneratedAt:     e.clock(),
+		SnapshotID:      snapshot.ID,
+		Step:            finalResult.Step,
+		Applied:         finalResult.Applied,
+		Evidence:        evidence,
+		Recommendations: append([]core.AuthoringRecommendation(nil), finalResult.Recommendations...),
+		Checks:          core.BuildVerifiedChecks(snapshot, status.Issues, validation.Issues, finalResult.Step.ID),
+		Validation:      validation,
+		Commit:          decision.Commit,
+		Notes:           append([]string(nil), decision.Notes...),
 	}
 
 	if beforeReport != nil {

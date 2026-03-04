@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tensorleap/concierge/internal/agent"
@@ -234,6 +235,80 @@ func TestAgentExecutorPreprocessObjectiveIncludesSelectedModelPath(t *testing.T)
 	}
 }
 
+func TestModelAuthoringAgentTaskIncludesCandidateContext(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeTestFile(t, filepath.Join(repoRoot, "models", "z.h5"))
+	writeTestFile(t, filepath.Join(repoRoot, "models", "a.onnx"))
+
+	runner := &fakeAgentRunner{
+		result: agent.AgentResult{Applied: true, Summary: "model contract fixed"},
+	}
+	executor := NewAgentExecutor(runner)
+	step, ok := core.EnsureStepByID(core.EnsureStepModelContract)
+	if !ok {
+		t.Fatalf("expected step %q to exist", core.EnsureStepModelContract)
+	}
+
+	_, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		ID:         "snapshot-model-context",
+		Repository: core.RepositoryState{Root: repoRoot},
+	}, step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	if runner.lastTask.RepoContext == nil {
+		t.Fatal("expected repo context for model authoring task")
+	}
+	if runner.lastTask.RepoContext.SelectedModelPath != "models/a.onnx" {
+		t.Fatalf("expected selected model path %q, got %q", "models/a.onnx", runner.lastTask.RepoContext.SelectedModelPath)
+	}
+	if len(runner.lastTask.RepoContext.ModelCandidates) == 0 {
+		t.Fatalf("expected model candidates in repo context, got %+v", runner.lastTask.RepoContext)
+	}
+
+	foundCandidatesConstraint := false
+	for _, constraint := range runner.lastTask.Constraints {
+		if strings.Contains(constraint, "Candidate model paths:") {
+			foundCandidatesConstraint = true
+			break
+		}
+	}
+	if !foundCandidatesConstraint {
+		t.Fatalf("expected candidate-context constraint in task constraints, got %+v", runner.lastTask.Constraints)
+	}
+}
+
+func TestModelAuthoringEvidenceContainsSelectedModelPath(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &fakeAgentRunner{
+		result: agent.AgentResult{Applied: true, Summary: "model contract fixed"},
+	}
+	executor := NewAgentExecutor(runner)
+	step, ok := core.EnsureStepByID(core.EnsureStepModelContract)
+	if !ok {
+		t.Fatalf("expected step %q to exist", core.EnsureStepModelContract)
+	}
+
+	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		ID:                "snapshot-model-evidence",
+		SelectedModelPath: "model/selected.h5",
+		Repository:        core.RepositoryState{Root: repoRoot},
+	}, step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	assertEvidence(t, result.Evidence, "authoring.recommendation.model.target", "model/selected.h5")
+	assertEvidence(t, result.Evidence, "authoring.recommendation.model.rationale", "selected_model_path_override")
+	if len(result.Recommendations) == 0 {
+		t.Fatalf("expected execution result recommendations, got %+v", result)
+	}
+	if result.Recommendations[0].Target != "model/selected.h5" {
+		t.Fatalf("expected recommendation target %q, got %+v", "model/selected.h5", result.Recommendations)
+	}
+}
+
 type fakeAgentRunner struct {
 	result   agent.AgentResult
 	err      error
@@ -279,4 +354,14 @@ func assertEvidencePresent(t *testing.T, items []core.EvidenceItem, name string)
 		}
 	}
 	t.Fatalf("expected evidence item %q in %+v", name, items)
+}
+
+func writeTestFile(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed for %q: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte("binary"), 0o644); err != nil {
+		t.Fatalf("WriteFile failed for %q: %v", path, err)
+	}
 }

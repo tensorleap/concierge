@@ -13,6 +13,7 @@ This ExecPlan is a living document. Keep `Progress`, `Gap Analysis`, `Surprises 
 - 2026-03-03: Integrated `VALIDATION.md` as Step `10B1` (delta-scoped pre-commit integration quality gate) and wired it into gap analysis, progress tracking, execution order, and phase acceptance criteria.
 - 2026-03-03: Completed Step `10A0` plan synchronization by marking it `ACCEPTED` and aligning execution-order metadata with the already-merged authoring-first sequence.
 - 2026-03-03: Renumbered authoring/context slices so agent context injection is a strict prerequisite sequence (`10C-10F`) before all downstream authoring steps (`10G-10O`), plus fixture-level context quality validation (`12H`).
+- 2026-03-03: Marked Steps `10B1` and `10C` as `ACCEPTED` per user direction; `10C` merged via PR #13.
 
 ## Purpose / Exit Target
 
@@ -81,10 +82,10 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 10A0: Plan state sync after 9C merge | `ACCEPTED` | 2026-03-03 (`main`) | Synchronized plan tracking after `9C` merge and verified authoring-first tail consistency (`10A-14B`). |
 | Step 10A: Contract discovery core | `DONE` | 2026-03-03 (`PR #11`) | Added deterministic entry-file contract discovery for decorators and integration-test call symbols with graceful path-aware failures. |
 | Step 10B: Model discovery and need detection | `DONE` | 2026-03-03 (`PR #12`) | Added deterministic model candidate discovery from `@tensorleap_load_model` and repo search, ambiguity/missing/format/outside-repo issues, and candidate evidence context without enforcing leap.yaml include/exclude for model artifacts. |
-| Step 10B1: Pre-commit integration quality gate (delta-scoped) | `PENDING` | — | Run step-local integration validation and changed-file syntax checks before commit approval is offered. |
-| Step 10C: Tensorleap knowledge pack baseline | `PENDING` | — | Add checked-in Tensorleap integration knowledge pack + source manifest used for agent context injection. |
-| Step 10D: Step-scoped domain slice and edit-scope policy | `PENDING` | — | Map ensure-steps to minimal Tensorleap rule slices and strict allowed/forbidden edit scope contracts. |
-| Step 10E: Repo-specific context pack assembly | `PENDING` | — | Build deterministic repo-facts context bundles from snapshot/inspector/planner evidence for each agent task. |
+| Step 10B1: Pre-commit integration quality gate (delta-scoped) | `ACCEPTED` | 2026-03-03 (`main`) | Run step-local integration validation and changed-file syntax checks before commit approval is offered. |
+| Step 10C: Tensorleap knowledge pack baseline | `ACCEPTED` | 2026-03-03 (`main`, PR #13) | Add checked-in Tensorleap integration knowledge pack + source manifest used for agent context injection. |
+| Step 10D: Step-scoped domain slice and edit-scope policy | `ACCEPTED` | 2026-03-03 (`main`, PR #14) | Map ensure-steps to minimal Tensorleap rule slices and strict allowed/forbidden edit scope contracts. |
+| Step 10E: Repo-specific context pack assembly | `ACCEPTED` | 2026-03-04 (`PR #15`) | Build deterministic repo-facts context bundles from snapshot/inspector/planner evidence for each agent task. |
 | Step 10F: Claude prompt/system-context wiring | `PENDING` | — | Inject stable system prompt plus structured step prompt sections (objective, scope, repo facts, Tensorleap rules, acceptance checks). |
 | Step 10G: Model contract authoring flow | `PENDING` | — | Add model-specific authoring objectives and deterministic recommendation/evidence path. |
 | Step 10H: Preprocess need detection | `PENDING` | — | Emit preprocess-specific issue codes from real contract inspection. |
@@ -133,7 +134,7 @@ Detailed breakdowns for completed steps are intentionally omitted from this sect
 Use the `Progress` table above as the source of record for completed step titles/status.
 Detailed specifications below cover only pending steps.
 
-### Step 10B1: Pre-commit integration quality gate (delta-scoped) (`PENDING`)
+### Step 10B1: Pre-commit integration quality gate (delta-scoped) (`ACCEPTED`)
 
 Objective:
 
@@ -243,7 +244,7 @@ Rollback boundary:
 
 ---
 
-### Step 10C: Tensorleap knowledge pack baseline (`PENDING`)
+### Step 10C: Tensorleap knowledge pack baseline (`ACCEPTED`)
 
 Objective:
 
@@ -295,7 +296,7 @@ Rollback boundary:
 
 ---
 
-### Step 10D: Step-scoped domain slice and edit-scope policy (`PENDING`)
+### Step 10D: Step-scoped domain slice and edit-scope policy (`ACCEPTED`)
 
 Objective:
 
@@ -345,7 +346,7 @@ Rollback boundary:
 
 ---
 
-### Step 10E: Repo-specific context pack assembly (`PENDING`)
+### Step 10E: Repo-specific context pack assembly (`ACCEPTED`)
 
 Objective:
 
@@ -1532,10 +1533,10 @@ Rollback boundary:
 8. Step 10A0 is already `ACCEPTED` (no implementation action required).
 9. Implement Step 10A.
 10. Implement Step 10B.
-11. Implement Step 10B1.
-12. Implement Step 10C.
+11. Step 10B1 is already `ACCEPTED` (no implementation action required).
+12. Step 10C is already `ACCEPTED` (no implementation action required).
 13. Implement Step 10D.
-14. Implement Step 10E.
+14. Step 10E is already `ACCEPTED` (no implementation action required).
 15. Implement Step 10F.
 16. Implement Step 10G.
 17. Implement Step 10H.

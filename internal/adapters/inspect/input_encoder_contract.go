@@ -38,15 +38,19 @@ func inspectInputEncoderContract(repoRoot string, status *core.IntegrationStatus
 		return
 	}
 
-	entryFilePath, source, ok := loadContractEntrySource(repoRoot, status.Contracts)
-	if !ok {
+	sources := loadContractSources(repoRoot, status.Contracts)
+	if len(sources) == 0 {
 		return
 	}
 
-	registrations := discoverEncoderRegistrations(source, "tensorleap_input_encoder")
+	registrations := make([]encoderRegistration, 0, 8)
+	for _, source := range sources {
+		registrations = append(registrations, discoverEncoderRegistrations(source.Contents, "tensorleap_input_encoder")...)
+	}
 	expected := expectedInputEncoderSymbols(status.Contracts, registrations)
 	actual := encoderRegistrationSymbols(registrations)
 	missing := missingContractSymbols(expected, actual)
+	issuePath := primaryContractSourcePath(sources, registrations)
 
 	if len(missing) > 0 {
 		issueCode := core.IssueCodeInputEncoderCoverageIncomplete
@@ -63,7 +67,7 @@ func inspectInputEncoderContract(repoRoot string, status *core.IntegrationStatus
 				Severity: core.SeverityError,
 				Scope:    core.IssueScopeInputEncoder,
 				Location: &core.IssueLocation{
-					Path:   entryFilePath,
+					Path:   issuePath,
 					Symbol: symbol,
 				},
 			})
@@ -77,39 +81,84 @@ func inspectInputEncoderContract(repoRoot string, status *core.IntegrationStatus
 			Severity: core.SeverityError,
 			Scope:    core.IssueScopeInputEncoder,
 			Location: &core.IssueLocation{
-				Path:   entryFilePath,
+				Path:   issuePath,
 				Symbol: "input_encoder",
 			},
 		})
 	}
 }
 
-func loadContractEntrySource(repoRoot string, contracts *core.IntegrationContracts) (string, string, bool) {
+type contractSource struct {
+	Path     string
+	Contents string
+}
+
+func loadContractSources(repoRoot string, contracts *core.IntegrationContracts) []contractSource {
 	if contracts == nil {
-		return "", "", false
+		return nil
+	}
+
+	sources := make([]contractSource, 0, 2)
+	appendSource := func(entry string) {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			return
+		}
+
+		entryAbsPath := filepath.FromSlash(entry)
+		if !filepath.IsAbs(entryAbsPath) {
+			entryAbsPath = filepath.Join(repoRoot, entryAbsPath)
+		}
+		entryAbsPath = filepath.Clean(entryAbsPath)
+		if !isPathWithinRepo(repoRoot, entryAbsPath) {
+			return
+		}
+
+		contents, err := os.ReadFile(entryAbsPath)
+		if err != nil {
+			return
+		}
+
+		entryFilePath := normalizedEntryFilePath(repoRoot, entryAbsPath, entry)
+		sources = append(sources, contractSource{Path: entryFilePath, Contents: string(contents)})
 	}
 
 	entry := strings.TrimSpace(contracts.EntryFile)
-	if entry == "" {
-		return "", "", false
+	appendSource(entry)
+	if !strings.EqualFold(filepath.Base(entry), "leap_binder.py") {
+		appendSource("leap_binder.py")
 	}
 
-	entryAbsPath := filepath.FromSlash(entry)
-	if !filepath.IsAbs(entryAbsPath) {
-		entryAbsPath = filepath.Join(repoRoot, entryAbsPath)
-	}
-	entryAbsPath = filepath.Clean(entryAbsPath)
-	if !isPathWithinRepo(repoRoot, entryAbsPath) {
-		return "", "", false
+	if len(sources) <= 1 {
+		return sources
 	}
 
-	contents, err := os.ReadFile(entryAbsPath)
-	if err != nil {
-		return "", "", false
+	seen := make(map[string]struct{}, len(sources))
+	unique := make([]contractSource, 0, len(sources))
+	for _, source := range sources {
+		key := strings.ToLower(strings.TrimSpace(source.Path))
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		unique = append(unique, source)
 	}
+	return unique
+}
 
-	entryFilePath := normalizedEntryFilePath(repoRoot, entryAbsPath, entry)
-	return entryFilePath, string(contents), true
+func primaryContractSourcePath(sources []contractSource, registrations []encoderRegistration) string {
+	if len(sources) == 0 {
+		return ""
+	}
+	for _, source := range sources {
+		if strings.EqualFold(source.Path, "leap_binder.py") {
+			return source.Path
+		}
+	}
+	return sources[0].Path
 }
 
 func discoverEncoderRegistrations(source string, decoratorName string) []encoderRegistration {
@@ -413,10 +462,9 @@ func looksLikeGroundTruthEncoderCall(call string) bool {
 	if lower == "" {
 		return false
 	}
-	return strings.Contains(lower, "label") ||
-		strings.Contains(lower, "target") ||
-		strings.HasPrefix(lower, "gt_") ||
-		strings.Contains(lower, "ground_truth")
+	return strings.Contains(lower, "ground_truth") ||
+		strings.HasPrefix(lower, "encode_label") ||
+		strings.HasPrefix(lower, "encode_target")
 }
 
 func hasUnresolvedModelContractIssue(issues []core.Issue) bool {

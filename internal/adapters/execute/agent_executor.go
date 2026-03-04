@@ -59,16 +59,16 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		return core.ExecutionResult{}, err
 	}
 
-	task, err := agentTaskForStep(snapshot, canonicalStep, scopePolicy, repoContext)
-	if err != nil {
-		return core.ExecutionResult{}, err
-	}
-
 	knowledgePack, err := e.loadPack()
 	if err != nil {
 		return core.ExecutionResult{}, err
 	}
 	if err := validatePolicyDomainSections(scopePolicy, knowledgePack); err != nil {
+		return core.ExecutionResult{}, err
+	}
+
+	task, err := agentTaskForStep(snapshot, canonicalStep, scopePolicy, repoContext, knowledgePack)
+	if err != nil {
 		return core.ExecutionResult{}, err
 	}
 
@@ -176,13 +176,19 @@ func repoContextEvidence(context core.AgentRepoContext) []core.EvidenceItem {
 	}
 }
 
-func agentTaskForStep(snapshot core.WorkspaceSnapshot, step core.EnsureStep, policy agent.AgentScopePolicy, repoContext core.AgentRepoContext) (agent.AgentTask, error) {
+func agentTaskForStep(
+	snapshot core.WorkspaceSnapshot,
+	step core.EnsureStep,
+	policy agent.AgentScopePolicy,
+	repoContext core.AgentRepoContext,
+	knowledgePack agent.DomainKnowledgePack,
+) (agent.AgentTask, error) {
 	repoRoot := strings.TrimSpace(snapshot.Repository.Root)
 	if repoRoot == "" {
 		return agent.AgentTask{}, core.NewError(core.KindUnknown, "execute.agent.repo_root", "snapshot repository root is empty")
 	}
 
-	objective, constraints, supported := objectiveForStep(snapshot, step.ID)
+	objective, acceptanceChecks, supported := objectiveForStep(snapshot, step.ID)
 	if !supported {
 		return agent.AgentTask{}, core.WrapError(
 			core.KindStepNotApplicable,
@@ -190,83 +196,28 @@ func agentTaskForStep(snapshot core.WorkspaceSnapshot, step core.EnsureStep, pol
 			fmt.Errorf("ensure-step %q is not supported by agent executor", step.ID),
 		)
 	}
+	acceptanceChecks = mergeAcceptanceChecks(acceptanceChecks, policy.RequiredOutcomes)
 
 	transcriptPath, err := transcriptPathForSnapshot(repoRoot, snapshot.ID)
 	if err != nil {
 		return agent.AgentTask{}, err
 	}
 
-	constraints = append(constraints, constraintsForScopePolicy(policy)...)
-	constraints = append(constraints, constraintsForRepoContext(repoContext)...)
+	knowledgeSlice, err := domainKnowledgeSliceForPolicy(policy, knowledgePack)
+	if err != nil {
+		return agent.AgentTask{}, err
+	}
 
 	return agent.AgentTask{
-		Objective:      objective,
-		Constraints:    constraints,
-		ScopePolicy:    &policy,
-		RepoRoot:       repoRoot,
-		TranscriptPath: transcriptPath,
+		Objective:        objective,
+		Constraints:      acceptanceChecks,
+		AcceptanceChecks: acceptanceChecks,
+		ScopePolicy:      &policy,
+		RepoContext:      &repoContext,
+		DomainKnowledge:  &knowledgeSlice,
+		RepoRoot:         repoRoot,
+		TranscriptPath:   transcriptPath,
 	}, nil
-}
-
-func constraintsForRepoContext(context core.AgentRepoContext) []string {
-	constraints := []string{
-		fmt.Sprintf("Repository facts: entry file %q, binder file %q", context.EntryFile, context.BinderFile),
-		fmt.Sprintf("Upload boundary: %s", context.LeapYAMLBoundary),
-	}
-
-	if context.SelectedModelPath != "" {
-		constraints = append(constraints, fmt.Sprintf("Selected model path: %q", context.SelectedModelPath))
-	}
-	if len(context.ModelCandidates) > 0 {
-		constraints = append(constraints, fmt.Sprintf("Model candidates: %s", strings.Join(context.ModelCandidates, ", ")))
-	}
-	if len(context.DecoratorInventory) > 0 {
-		constraints = append(constraints, fmt.Sprintf("Decorator inventory: %s", strings.Join(context.DecoratorInventory, ", ")))
-	}
-	if len(context.IntegrationTestCalls) > 0 {
-		constraints = append(constraints, fmt.Sprintf("Integration-test calls: %s", strings.Join(context.IntegrationTestCalls, ", ")))
-	}
-	if len(context.BlockingIssues) > 0 {
-		constraints = append(constraints, fmt.Sprintf("Current blocking issues: %s", strings.Join(context.BlockingIssues, " | ")))
-	}
-	if len(context.ValidationFindings) > 0 {
-		constraints = append(constraints, fmt.Sprintf("Validation findings: %s", strings.Join(context.ValidationFindings, " | ")))
-	}
-
-	return constraints
-}
-
-func constraintsForScopePolicy(policy agent.AgentScopePolicy) []string {
-	constraints := make([]string, 0, len(policy.AllowedFiles)+len(policy.ForbiddenAreas)+len(policy.RequiredOutcomes)+len(policy.StopAndAskTriggers)+1)
-
-	if len(policy.DomainSections) > 0 {
-		constraints = append(constraints, fmt.Sprintf("Use Tensorleap rule sections only: %s", strings.Join(policy.DomainSections, ", ")))
-	}
-	if len(policy.AllowedFiles) > 0 {
-		constraints = append(constraints, fmt.Sprintf("Edit only these integration files unless a stop-and-ask trigger is hit: %s", strings.Join(policy.AllowedFiles, ", ")))
-	}
-	for _, forbidden := range policy.ForbiddenAreas {
-		trimmed := strings.TrimSpace(forbidden)
-		if trimmed == "" {
-			continue
-		}
-		constraints = append(constraints, fmt.Sprintf("Forbidden edit area: %s", trimmed))
-	}
-	for _, outcome := range policy.RequiredOutcomes {
-		trimmed := strings.TrimSpace(outcome)
-		if trimmed == "" {
-			continue
-		}
-		constraints = append(constraints, fmt.Sprintf("Required outcome: %s", trimmed))
-	}
-	for _, trigger := range policy.StopAndAskTriggers {
-		trimmed := strings.TrimSpace(trigger)
-		if trimmed == "" {
-			continue
-		}
-		constraints = append(constraints, fmt.Sprintf("Stop and ask before editing when: %s", trimmed))
-	}
-	return constraints
 }
 
 func objectiveForStep(snapshot core.WorkspaceSnapshot, stepID core.EnsureStepID) (string, []string, bool) {
@@ -302,6 +253,62 @@ func objectiveForStep(snapshot core.WorkspaceSnapshot, stepID core.EnsureStepID)
 	default:
 		return "", nil, false
 	}
+}
+
+func mergeAcceptanceChecks(groups ...[]string) []string {
+	merged := make([]string, 0)
+	seen := map[string]struct{}{}
+	for _, group := range groups {
+		for _, value := range group {
+			trimmed := strings.TrimSpace(value)
+			if trimmed == "" {
+				continue
+			}
+			key := strings.ToLower(trimmed)
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			merged = append(merged, trimmed)
+		}
+	}
+	return merged
+}
+
+func domainKnowledgeSliceForPolicy(policy agent.AgentScopePolicy, pack agent.DomainKnowledgePack) (agent.AgentDomainKnowledgePack, error) {
+	sectionIDs := mergeAcceptanceChecks(policy.DomainSections)
+	if len(sectionIDs) == 0 {
+		return agent.AgentDomainKnowledgePack{}, core.NewError(
+			core.KindUnknown,
+			"execute.agent.domain_knowledge",
+			"scope policy does not define domain knowledge section IDs",
+		)
+	}
+
+	sections := make(map[string]string, len(sectionIDs))
+	missing := make([]string, 0)
+	for _, sectionID := range sectionIDs {
+		body := strings.TrimSpace(pack.Sections[sectionID])
+		if body == "" {
+			missing = append(missing, sectionID)
+			continue
+		}
+		sections[sectionID] = body
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return agent.AgentDomainKnowledgePack{}, core.WrapError(
+			core.KindUnknown,
+			"execute.agent.domain_knowledge",
+			fmt.Errorf("missing scoped domain knowledge section(s): %s", strings.Join(missing, ", ")),
+		)
+	}
+
+	return agent.AgentDomainKnowledgePack{
+		Version:    strings.TrimSpace(pack.Version),
+		SectionIDs: sectionIDs,
+		Sections:   sections,
+	}, nil
 }
 
 func transcriptPathForSnapshot(repoRoot, snapshotID string) (string, error) {

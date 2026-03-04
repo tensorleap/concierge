@@ -53,6 +53,18 @@ func TestAgentExecutorDispatchesSupportedSteps(t *testing.T) {
 	if len(runner.lastTask.ScopePolicy.DomainSections) == 0 {
 		t.Fatalf("expected scope-policy domain sections, got %+v", runner.lastTask.ScopePolicy)
 	}
+	if runner.lastTask.RepoContext == nil {
+		t.Fatal("expected repo context to be attached to agent task")
+	}
+	if runner.lastTask.DomainKnowledge == nil {
+		t.Fatal("expected domain knowledge payload to be attached to agent task")
+	}
+	if runner.lastTask.DomainKnowledge.Version == "" {
+		t.Fatalf("expected non-empty domain knowledge version, got %+v", runner.lastTask.DomainKnowledge)
+	}
+	if len(runner.lastTask.DomainKnowledge.SectionIDs) == 0 {
+		t.Fatalf("expected scoped domain knowledge section IDs, got %+v", runner.lastTask.DomainKnowledge)
+	}
 
 	assertEvidence(t, result.Evidence, "executor.mode", "agent")
 	assertEvidencePresent(t, result.Evidence, "agent.transcript_path")

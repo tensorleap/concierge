@@ -21,21 +21,6 @@ const defaultTimeout = 15 * time.Minute
 
 var defaultClaudeArgs = []string{"--print", "--output-format", "text", "--permission-mode", "bypassPermissions"}
 
-const conciergeOperatingPolicy = `
-You are a task-scoped coding collaborator running under Concierge.
-Concierge is the deterministic orchestrator; you are not the orchestrator.
-
-Operating responsibilities:
-- Complete only the specific objective provided for this task.
-- Keep edits minimal, local, and reviewable.
-- Prioritize Tensorleap integration files and avoid unrelated repository changes.
-- Do not refactor or modify unrelated user/training/business logic.
-- Preserve existing behavior outside the requested scope.
-- If repository state is ambiguous or objective conflicts appear, stop and state the blocker clearly.
-- Never run git commit/push/rebase/reset operations.
-- Never access files outside the repository root unless explicitly instructed.
-`
-
 type commandRunner func(ctx context.Context, dir, command string, args []string) ([]byte, []byte, error)
 
 // Runner executes one task-scoped command invocation and writes a transcript.
@@ -76,6 +61,9 @@ func (r *Runner) Run(ctx context.Context, task AgentTask) (AgentResult, error) {
 	if transcriptPath == "" {
 		return AgentResult{}, core.NewError(core.KindUnknown, "agent.runner.task_transcript_path", "agent task transcript path is required")
 	}
+	if err := validateTaskContextPayload(task); err != nil {
+		return AgentResult{}, err
+	}
 
 	commandPath, err := r.resolveCommand()
 	if err != nil {
@@ -89,11 +77,12 @@ func (r *Runner) Run(ctx context.Context, task AgentTask) (AgentResult, error) {
 	}
 	defer cancel()
 
-	prompt := renderPrompt(task)
-	args := append(append([]string(nil), defaultClaudeArgs...), prompt)
+	systemPrompt := BuildClaudeSystemPrompt()
+	taskPrompt := BuildClaudeTaskPrompt(task)
+	args := append(append([]string(nil), defaultClaudeArgs...), "--system-prompt", systemPrompt, taskPrompt)
 
 	stdout, stderr, runErr := r.runCommand(runCtx, repoRoot, commandPath, args)
-	if writeErr := writeTranscript(transcriptPath, commandPath, args, task, stdout, stderr, runErr); writeErr != nil {
+	if writeErr := writeTranscript(transcriptPath, commandPath, args, systemPrompt, taskPrompt, stdout, stderr, runErr); writeErr != nil {
 		return AgentResult{}, core.WrapError(core.KindUnknown, "agent.runner.transcript_write", writeErr)
 	}
 	if runErr != nil {
@@ -134,35 +123,6 @@ func (r *Runner) resolveCommand() (string, error) {
 	return path, nil
 }
 
-func renderPrompt(task AgentTask) string {
-	var b strings.Builder
-	b.WriteString("System context (must follow):\n")
-	b.WriteString(strings.TrimSpace(conciergeOperatingPolicy))
-	b.WriteString("\n\n")
-
-	b.WriteString("Repository root: ")
-	b.WriteString(task.RepoRoot)
-	b.WriteString("\n\n")
-	b.WriteString("Objective:\n")
-	b.WriteString(strings.TrimSpace(task.Objective))
-	b.WriteString("\n\n")
-	if len(task.Constraints) > 0 {
-		b.WriteString("Constraints:\n")
-		for _, constraint := range task.Constraints {
-			trimmed := strings.TrimSpace(constraint)
-			if trimmed == "" {
-				continue
-			}
-			b.WriteString("- ")
-			b.WriteString(trimmed)
-			b.WriteString("\n")
-		}
-		b.WriteString("\n")
-	}
-	b.WriteString("Apply the required code changes directly in this repository. Keep edits focused on the objective and constraints.")
-	return b.String()
-}
-
 func runAgentCommand(ctx context.Context, dir, command string, args []string) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Dir = dir
@@ -183,33 +143,59 @@ func runAgentCommand(ctx context.Context, dir, command string, args []string) ([
 	return stdout.Bytes(), stderr.Bytes(), err
 }
 
-func writeTranscript(path, command string, args []string, task AgentTask, stdout, stderr []byte, runErr error) error {
+func validateTaskContextPayload(task AgentTask) error {
+	if task.ScopePolicy == nil {
+		return core.NewError(core.KindUnknown, "agent.runner.task_scope_policy", "agent task scope policy is required")
+	}
+	if task.RepoContext == nil {
+		return core.NewError(core.KindUnknown, "agent.runner.task_repo_context", "agent task repository context is required")
+	}
+	if strings.TrimSpace(task.RepoContext.RepoRoot) == "" {
+		return core.NewError(core.KindUnknown, "agent.runner.task_repo_context", "agent task repository context repoRoot is required")
+	}
+	if task.DomainKnowledge == nil {
+		return core.NewError(core.KindUnknown, "agent.runner.task_domain_knowledge", "agent task domain knowledge slice is required")
+	}
+	if strings.TrimSpace(task.DomainKnowledge.Version) == "" {
+		return core.NewError(core.KindUnknown, "agent.runner.task_domain_knowledge", "agent task domain knowledge version is required")
+	}
+
+	sectionIDs := normalizedUniqueOrdered(task.DomainKnowledge.SectionIDs)
+	if len(sectionIDs) == 0 {
+		return core.NewError(core.KindUnknown, "agent.runner.task_domain_knowledge", "agent task domain knowledge section IDs are required")
+	}
+
+	missingSections := make([]string, 0)
+	for _, sectionID := range sectionIDs {
+		if strings.TrimSpace(task.DomainKnowledge.Sections[sectionID]) != "" {
+			continue
+		}
+		missingSections = append(missingSections, sectionID)
+	}
+	if len(missingSections) > 0 {
+		return core.NewError(
+			core.KindUnknown,
+			"agent.runner.task_domain_knowledge",
+			fmt.Sprintf("agent task domain knowledge is missing section body for: %s", strings.Join(missingSections, ", ")),
+		)
+	}
+
+	return nil
+}
+
+func writeTranscript(path, command string, args []string, systemPrompt, taskPrompt string, stdout, stderr []byte, runErr error) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 
 	var b strings.Builder
-	b.WriteString("System context:\n")
-	b.WriteString(strings.TrimSpace(conciergeOperatingPolicy))
+	b.WriteString("System prompt:\n")
+	b.WriteString(strings.TrimSpace(systemPrompt))
 	b.WriteString("\n\n")
 
-	b.WriteString("Objective:\n")
-	b.WriteString(task.Objective)
+	b.WriteString("Task prompt:\n")
+	b.WriteString(strings.TrimSpace(taskPrompt))
 	b.WriteString("\n\n")
-
-	if len(task.Constraints) > 0 {
-		b.WriteString("Constraints:\n")
-		for _, constraint := range task.Constraints {
-			trimmed := strings.TrimSpace(constraint)
-			if trimmed == "" {
-				continue
-			}
-			b.WriteString("- ")
-			b.WriteString(trimmed)
-			b.WriteString("\n")
-		}
-		b.WriteString("\n")
-	}
 
 	b.WriteString("Command:\n")
 	b.WriteString(command)

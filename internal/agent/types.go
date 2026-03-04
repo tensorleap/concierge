@@ -4,11 +4,14 @@ import "github.com/tensorleap/concierge/internal/core"
 
 // AgentTask describes one task-scoped objective delegated to a coding agent.
 type AgentTask struct {
-	Objective      string            `json:"objective"`
-	Constraints    []string          `json:"constraints,omitempty"`
-	ScopePolicy    *AgentScopePolicy `json:"scopePolicy,omitempty"`
-	RepoRoot       string            `json:"repoRoot"`
-	TranscriptPath string            `json:"transcriptPath"`
+	Objective        string                    `json:"objective"`
+	Constraints      []string                  `json:"constraints,omitempty"`
+	AcceptanceChecks []string                  `json:"acceptanceChecks,omitempty"`
+	ScopePolicy      *AgentScopePolicy         `json:"scopePolicy,omitempty"`
+	RepoContext      *core.AgentRepoContext    `json:"repoContext,omitempty"`
+	DomainKnowledge  *AgentDomainKnowledgePack `json:"domainKnowledge,omitempty"`
+	RepoRoot         string                    `json:"repoRoot"`
+	TranscriptPath   string                    `json:"transcriptPath"`
 }
 
 // AgentScopePolicy defines explicit edit boundaries and Tensorleap rule slices for one task.
@@ -33,6 +36,13 @@ type DomainKnowledgePack struct {
 	Version  string            `json:"version"`
 	Sections map[string]string `json:"sections"`
 	Sources  []KnowledgeSource `json:"sources"`
+}
+
+// AgentDomainKnowledgePack captures the scoped Tensorleap rules attached to one task.
+type AgentDomainKnowledgePack struct {
+	Version    string            `json:"version"`
+	SectionIDs []string          `json:"sectionIds,omitempty"`
+	Sections   map[string]string `json:"sections,omitempty"`
 }
 
 // AgentResult captures the outcome of an agent task execution.

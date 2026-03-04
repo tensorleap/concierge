@@ -12,25 +12,6 @@ import (
 	"github.com/tensorleap/concierge/internal/core"
 )
 
-func TestRenderPromptIncludesConciergeSystemContext(t *testing.T) {
-	prompt := renderPrompt(AgentTask{
-		Objective:      "Repair preprocess function",
-		Constraints:    []string{"Keep shape semantics"},
-		RepoRoot:       "/tmp/repo",
-		TranscriptPath: "/tmp/repo/.concierge/evidence/snap/agent.transcript.log",
-	})
-
-	if !strings.Contains(prompt, "System context (must follow):") {
-		t.Fatalf("expected system-context heading in prompt, got: %q", prompt)
-	}
-	if !strings.Contains(prompt, "Concierge is the deterministic orchestrator") {
-		t.Fatalf("expected concierge role context in prompt, got: %q", prompt)
-	}
-	if !strings.Contains(prompt, "Complete only the specific objective provided for this task.") {
-		t.Fatalf("expected objective-scope rule in prompt, got: %q", prompt)
-	}
-}
-
 func TestRunnerCheckAvailabilityReturnsMissingDependencyWhenClaudeMissing(t *testing.T) {
 	runner := NewRunner()
 	runner.lookPath = func(file string) (string, error) {
@@ -42,6 +23,86 @@ func TestRunnerCheckAvailabilityReturnsMissingDependencyWhenClaudeMissing(t *tes
 	}
 	if got := core.KindOf(err); got != core.KindMissingDependency {
 		t.Fatalf("expected error kind %q, got %q (err=%v)", core.KindMissingDependency, got, err)
+	}
+}
+
+func TestRunnerInvokesClaudeWithSystemPrompt(t *testing.T) {
+	repoRoot := t.TempDir()
+	transcriptPath := filepath.Join(repoRoot, ".concierge", "evidence", "snapshot-system", "agent.transcript.log")
+	task := validAgentTask(repoRoot, transcriptPath)
+
+	runner := NewRunner()
+	runner.lookPath = func(file string) (string, error) {
+		return "/usr/local/bin/claude", nil
+	}
+
+	var capturedArgs []string
+	runner.runCommand = func(ctx context.Context, dir, command string, args []string) ([]byte, []byte, error) {
+		_ = ctx
+		if dir != repoRoot {
+			t.Fatalf("expected command dir %q, got %q", repoRoot, dir)
+		}
+		if command != "/usr/local/bin/claude" {
+			t.Fatalf("expected command path %q, got %q", "/usr/local/bin/claude", command)
+		}
+		capturedArgs = append([]string(nil), args...)
+		return []byte("ok"), nil, nil
+	}
+
+	_, err := runner.Run(context.Background(), task)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	index := -1
+	for i, arg := range capturedArgs {
+		if arg == "--system-prompt" {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		t.Fatalf("expected --system-prompt flag in args, got: %+v", capturedArgs)
+	}
+	if len(capturedArgs) <= index+1 {
+		t.Fatalf("expected system prompt value after --system-prompt, got: %+v", capturedArgs)
+	}
+	if capturedArgs[index+1] != BuildClaudeSystemPrompt() {
+		t.Fatalf("unexpected system prompt value: %q", capturedArgs[index+1])
+	}
+	if gotPrompt := capturedArgs[len(capturedArgs)-1]; gotPrompt != BuildClaudeTaskPrompt(task) {
+		t.Fatalf("expected final arg to be task prompt, got: %q", gotPrompt)
+	}
+}
+
+func TestRunnerFailsFastWhenRequiredContextPayloadIsMissing(t *testing.T) {
+	repoRoot := t.TempDir()
+	transcriptPath := filepath.Join(repoRoot, ".concierge", "evidence", "snapshot-missing", "agent.transcript.log")
+	task := AgentTask{
+		Objective:      "Implement preprocess",
+		RepoRoot:       repoRoot,
+		TranscriptPath: transcriptPath,
+	}
+
+	runner := NewRunner()
+	lookPathCalled := false
+	runner.lookPath = func(file string) (string, error) {
+		lookPathCalled = true
+		return "/usr/local/bin/claude", nil
+	}
+
+	_, err := runner.Run(context.Background(), task)
+	if err == nil {
+		t.Fatal("expected context-payload validation error")
+	}
+	if got := core.KindOf(err); got != core.KindUnknown {
+		t.Fatalf("expected error kind %q, got %q (err=%v)", core.KindUnknown, got, err)
+	}
+	if !strings.Contains(err.Error(), "scope policy") {
+		t.Fatalf("expected missing-scope-policy error, got: %v", err)
+	}
+	if lookPathCalled {
+		t.Fatalf("expected runner to fail before command lookup when context payload is missing")
 	}
 }
 
@@ -61,12 +122,11 @@ func TestRunnerRunWritesTranscript(t *testing.T) {
 
 	transcriptPath := filepath.Join(repoRoot, ".concierge", "evidence", "snapshot-1", "agent.transcript.log")
 	runner := NewRunner()
-	result, err := runner.Run(context.Background(), AgentTask{
-		Objective:      "Implement preprocess contract",
-		Constraints:    []string{"Keep existing APIs stable"},
-		RepoRoot:       repoRoot,
-		TranscriptPath: transcriptPath,
-	})
+	task := validAgentTask(repoRoot, transcriptPath)
+	task.Objective = "Implement preprocess contract"
+	task.AcceptanceChecks = []string{"Keep existing APIs stable"}
+
+	result, err := runner.Run(context.Background(), task)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
@@ -82,19 +142,50 @@ func TestRunnerRunWritesTranscript(t *testing.T) {
 		t.Fatalf("ReadFile failed for transcript: %v", err)
 	}
 	contents := string(raw)
-	if !strings.Contains(contents, "Objective:\nImplement preprocess contract") {
-		t.Fatalf("expected objective in transcript, got: %q", contents)
+	if !strings.Contains(contents, "System prompt:\nYou are a task-scoped coding collaborator running under Concierge.") {
+		t.Fatalf("expected system prompt in transcript, got: %q", contents)
 	}
-	if !strings.Contains(contents, "System context:\nYou are a task-scoped coding collaborator running under Concierge.") {
-		t.Fatalf("expected system context in transcript, got: %q", contents)
+	if !strings.Contains(contents, "Task prompt:\nObjective:\nImplement preprocess contract") {
+		t.Fatalf("expected structured task prompt in transcript, got: %q", contents)
 	}
-	if !strings.Contains(contents, "argv: --print --output-format text --permission-mode bypassPermissions") {
+	if !strings.Contains(contents, "argv: --print --output-format text --permission-mode bypassPermissions --system-prompt") {
 		t.Fatalf("expected claude arguments in transcript, got: %q", contents)
 	}
-	if !strings.Contains(contents, "prompt: System context (must follow):") {
+	if !strings.Contains(contents, "prompt: Objective:") {
 		t.Fatalf("expected stdout in transcript, got: %q", contents)
 	}
 	if !strings.Contains(contents, "stderr line") {
 		t.Fatalf("expected stderr in transcript, got: %q", contents)
+	}
+}
+
+func validAgentTask(repoRoot, transcriptPath string) AgentTask {
+	return AgentTask{
+		Objective: "Implement preprocess contract",
+		ScopePolicy: &AgentScopePolicy{
+			AllowedFiles:       []string{"leap_binder.py"},
+			ForbiddenAreas:     []string{"Do not touch training loop"},
+			StopAndAskTriggers: []string{"Missing model context"},
+			DomainSections:     []string{"preprocess_contract"},
+		},
+		RepoContext: &core.AgentRepoContext{
+			RepoRoot:           repoRoot,
+			EntryFile:          "leap_binder.py",
+			BinderFile:         "leap_binder.py",
+			LeapYAMLBoundary:   "leap.yaml present",
+			SelectedModelPath:  "models/model.onnx",
+			ModelCandidates:    []string{"models/model.onnx"},
+			DecoratorInventory: []string{"preprocess:build_preprocess"},
+		},
+		DomainKnowledge: &AgentDomainKnowledgePack{
+			Version:    "tlkp-v1",
+			SectionIDs: []string{"preprocess_contract"},
+			Sections: map[string]string{
+				"preprocess_contract": "Preprocess must produce train and validation subsets.",
+			},
+		},
+		AcceptanceChecks: []string{"Implement preprocess contract"},
+		RepoRoot:         repoRoot,
+		TranscriptPath:   transcriptPath,
 	}
 }

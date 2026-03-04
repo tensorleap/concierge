@@ -367,6 +367,86 @@ func TestPreprocessAuthoringRecommendationRenderedInApprovalPrompt(t *testing.T)
 	}
 }
 
+func TestInputEncoderAuthoringRecommendationRenderedInApprovalPrompt(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeFile(t, filepath.Join(repoRoot, "leap_binder.py"), strings.Join([]string{
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_input_encoder, tensorleap_integration_test",
+		"",
+		"@tensorleap_input_encoder('image')",
+		"def encode_image():",
+		"    return 1",
+		"",
+		"@tensorleap_integration_test()",
+		"def run_flow():",
+		"    encode_image()",
+		"    encode_meta()",
+		"",
+	}, "\n"))
+
+	step, ok := core.EnsureStepByID(core.EnsureStepInputEncoders)
+	if !ok {
+		t.Fatal("expected input-encoder ensure-step in catalog")
+	}
+
+	snapshot := core.WorkspaceSnapshot{
+		Repository: core.RepositoryState{Root: repoRoot},
+	}
+	status := core.IntegrationStatus{}
+	message := stepApprovalMessage(step, snapshot, true, status, true, false)
+	if !strings.Contains(message, "Input-encoder recommendation:") {
+		t.Fatalf("expected input-encoder recommendation section, got message: %q", message)
+	}
+	if !strings.Contains(message, "- Recommended target: meta") {
+		t.Fatalf("expected recommended target in prompt, got message: %q", message)
+	}
+	if !strings.Contains(message, "- Missing symbols: meta") {
+		t.Fatalf("expected missing-symbol list in prompt, got message: %q", message)
+	}
+	if !strings.Contains(message, "@tensorleap_input_encoder") {
+		t.Fatalf("expected input-encoder constraint context in prompt, got message: %q", message)
+	}
+}
+
+func TestGTEncoderAuthoringRecommendationRenderedInApprovalPrompt(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeFile(t, filepath.Join(repoRoot, "leap_binder.py"), strings.Join([]string{
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_gt_encoder, tensorleap_integration_test",
+		"",
+		"@tensorleap_gt_encoder('label')",
+		"def encode_label():",
+		"    return 1",
+		"",
+		"@tensorleap_integration_test()",
+		"def run_flow():",
+		"    encode_label()",
+		"    encode_mask()",
+		"",
+	}, "\n"))
+
+	step, ok := core.EnsureStepByID(core.EnsureStepGroundTruthEncoders)
+	if !ok {
+		t.Fatal("expected GT ensure-step in catalog")
+	}
+
+	snapshot := core.WorkspaceSnapshot{
+		Repository: core.RepositoryState{Root: repoRoot},
+	}
+	status := core.IntegrationStatus{}
+	message := stepApprovalMessage(step, snapshot, true, status, true, false)
+	if !strings.Contains(message, "Ground-truth recommendation:") {
+		t.Fatalf("expected GT recommendation section, got message: %q", message)
+	}
+	if !strings.Contains(message, "- Recommended target: mask") {
+		t.Fatalf("expected recommended target in prompt, got message: %q", message)
+	}
+	if !strings.Contains(message, "- Target symbols: mask") {
+		t.Fatalf("expected target-symbol list in prompt, got message: %q", message)
+	}
+	if !strings.Contains(strings.ToLower(message), "labeled subsets only") {
+		t.Fatalf("expected labeled-subset constraint in prompt, got message: %q", message)
+	}
+}
+
 func TestRunDeclineStepApprovalLeavesRepoUnchanged(t *testing.T) {
 	disableHarness(t)
 	repo := initRunTestRepo(t, false)

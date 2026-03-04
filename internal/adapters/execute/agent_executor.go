@@ -69,6 +69,20 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		}
 		recommendations = append(recommendations, recommendation)
 	}
+	if canonicalStep.ID == core.EnsureStepInputEncoders {
+		recommendation, err := BuildInputEncoderAuthoringRecommendation(taskSnapshot, taskStatus)
+		if err != nil {
+			return core.ExecutionResult{}, err
+		}
+		recommendations = append(recommendations, recommendation)
+	}
+	if canonicalStep.ID == core.EnsureStepGroundTruthEncoders {
+		recommendation, err := BuildGTEncoderAuthoringRecommendation(taskSnapshot, taskStatus)
+		if err != nil {
+			return core.ExecutionResult{}, err
+		}
+		recommendations = append(recommendations, recommendation)
+	}
 
 	scopePolicy, err := PolicyForStep(canonicalStep.ID, taskSnapshot, taskStatus)
 	if err != nil {
@@ -155,7 +169,10 @@ func recommendationEvidence(recommendations []core.AuthoringRecommendation) []co
 	}
 	evidence := make([]core.EvidenceItem, 0, 3)
 	for _, recommendation := range recommendations {
-		if recommendation.StepID != core.EnsureStepModelContract && recommendation.StepID != core.EnsureStepPreprocessContract {
+		if recommendation.StepID != core.EnsureStepModelContract &&
+			recommendation.StepID != core.EnsureStepPreprocessContract &&
+			recommendation.StepID != core.EnsureStepInputEncoders &&
+			recommendation.StepID != core.EnsureStepGroundTruthEncoders {
 			continue
 		}
 		switch recommendation.StepID {
@@ -171,6 +188,20 @@ func recommendationEvidence(recommendations []core.AuthoringRecommendation) []co
 				core.EvidenceItem{Name: "authoring.recommendation.preprocess.rationale", Value: strings.TrimSpace(recommendation.Rationale)},
 				core.EvidenceItem{Name: "authoring.recommendation.preprocess.target_symbols", Value: strings.Join(recommendation.Candidates, ",")},
 				core.EvidenceItem{Name: "authoring.recommendation.preprocess.constraints", Value: strings.Join(recommendation.Constraints, " | ")},
+			)
+		case core.EnsureStepInputEncoders:
+			evidence = append(evidence,
+				core.EvidenceItem{Name: "authoring.recommendation.input_encoder.target", Value: strings.TrimSpace(recommendation.Target)},
+				core.EvidenceItem{Name: "authoring.recommendation.input_encoder.rationale", Value: strings.TrimSpace(recommendation.Rationale)},
+				core.EvidenceItem{Name: "authoring.recommendation.input_encoder.target_symbols", Value: strings.Join(recommendation.Candidates, ",")},
+				core.EvidenceItem{Name: "authoring.recommendation.input_encoder.constraints", Value: strings.Join(recommendation.Constraints, " | ")},
+			)
+		case core.EnsureStepGroundTruthEncoders:
+			evidence = append(evidence,
+				core.EvidenceItem{Name: "authoring.recommendation.gt_encoder.target", Value: strings.TrimSpace(recommendation.Target)},
+				core.EvidenceItem{Name: "authoring.recommendation.gt_encoder.rationale", Value: strings.TrimSpace(recommendation.Rationale)},
+				core.EvidenceItem{Name: "authoring.recommendation.gt_encoder.target_symbols", Value: strings.Join(recommendation.Candidates, ",")},
+				core.EvidenceItem{Name: "authoring.recommendation.gt_encoder.constraints", Value: strings.Join(recommendation.Constraints, " | ")},
 			)
 		}
 	}
@@ -343,15 +374,49 @@ func objectiveForStep(
 		}
 		return "Implement preprocess contract with required train/validation subset handling and deterministic outputs", constraints, true
 	case core.EnsureStepInputEncoders:
-		return "Implement and repair Tensorleap input encoders", []string{
-			"Ensure encoders execute for multiple indices without exceptions",
-			"Keep tensor shapes and dtypes stable for model inference",
-		}, true
+		constraints := []string{
+			"Implement missing @tensorleap_input_encoder functions for each required input symbol.",
+			"Keep tensor shapes and dtypes stable for model inference.",
+			"Do not modify @tensorleap_gt_encoder definitions or integration-test wiring in this step.",
+		}
+		for _, recommendation := range recommendations {
+			if recommendation.StepID != core.EnsureStepInputEncoders {
+				continue
+			}
+			if target := strings.TrimSpace(recommendation.Target); target != "" {
+				constraints = append(constraints, fmt.Sprintf("Primary missing input symbol: %q (%s)", target, recommendation.Rationale))
+			}
+			if len(recommendation.Candidates) > 0 {
+				constraints = append(constraints, fmt.Sprintf("Required input symbols: %s", strings.Join(recommendation.Candidates, ", ")))
+			}
+			break
+		}
+		if selectedModelPath := strings.TrimSpace(snapshot.SelectedModelPath); selectedModelPath != "" {
+			constraints = append(constraints, fmt.Sprintf("Use model path %q as input-shape contract source unless repository code proves this path is invalid", selectedModelPath))
+		}
+		return "Implement and repair Tensorleap input encoders with symbol-level contract coverage", constraints, true
 	case core.EnsureStepGroundTruthEncoders:
-		return "Implement and repair Tensorleap ground-truth encoders", []string{
-			"Ground-truth encoders should execute on labeled subsets only",
-			"Preserve existing dataset semantics",
-		}, true
+		constraints := []string{
+			"Implement missing @tensorleap_gt_encoder functions for each required target symbol.",
+			"Ground-truth encoders should execute on labeled subsets only (never unlabeled subsets).",
+			"Do not modify @tensorleap_input_encoder definitions or integration-test wiring in this step.",
+		}
+		for _, recommendation := range recommendations {
+			if recommendation.StepID != core.EnsureStepGroundTruthEncoders {
+				continue
+			}
+			if target := strings.TrimSpace(recommendation.Target); target != "" {
+				constraints = append(constraints, fmt.Sprintf("Primary missing ground-truth symbol: %q (%s)", target, recommendation.Rationale))
+			}
+			if len(recommendation.Candidates) > 0 {
+				constraints = append(constraints, fmt.Sprintf("Required ground-truth symbols: %s", strings.Join(recommendation.Candidates, ", ")))
+			}
+			break
+		}
+		if selectedModelPath := strings.TrimSpace(snapshot.SelectedModelPath); selectedModelPath != "" {
+			constraints = append(constraints, fmt.Sprintf("Use model path %q as output/label alignment contract unless repository code proves this path is invalid", selectedModelPath))
+		}
+		return "Implement and repair Tensorleap ground-truth encoders with labeled-subset constraints", constraints, true
 	case core.EnsureStepHarnessValidation:
 		return "Resolve runtime harness and anti-stub validation findings", []string{
 			"Address root-cause failures and keep generated integration artifacts consistent",

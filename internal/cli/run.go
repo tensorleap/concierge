@@ -346,6 +346,60 @@ func stepApprovalMessage(
 			}
 		}
 	}
+	if step.ID == core.EnsureStepInputEncoders && hasSnapshot {
+		recommendationStatus := core.IntegrationStatus{}
+		if hasStatus {
+			recommendationStatus = status
+		}
+		recommendation, err := execute.BuildInputEncoderAuthoringRecommendation(snapshot, recommendationStatus)
+		if err == nil {
+			target := strings.TrimSpace(recommendation.Target)
+			if target == "" {
+				target = "<none>"
+			}
+			checklist = append(checklist,
+				"",
+				"Input-encoder recommendation:",
+				"- Recommended target: "+target,
+				"- Rationale: "+strings.TrimSpace(recommendation.Rationale),
+				"- Missing symbols: "+renderInlinePromptValues(recommendation.Candidates),
+			)
+			for _, constraint := range recommendation.Constraints {
+				trimmed := strings.TrimSpace(constraint)
+				if trimmed == "" {
+					continue
+				}
+				checklist = append(checklist, "- "+trimmed)
+			}
+		}
+	}
+	if step.ID == core.EnsureStepGroundTruthEncoders && hasSnapshot {
+		recommendationStatus := core.IntegrationStatus{}
+		if hasStatus {
+			recommendationStatus = status
+		}
+		recommendation, err := execute.BuildGTEncoderAuthoringRecommendation(snapshot, recommendationStatus)
+		if err == nil {
+			target := strings.TrimSpace(recommendation.Target)
+			if target == "" {
+				target = "<none>"
+			}
+			checklist = append(checklist,
+				"",
+				"Ground-truth recommendation:",
+				"- Recommended target: "+target,
+				"- Rationale: "+strings.TrimSpace(recommendation.Rationale),
+				"- Target symbols: "+renderInlinePromptValues(recommendation.Candidates),
+			)
+			for _, constraint := range recommendation.Constraints {
+				trimmed := strings.TrimSpace(constraint)
+				if trimmed == "" {
+					continue
+				}
+				checklist = append(checklist, "- "+trimmed)
+			}
+		}
+	}
 
 	blockers := []core.Issue(nil)
 	if hasStatus {

@@ -374,6 +374,142 @@ func TestPreprocessAuthoringEvidenceCapturesTargetSymbols(t *testing.T) {
 	assertEvidence(t, result.Evidence, "authoring.recommendation.preprocess.target_symbols", "preprocess_data")
 }
 
+func TestInputEncoderAuthoringTaskCarriesSymbolList(t *testing.T) {
+	repoRoot := t.TempDir()
+	binderPath := filepath.Join(repoRoot, "leap_binder.py")
+	writeInputEncoderFixtureFile(t, binderPath, "image", []string{"encode_image", "encode_meta"})
+
+	runner := &fakeAgentRunner{
+		result: agent.AgentResult{
+			Applied: true,
+			Summary: "input encoders fixed",
+		},
+	}
+	executor := NewAgentExecutor(runner)
+	step, ok := core.EnsureStepByID(core.EnsureStepInputEncoders)
+	if !ok {
+		t.Fatalf("expected step %q to exist", core.EnsureStepInputEncoders)
+	}
+
+	_, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		ID:         "snapshot-input-task",
+		Repository: core.RepositoryState{Root: repoRoot},
+	}, step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	foundSymbolConstraint := false
+	for _, constraint := range runner.lastTask.Constraints {
+		if strings.Contains(constraint, "Required input symbols: meta") {
+			foundSymbolConstraint = true
+			break
+		}
+	}
+	if !foundSymbolConstraint {
+		t.Fatalf("expected symbol-list constraint in task constraints, got %+v", runner.lastTask.Constraints)
+	}
+}
+
+func TestInputEncoderAuthoringEvidenceIncludesRecommendationAndResult(t *testing.T) {
+	repoRoot := t.TempDir()
+	binderPath := filepath.Join(repoRoot, "leap_binder.py")
+	writeInputEncoderFixtureFile(t, binderPath, "image", []string{"encode_image", "encode_meta"})
+
+	runner := &fakeAgentRunner{
+		result: agent.AgentResult{
+			Applied: true,
+			Summary: "input encoders fixed",
+		},
+	}
+	executor := NewAgentExecutor(runner)
+	step, ok := core.EnsureStepByID(core.EnsureStepInputEncoders)
+	if !ok {
+		t.Fatalf("expected step %q to exist", core.EnsureStepInputEncoders)
+	}
+
+	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		ID:         "snapshot-input-evidence",
+		Repository: core.RepositoryState{Root: repoRoot},
+	}, step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	assertEvidence(t, result.Evidence, "authoring.recommendation.input_encoder.target_symbols", "meta")
+	if len(result.Recommendations) == 0 {
+		t.Fatalf("expected recommendations in execution result, got %+v", result)
+	}
+	if result.Recommendations[0].StepID != core.EnsureStepInputEncoders {
+		t.Fatalf("expected recommendation step %q, got %+v", core.EnsureStepInputEncoders, result.Recommendations)
+	}
+}
+
+func TestGTEncoderAuthoringTaskIncludesLabeledSubsetConstraint(t *testing.T) {
+	repoRoot := t.TempDir()
+	binderPath := filepath.Join(repoRoot, "leap_binder.py")
+	writeGTEncoderFixtureFile(t, binderPath, "label", []string{"encode_label", "encode_mask"})
+
+	runner := &fakeAgentRunner{
+		result: agent.AgentResult{
+			Applied: true,
+			Summary: "gt encoders fixed",
+		},
+	}
+	executor := NewAgentExecutor(runner)
+	step, ok := core.EnsureStepByID(core.EnsureStepGroundTruthEncoders)
+	if !ok {
+		t.Fatalf("expected step %q to exist", core.EnsureStepGroundTruthEncoders)
+	}
+
+	_, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		ID:         "snapshot-gt-task",
+		Repository: core.RepositoryState{Root: repoRoot},
+	}, step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	foundLabeledSubsetConstraint := false
+	for _, constraint := range runner.lastTask.Constraints {
+		if strings.Contains(strings.ToLower(constraint), "labeled subsets only") {
+			foundLabeledSubsetConstraint = true
+			break
+		}
+	}
+	if !foundLabeledSubsetConstraint {
+		t.Fatalf("expected labeled-subset constraint in task constraints, got %+v", runner.lastTask.Constraints)
+	}
+}
+
+func TestGTEncoderAuthoringEvidenceContainsTargetSymbols(t *testing.T) {
+	repoRoot := t.TempDir()
+	binderPath := filepath.Join(repoRoot, "leap_binder.py")
+	writeGTEncoderFixtureFile(t, binderPath, "label", []string{"encode_label", "encode_mask"})
+
+	runner := &fakeAgentRunner{
+		result: agent.AgentResult{
+			Applied: true,
+			Summary: "gt encoders fixed",
+		},
+	}
+	executor := NewAgentExecutor(runner)
+	step, ok := core.EnsureStepByID(core.EnsureStepGroundTruthEncoders)
+	if !ok {
+		t.Fatalf("expected step %q to exist", core.EnsureStepGroundTruthEncoders)
+	}
+
+	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		ID:         "snapshot-gt-evidence",
+		Repository: core.RepositoryState{Root: repoRoot},
+	}, step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	assertEvidence(t, result.Evidence, "authoring.recommendation.gt_encoder.target_symbols", "mask")
+}
+
 type fakeAgentRunner struct {
 	result   agent.AgentResult
 	err      error
@@ -438,6 +574,48 @@ func writePreprocessFixtureFile(t *testing.T, path, functionName string) {
 @tensorleap_preprocess()
 def ` + functionName + `():
     return []`
+	writeTestFile(t, path)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile failed for %q: %v", path, err)
+	}
+}
+
+func writeInputEncoderFixtureFile(t *testing.T, path, existingSymbol string, integrationCalls []string) {
+	t.Helper()
+	callLines := make([]string, 0, len(integrationCalls))
+	for _, call := range integrationCalls {
+		callLines = append(callLines, "    "+call+"()")
+	}
+	content := `from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_input_encoder, tensorleap_integration_test
+
+@tensorleap_input_encoder("` + existingSymbol + `")
+def encode_` + existingSymbol + `():
+    return 1
+
+@tensorleap_integration_test()
+def run_flow():
+` + strings.Join(callLines, "\n")
+	writeTestFile(t, path)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile failed for %q: %v", path, err)
+	}
+}
+
+func writeGTEncoderFixtureFile(t *testing.T, path, existingSymbol string, integrationCalls []string) {
+	t.Helper()
+	callLines := make([]string, 0, len(integrationCalls))
+	for _, call := range integrationCalls {
+		callLines = append(callLines, "    "+call+"()")
+	}
+	content := `from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_gt_encoder, tensorleap_integration_test
+
+@tensorleap_gt_encoder("` + existingSymbol + `")
+def encode_` + existingSymbol + `():
+    return 1
+
+@tensorleap_integration_test()
+def run_flow():
+` + strings.Join(callLines, "\n")
 	writeTestFile(t, path)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile failed for %q: %v", path, err)

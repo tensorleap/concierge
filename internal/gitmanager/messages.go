@@ -29,6 +29,8 @@ func ReviewFocus(step core.EnsureStep) string {
 	switch step.ID {
 	case core.EnsureStepPreprocessContract:
 		return "Implement preprocess with train and validation subsets"
+	case core.EnsureStepGroundTruthEncoders:
+		return "Implement ground-truth encoders for labeled subsets only"
 	}
 	focus := strings.TrimSpace(core.HumanEnsureStepRequirementLabel(step.ID))
 	if focus == "" {

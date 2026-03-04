@@ -18,6 +18,8 @@ This ExecPlan is a living document. Keep `Progress`, `Gap Analysis`, `Surprises 
 - 2026-03-04: Merged `feature/step-10h-preprocess-need-detection` to `main`; marked Step `10H` as `ACCEPTED` (all steps through `10H` now `ACCEPTED`).
 - 2026-03-04: Merged `feature/step-10i-fix-tests` to `main`; marked Step `10I` as `ACCEPTED` after fixing preprocess authoring prompt/test drift.
 - 2026-03-04: Landed commit `2b90758` on `main`; marked Steps `10J`, `10K`, `10L`, and `10M` as `ACCEPTED` (input/GT encoder detection + authoring flow now merged).
+- 2026-03-04: Added blocking Step `10M1` as the immediate next step after `10M` to fix incorrect requirement ordering and decouple encoder requirement detection from integration-test call inference before continuing to `10N`.
+- 2026-03-04: Tightened Step `10M1` to require fixture-ground-truth iterative development: derive encoder contract truth from fixture `post`, detect missing encoder requirements on fixture `pre`, and enforce pre/post contract matching invariants before proceeding.
 
 ## Purpose / Exit Target
 
@@ -37,7 +39,7 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | G2 | README §10/§11: user approvals + diff review + commit workflow | Implemented runtime git diff approval/reject/commit flow | Closed; retain regression coverage | 9B (`ACCEPTED`) |
 | G3 | README §10: agent collaboration for focused objectives | Implemented and merged (`internal/agent/*`, agent executor dispatch, transcript evidence) | Closed; maintain with regression tests only | 9C (`ACCEPTED`) |
 | G4 | README §6.2: persistent mutable state (`.concierge/state.json`) | Implemented and persisted with invalidation reasons | Closed; retain regression coverage | 7A (`ACCEPTED`) |
-| G5 | README §6.1/§8.2: richer snapshot/inspection coverage | Implemented readiness expansion for runtime/model/CLI/auth/server probes | Partially closed; remaining contract-level detection gaps tracked in `10A-10N` | 8A (`ACCEPTED`), 10A-10N |
+| G5 | README §6.1/§8.2: richer snapshot/inspection coverage | Implemented readiness expansion for runtime/model/CLI/auth/server probes | Partially closed; remaining contract-level detection gaps tracked in `10A-10N` plus blocking reorder/redesign step `10M1` | 8A (`ACCEPTED`), 10A-10N, 10M1 |
 | G6 | README §8 planner semantics: deterministic next primary action with gate-aware ordering | Implemented severity-first planner policy with upload gate awareness | Closed for existing issue families; future families added in authoring slices | 8B (`ACCEPTED`) |
 | G7 | README §9 + user requirement: preprocess authoring must be detection-driven and individually tested | Deterministic preprocess detection + authoring flow are implemented and merged (`10H`, `10I`) | Remaining gap is capability-level fixture proof that preprocess flows converge end-to-end | 10H (`ACCEPTED`), 10I (`ACCEPTED`), 12C |
 | G8 | README §9 + user requirement: input-encoder authoring must be detection-driven and individually tested | Deterministic input-encoder detector + symbol-scoped authoring flow are implemented and merged (`10J`, `10K`) | Remaining gap is fixture-backed convergence proof for input-encoder capabilities | 10J (`ACCEPTED`), 10K (`ACCEPTED`), 12D |
@@ -51,6 +53,7 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | G16 | README docs requirements + operator handoff | README/docs do not yet describe detection->suggest->author->validate authoring loop by capability | Onboarding and operations remain ambiguous for the core concierge value proposition | 14A |
 | G17 | V1 quality gate requirement: commit approval must run after delta-scoped integration checks | Pre-commit stage is implemented with step-local validation and changed-file syntax gates (`10B1`) | Closed for runtime commit ordering and delta quality gates; keep regression coverage | 10B1 (`ACCEPTED`) |
 | G18 | README §10 + user requirement: agent tasks need Tensorleap domain context plus strict scoped edits | Agent context pipeline is implemented and merged (knowledge pack, scoped policy, repo context pack, structured prompt wiring) | Closed for context injection baseline; fixture-level context-quality assertions remain pending | 10C-10F (`ACCEPTED`), 12H |
+| G19 | User requirement (2026-03-04): enforce mandatory contract order `preprocess -> input encoders -> GT encoders -> integration test` and stop deriving encoder requirements from integration-test calls | Current inspector/planner flow can surface integration-test missing before encoder requirements are actionable; encoder expected-symbol inference currently depends on integration-test call graph | Encoder authoring can be misordered/broken, and integration-test prompts appear before encoder contracts are grounded | 10M1 (`PENDING`) |
 
 ## Progress
 
@@ -98,6 +101,7 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 10K: Input-encoder suggestion and authoring flow | `ACCEPTED` | 2026-03-04 (`main`, commit `2b90758`) | Render missing-input suggestions to users and pass symbol-level context to authoring executor. |
 | Step 10L: GT-encoder need detection | `ACCEPTED` | 2026-03-04 (`main`, commit `2b90758`) | Detect GT encoder deficits and labeled-subset contract violations. |
 | Step 10M: GT-encoder suggestion and authoring flow | `ACCEPTED` | 2026-03-04 (`main`, commit `2b90758`) | Render GT-target suggestions and enforce labeled-subset constraints in authoring tasks. |
+| Step 10M1: Encoder requirement-source redesign + strict contract-order gating | `PENDING` | — | Make `preprocess -> input -> GT -> integration-test` a hard planning order and remove integration-test-call dependency from encoder requirement detection, with explicit user contract fallback when repo inference is insufficient. |
 | Step 10N: Integration-test wiring need detection | `PENDING` | — | Add AST-based required-call detection for `@tensorleap_integration_test` paths. |
 | Step 10O: Integration-test wiring authoring flow | `PENDING` | — | Add targeted authoring objective to wire missing integration-test calls deterministically. |
 | Step 11A: Real runtime harness core (Layer 2) | `PENDING` | — | Replace stub harness with runtime script, schema-v1 events, and default-on validation. |
@@ -789,6 +793,98 @@ Acceptance criteria:
 Rollback boundary:
 
 - Revert GT authoring context and prompt/review message changes only.
+
+---
+
+### Step 10M1: Encoder requirement-source redesign + strict contract-order gating (`PENDING`)
+
+Objective:
+
+Fix the current authoring regression by enforcing the mandatory contract order (`preprocess -> input encoders -> GT encoders -> integration test`) and removing integration-test-call dependency from encoder requirement detection.
+
+Files to modify:
+
+1. `internal/adapters/inspect/baseline_inspector.go`
+2. `internal/adapters/inspect/input_encoder_contract.go`
+3. `internal/adapters/inspect/gt_encoder_contract.go`
+4. `internal/adapters/planner/policy.go`
+5. `internal/core/issue_step_map.go`
+6. `internal/core/checklist.go`
+7. `internal/cli/run.go`
+8. `internal/state/types.go`
+9. `internal/state/store.go`
+10. `internal/e2e/fixtures/fixtures_test.go`
+
+Files to add:
+
+1. `internal/adapters/inspect/encoder_requirement_contract.go`
+2. `internal/adapters/inspect/encoder_requirement_contract_test.go`
+
+Locked behavior:
+
+1. Planner must never select `ensure.integration_test_contract` while any blocking preprocess/input/GT contract issue exists.
+2. `integration_test_missing` is a deferred check until preprocess/input/GT contracts pass; it becomes blocking only after those prerequisites are satisfied.
+3. Input/GT encoder requirement detection must not use `IntegrationTestCalls` as a required-symbol source.
+4. Required encoder symbols are sourced in this order:
+   1. explicit repository signals (decorators/contracts),
+   2. model/interface-derived signals when deterministic,
+   3. explicit user-provided contract when repository inference is insufficient.
+5. User-provided encoder contract must be persisted in `.concierge/state/state.json` and reused deterministically in later runs.
+6. Step `10K` and `10M` recommendation payloads must consume the new encoder requirement contract source.
+
+Fixture-ground-truth development technique (mandatory):
+
+1. Use fixture repositories as the contract oracle for this step.
+2. For each fixture id, treat `.fixtures/<id>/post` as ground truth for encoder requirement contracts.
+3. Implement deterministic extraction of:
+   1. required input encoder symbols from `post`,
+   2. required GT encoder symbols from `post`.
+4. Run detector logic on `.fixtures/<id>/pre` and compare against `post` ground truth using these invariants:
+   1. required input symbols detected for `pre` must equal required input symbols extracted from `post`,
+   2. required GT symbols detected for `pre` must equal required GT symbols extracted from `post`,
+   3. missing input symbols reported for `pre` must equal (`post required input` - `pre registered input`),
+   4. missing GT symbols reported for `pre` must equal (`post required GT` - `pre registered GT`),
+   5. `post` must report no missing input/GT symbols.
+5. Development loop for this step is iterative and fixture-first:
+   1. pick one fixture and one detector gap,
+   2. add/adjust detector logic,
+   3. add/update pre-vs-post fixture assertions,
+   4. rerun targeted fixture tests,
+   5. repeat until all fixtures satisfy invariants.
+6. Do not start Step `10N` until all Step `10M1` fixture pre-vs-post invariants pass.
+
+Tests:
+
+1. `TestPlannerDefersIntegrationTestStepUntilEncoderContractsPass`
+2. `TestInputEncoderDetectorIgnoresIntegrationTestCallGraphForRequiredSymbols`
+3. `TestGTEncoderDetectorIgnoresIntegrationTestCallGraphForRequiredSymbols`
+4. `TestFixtureInputEncoderContractPreMatchesPostGroundTruth`
+5. `TestFixtureGTEncoderContractPreMatchesPostGroundTruth`
+6. `TestFixturePostContractHasNoMissingEncoderSymbols`
+7. `TestRunPromptsForEncoderContractWhenInferenceIsInsufficient`
+8. `TestRunPersistsAndReloadsEncoderContractFromState`
+9. `TestFixturePlannerPrimaryStepDoesNotJumpToIntegrationTestBeforeEncoders`
+
+Validation commands:
+
+1. `bash scripts/fixtures_prepare.sh`
+2. `bash scripts/fixtures_verify.sh`
+3. `go test ./internal/adapters/inspect -run EncoderContract -v`
+4. `go test ./internal/e2e/fixtures -run 'Fixture(PlannerPrimaryStepPreVariant|InputEncoderContract|GTEncoderContract|PostContractHasNoMissingEncoderSymbols)' -v`
+5. `go test ./internal/adapters/planner ./internal/core ./internal/state ./internal/cli`
+6. `go test ./...`
+
+Acceptance criteria:
+
+1. Encoder authoring is actionable before integration-test wiring exists.
+2. Concierge cannot prompt integration-test wiring as the next blocking step while encoder contracts are unresolved.
+3. Encoder requirement detection remains deterministic without integration-test call inference.
+4. Re-running Concierge preserves and reuses user-provided encoder contracts when needed.
+5. All fixtures pass pre-vs-post encoder contract matching invariants, with `post` treated as ground truth.
+
+Rollback boundary:
+
+- Revert encoder requirement contract source, planner ordering gate, and state wiring introduced by this step only.
 
 ---
 
@@ -1525,56 +1621,6 @@ Rollback boundary:
 
 - Revert only hardening and final checklist/documentation updates introduced by this step.
 
-## Concrete Step Execution Order
-
-1. Step 7A is already `ACCEPTED` (no implementation action required).
-2. Step 7B is already `ACCEPTED` (no implementation action required).
-3. Step 8A is already `ACCEPTED` (no implementation action required).
-4. Step 8B is already `ACCEPTED` (no implementation action required).
-5. Step 9A is already `ACCEPTED` (no implementation action required).
-6. Step 9B is already `ACCEPTED` (no implementation action required).
-7. Step 9C is already `ACCEPTED` (no implementation action required).
-8. Step 10A0 is already `ACCEPTED` (no implementation action required).
-9. Step 10A is already `ACCEPTED` (no implementation action required).
-10. Step 10B is already `ACCEPTED` (no implementation action required).
-11. Step 10B1 is already `ACCEPTED` (no implementation action required).
-12. Step 10C is already `ACCEPTED` (no implementation action required).
-13. Step 10D is already `ACCEPTED` (no implementation action required).
-14. Step 10E is already `ACCEPTED` (no implementation action required).
-15. Step 10F is already `ACCEPTED` (no implementation action required).
-16. Step 10G is already `ACCEPTED` (no implementation action required).
-17. Step 10H is already `ACCEPTED` (no implementation action required).
-18. Step 10I is already `ACCEPTED` (no implementation action required).
-19. Step 10J is already `ACCEPTED` (no implementation action required).
-20. Step 10K is already `ACCEPTED` (no implementation action required).
-21. Step 10L is already `ACCEPTED` (no implementation action required).
-22. Step 10M is already `ACCEPTED` (no implementation action required).
-23. Implement Step 10N.
-24. Implement Step 10O.
-25. Implement Step 11A.
-26. Implement Step 11B.
-27. Implement Step 12A.
-28. Implement Step 12B.
-29. Implement Step 12C.
-30. Implement Step 12D.
-31. Implement Step 12E.
-32. Implement Step 12F.
-33. Implement Step 12G.
-34. Implement Step 12H.
-35. Implement Step 13A.
-36. Implement Step 13B.
-37. Implement Step 14A.
-38. Implement Step 14B.
-
-Each step follows this gate:
-
-1. Implement step scope only.
-2. Run step validation commands.
-3. Stop for explicit user local-review approval before commit/push.
-4. Commit/push PR branch and monitor/fix CI for that step scope.
-5. Mark step `DONE` only after commit/push/PR/green branch CI.
-6. Mark step `ACCEPTED` only after merge to `main`.
-
 ## Validation and Acceptance
 
 Status semantics:
@@ -1585,7 +1631,7 @@ Status semantics:
 
 Phase acceptance condition:
 
-1. Steps `1` through `14B` (including `10A0`, `10A`, `10B`, `10B1`, `10C-10O`, `11A-11B`, `12A-12H`, `13A-13B`, `14A-14B`) are `ACCEPTED`.
+1. Steps `1` through `14B` (including `10A0`, `10A`, `10B`, `10B1`, `10C-10O`, `10M1`, `11A-11B`, `12A-12H`, `13A-13B`, `14A-14B`) are `ACCEPTED`.
 2. Capability-level fixture E2E jobs are part of required CI and green.
 3. Concierge can perform user-approved detection->suggest->author->validate loops for model/preprocess/input-encoder/GT-encoder/integration-test wiring and complete guarded upload workflow end-to-end.
 
@@ -1599,6 +1645,7 @@ Phase acceptance condition:
 ## Surprises & Discoveries
 
 - Steps `10H-10M` are implemented and merged, so preprocess/input/GT detector + authoring paths now emit capability-specific issue families and recommendations from live contracts.
+- Step `10M1` is now a hard blocker because current ordering and encoder requirement-source logic can surface integration-test blockers before encoder contracts are grounded.
 - Existing fixture E2E covers artifact deltas and persistence, but it does not yet prove capability-isolated authoring convergence (model/preprocess/input/GT/wiring) one-by-one.
 - Runtime harness integration exists only as a stub baseline; it must become default runtime evidence before capability E2E can assert semantic behavior robustly.
 
@@ -1631,20 +1678,26 @@ Phase acceptance condition:
 - Decision: Introduce explicit agent context-injection steps (`10C-10F`) using a checked-in Tensorleap knowledge pack and repo-specific context bundles; do not add runtime auto-refresh tooling.
   Rationale: Agent tasks must be domain-correct and scope-bounded without adding online/runtime volatility; knowledge updates can be manual/code-agent assisted via normal PR flow.
   Date/Author: 2026-03-03 / user + assistant.
+- Decision: Insert blocking Step `10M1` immediately after `10M` and before `10N` to correct requirement ordering and redesign encoder requirement sourcing.
+  Rationale: Current behavior can jump to integration-test blockers before encoder contracts are grounded, and encoder requirement inference is incorrectly coupled to integration-test calls.
+  Date/Author: 2026-03-04 / user + assistant.
+- Decision: Implement Step `10M1` with fixture-ground-truth iterative development (`post` as oracle, `pre` as detection target), and gate completion on pre/post contract-match invariants across all fixtures.
+  Rationale: Encoder detection quality must be empirically anchored to real repository pairs, not heuristics validated in isolation.
+  Date/Author: 2026-03-04 / user + assistant.
 
 ## Outcomes & Retrospective
 
-Current state: baseline architecture through Step `10M` is accepted and merged; remaining work is concentrated on integration-test wiring (`10N-10O`), runtime harness deepening (`11A-11B`), capability E2E/CI hardening (`12A-13B`), and release documentation/hardening (`14A-14B`).
+Current state: baseline architecture through Step `10M` is accepted and merged; Step `10M1` is now the immediate blocking next step to fix encoder authoring order/source correctness before continuing to integration-test wiring (`10N-10O`), runtime harness deepening (`11A-11B`), capability E2E/CI hardening (`12A-13B`), and release documentation/hardening (`14A-14B`).
 
 Primary residual risks:
 
-1. Remaining detector-to-planner mapping gaps are now concentrated in integration-test wiring coverage (`10N`/`10O`).
+1. Encoder requirement detection and step ordering are currently incorrect until `10M1` lands, which can mis-prioritize integration-test checks and break encoder authoring flow.
 2. Agent-authoring prompts may be too generic unless they receive symbol-level context from detectors.
 3. Capability E2E may become flaky unless fixture mutation tooling is strictly deterministic.
 
 Mitigations:
 
-1. Complete integration-test wiring detection/authoring (`10N-10O`) and assert mapped primary-step expectations in unit tests.
+1. Complete `10M1` first (strict preprocess->input->GT->integration-test order + encoder requirement source redesign), then proceed with `10N-10O` integration-test wiring detection/authoring.
 2. Keep existing context-injection pipeline (`10C-10F`) under regression coverage while finalizing recommendation payload tests (`10O` + fixture context tests in `12H`).
 3. Introduce deterministic fixture case generation before capability E2E tests (`12A` before `12B-12H`).
 

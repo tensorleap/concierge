@@ -58,11 +58,21 @@ func TestAgentExecutorDispatchesSupportedSteps(t *testing.T) {
 	assertEvidencePresent(t, result.Evidence, "agent.transcript_path")
 	assertEvidence(t, result.Evidence, "agent.knowledge_pack.version", "tlkp-v1")
 	assertEvidencePresent(t, result.Evidence, "agent.knowledge_pack.section_ids")
+	assertEvidencePresent(t, result.Evidence, "agent.repo_context.path")
+	assertEvidencePresent(t, result.Evidence, "agent.repo_context.entry_file")
 	assertEvidencePresent(t, result.Evidence, "agent.scope_policy.allowed_files")
 	assertEvidencePresent(t, result.Evidence, "agent.scope_policy.forbidden_areas")
 	assertEvidencePresent(t, result.Evidence, "agent.scope_policy.required_outcomes")
 	assertEvidencePresent(t, result.Evidence, "agent.scope_policy.stop_and_ask_triggers")
 	assertEvidencePresent(t, result.Evidence, "agent.scope_policy.domain_sections")
+
+	repoContextPath := evidenceValue(result.Evidence, "agent.repo_context.path")
+	if repoContextPath == "" {
+		t.Fatalf("expected repo-context evidence path in %+v", result.Evidence)
+	}
+	if _, err := os.Stat(repoContextPath); err != nil {
+		t.Fatalf("expected repo-context evidence file %q to exist: %v", repoContextPath, err)
+	}
 }
 
 func TestAgentExecutorReturnsDeterministicErrorWhenUnavailable(t *testing.T) {

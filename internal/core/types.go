@@ -133,6 +133,20 @@ func (s IntegrationStatus) Ready() bool {
 	return len(s.Missing) == 0 && len(s.Issues) == 0
 }
 
+// AgentRepoContext captures deterministic, step-scoped repository facts for agent tasks.
+type AgentRepoContext struct {
+	RepoRoot             string   `json:"repoRoot"`
+	EntryFile            string   `json:"entryFile,omitempty"`
+	BinderFile           string   `json:"binderFile,omitempty"`
+	LeapYAMLBoundary     string   `json:"leapYamlBoundary,omitempty"`
+	SelectedModelPath    string   `json:"selectedModelPath,omitempty"`
+	ModelCandidates      []string `json:"modelCandidates,omitempty"`
+	DecoratorInventory   []string `json:"decoratorInventory,omitempty"`
+	IntegrationTestCalls []string `json:"integrationTestCalls,omitempty"`
+	BlockingIssues       []string `json:"blockingIssues,omitempty"`
+	ValidationFindings   []string `json:"validationFindings,omitempty"`
+}
+
 // EnsureStep is one deterministic action the engine can apply.
 type EnsureStep struct {
 	ID          EnsureStepID `json:"id"`

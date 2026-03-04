@@ -50,7 +50,16 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		return core.ExecutionResult{}, err
 	}
 
-	task, err := agentTaskForStep(snapshot, canonicalStep, scopePolicy)
+	repoContext, err := BuildAgentRepoContext(canonicalStep.ID, snapshot, core.IntegrationStatus{}, core.ValidationResult{})
+	if err != nil {
+		return core.ExecutionResult{}, err
+	}
+	repoContextPath, err := persistAgentRepoContext(snapshot.Repository.Root, snapshot.ID, repoContext)
+	if err != nil {
+		return core.ExecutionResult{}, err
+	}
+
+	task, err := agentTaskForStep(snapshot, canonicalStep, scopePolicy, repoContext)
 	if err != nil {
 		return core.ExecutionResult{}, err
 	}
@@ -84,8 +93,10 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		{Name: "agent.transcript_path", Value: transcriptPath},
 		{Name: "agent.knowledge_pack.version", Value: knowledgePack.Version},
 		{Name: "agent.knowledge_pack.section_ids", Value: strings.Join(knowledgeSectionIDs(knowledgePack), ",")},
+		{Name: "agent.repo_context.path", Value: repoContextPath},
 	}
 	evidence = append(evidence, scopePolicyEvidence(scopePolicy)...)
+	evidence = append(evidence, repoContextEvidence(repoContext)...)
 	evidence = append(evidence, runnerResult.Evidence...)
 
 	return core.ExecutionResult{
@@ -151,7 +162,21 @@ func scopePolicyEvidence(policy agent.AgentScopePolicy) []core.EvidenceItem {
 	}
 }
 
-func agentTaskForStep(snapshot core.WorkspaceSnapshot, step core.EnsureStep, policy agent.AgentScopePolicy) (agent.AgentTask, error) {
+func repoContextEvidence(context core.AgentRepoContext) []core.EvidenceItem {
+	return []core.EvidenceItem{
+		{Name: "agent.repo_context.entry_file", Value: context.EntryFile},
+		{Name: "agent.repo_context.binder_file", Value: context.BinderFile},
+		{Name: "agent.repo_context.leap_yaml_boundary", Value: context.LeapYAMLBoundary},
+		{Name: "agent.repo_context.selected_model_path", Value: context.SelectedModelPath},
+		{Name: "agent.repo_context.model_candidates", Value: strings.Join(context.ModelCandidates, ",")},
+		{Name: "agent.repo_context.decorator_inventory", Value: strings.Join(context.DecoratorInventory, ",")},
+		{Name: "agent.repo_context.integration_test_calls", Value: strings.Join(context.IntegrationTestCalls, ",")},
+		{Name: "agent.repo_context.blocking_issues", Value: strings.Join(context.BlockingIssues, " | ")},
+		{Name: "agent.repo_context.validation_findings", Value: strings.Join(context.ValidationFindings, " | ")},
+	}
+}
+
+func agentTaskForStep(snapshot core.WorkspaceSnapshot, step core.EnsureStep, policy agent.AgentScopePolicy, repoContext core.AgentRepoContext) (agent.AgentTask, error) {
 	repoRoot := strings.TrimSpace(snapshot.Repository.Root)
 	if repoRoot == "" {
 		return agent.AgentTask{}, core.NewError(core.KindUnknown, "execute.agent.repo_root", "snapshot repository root is empty")
@@ -172,6 +197,7 @@ func agentTaskForStep(snapshot core.WorkspaceSnapshot, step core.EnsureStep, pol
 	}
 
 	constraints = append(constraints, constraintsForScopePolicy(policy)...)
+	constraints = append(constraints, constraintsForRepoContext(repoContext)...)
 
 	return agent.AgentTask{
 		Objective:      objective,
@@ -180,6 +206,34 @@ func agentTaskForStep(snapshot core.WorkspaceSnapshot, step core.EnsureStep, pol
 		RepoRoot:       repoRoot,
 		TranscriptPath: transcriptPath,
 	}, nil
+}
+
+func constraintsForRepoContext(context core.AgentRepoContext) []string {
+	constraints := []string{
+		fmt.Sprintf("Repository facts: entry file %q, binder file %q", context.EntryFile, context.BinderFile),
+		fmt.Sprintf("Upload boundary: %s", context.LeapYAMLBoundary),
+	}
+
+	if context.SelectedModelPath != "" {
+		constraints = append(constraints, fmt.Sprintf("Selected model path: %q", context.SelectedModelPath))
+	}
+	if len(context.ModelCandidates) > 0 {
+		constraints = append(constraints, fmt.Sprintf("Model candidates: %s", strings.Join(context.ModelCandidates, ", ")))
+	}
+	if len(context.DecoratorInventory) > 0 {
+		constraints = append(constraints, fmt.Sprintf("Decorator inventory: %s", strings.Join(context.DecoratorInventory, ", ")))
+	}
+	if len(context.IntegrationTestCalls) > 0 {
+		constraints = append(constraints, fmt.Sprintf("Integration-test calls: %s", strings.Join(context.IntegrationTestCalls, ", ")))
+	}
+	if len(context.BlockingIssues) > 0 {
+		constraints = append(constraints, fmt.Sprintf("Current blocking issues: %s", strings.Join(context.BlockingIssues, " | ")))
+	}
+	if len(context.ValidationFindings) > 0 {
+		constraints = append(constraints, fmt.Sprintf("Validation findings: %s", strings.Join(context.ValidationFindings, " | ")))
+	}
+
+	return constraints
 }
 
 func constraintsForScopePolicy(policy agent.AgentScopePolicy) []string {

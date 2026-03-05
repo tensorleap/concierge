@@ -1,0 +1,10 @@
+Experiment: webinar__pre__pytorch-leads-v1__r004
+Repo: /Users/assaf/Dropbox/tensorleap/worktrees/concierge/research/inputs/.fixtures/webinar/pre
+Method: pytorch-leads-v1
+Python files scanned: 4
+Files with hits: 1
+Total signal hits: 2
+
+Top lead files:
+1. webinar/utils/metrics.py (score=10.0)
+   - batch_unpack_loop: count=2, contribution=10.0

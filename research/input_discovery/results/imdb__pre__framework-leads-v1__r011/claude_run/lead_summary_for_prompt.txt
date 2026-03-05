@@ -1,0 +1,15 @@
+Method: framework-leads-v1
+Python files scanned: 5
+Files with hits: 2
+Total signal hits: 3
+
+Top lead files:
+1. imdb/utils.py (score=11.0)
+   - tensorflow_import: count=1, contribution=6.0
+     line 3: from tensorflow.keras.preprocessing.sequence import pad_sequences
+   - keras_import: count=1, contribution=5.0
+     line 3: from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+2. imdb/data/preprocess.py (score=5.0)
+   - keras_import: count=1, contribution=5.0
+     line 2: from keras.preprocessing.text import tokenizer_from_json

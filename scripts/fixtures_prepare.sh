@@ -15,9 +15,102 @@ log() {
   echo "[fixtures_prepare] $*"
 }
 
+warn() {
+  echo "[fixtures_prepare] warning: $*" >&2
+}
+
 require_cmd() {
   local cmd="$1"
   command -v "${cmd}" >/dev/null 2>&1 || fail "required command '${cmd}' not found"
+}
+
+is_lfs_pointer_file() {
+  local path="$1"
+  [[ -f "${path}" ]] || return 1
+  local first_line
+  IFS= read -r first_line <"${path}" || return 1
+  [[ "${first_line}" == "version https://git-lfs.github.com/spec/v1" ]]
+}
+
+collect_relevant_model_files() {
+  local repo_dir="$1"
+  while IFS= read -r abs_path; do
+    [[ -n "${abs_path}" ]] || continue
+    echo "${abs_path#"${repo_dir}/"}"
+  done < <(
+    find "${repo_dir}" -type f \
+      \( -name '*.onnx' \
+      -o -name '*.h5' \
+      -o -name '*.hdf5' \
+      -o -name '*.keras' \
+      -o -name '*.pt' \
+      -o -name '*.pth' \
+      -o -name '*.ckpt' \
+      -o -name '*.pb' \
+      -o -name '*.tflite' \
+      -o -name '*.engine' \) \
+      | sort
+  )
+}
+
+ensure_relevant_model_lfs_hydrated() {
+  local repo_dir="$1"
+  local label="$2"
+  local strict_lfs="${STRICT_FIXTURE_LFS:-0}"
+
+  local relevant_model_files=()
+  while IFS= read -r rel_path; do
+    [[ -n "${rel_path}" ]] || continue
+    relevant_model_files+=("${rel_path}")
+  done < <(collect_relevant_model_files "${repo_dir}")
+
+  ((${#relevant_model_files[@]} > 0)) || return 0
+
+  local lfs_pointer_files=()
+  local rel_path
+  for rel_path in "${relevant_model_files[@]}"; do
+    if is_lfs_pointer_file "${repo_dir}/${rel_path}"; then
+      lfs_pointer_files+=("${rel_path}")
+    fi
+  done
+
+  ((${#lfs_pointer_files[@]} > 0)) || return 0
+
+  git lfs version >/dev/null 2>&1 \
+    || fail "${label}: found LFS pointer model files but git-lfs is unavailable: ${lfs_pointer_files[*]}"
+
+  local include_csv
+  include_csv="$(printf '%s,' "${lfs_pointer_files[@]}")"
+  include_csv="${include_csv%,}"
+
+  log "  Hydrating ${#lfs_pointer_files[@]} LFS model file(s) in ${label}"
+  git -C "${repo_dir}" lfs pull --include "${include_csv}" --exclude ""
+
+  local unresolved_lfs=()
+  for rel_path in "${lfs_pointer_files[@]}"; do
+    if is_lfs_pointer_file "${repo_dir}/${rel_path}"; then
+      unresolved_lfs+=("${rel_path}")
+    fi
+  done
+
+  if ((${#unresolved_lfs[@]} > 0)); then
+    if [[ "${strict_lfs}" == "1" ]]; then
+      fail "${label}: model file(s) still unresolved after git lfs pull: ${unresolved_lfs[*]}"
+    fi
+    warn "${label}: model file(s) remained as LFS pointers after pull (best-effort mode): ${unresolved_lfs[*]}"
+  fi
+
+  return 0
+}
+
+array_contains() {
+  local needle="$1"
+  shift
+  local item
+  for item in "$@"; do
+    [[ "${item}" == "${needle}" ]] && return 0
+  done
+  return 1
 }
 
 assert_clean_git_tree() {
@@ -30,6 +123,7 @@ assert_clean_git_tree() {
 
 require_cmd git
 require_cmd jq
+require_cmd rg
 [[ -f "${MANIFEST_PATH}" ]] || fail "manifest not found: ${MANIFEST_PATH}"
 
 jq -e '.fixtures and (.fixtures | type == "array")' "${MANIFEST_PATH}" >/dev/null \
@@ -73,10 +167,31 @@ while IFS= read -r fixture_json; do
   log "  Cloning post variant and checking out pinned commit"
   git_fixture clone --quiet --no-checkout --filter=blob:none "${repo}" "${post_dir}"
   git_fixture -C "${post_dir}" checkout --quiet "${post_ref}"
+  ensure_relevant_model_lfs_hydrated "${post_dir}" "post variant for fixture '${id}'"
 
   log "  Verifying required integration files exist in post variant"
   for rel_path in "${strip_files[@]}"; do
     [[ -e "${post_dir}/${rel_path}" ]] || fail "fixture '${id}' missing '${rel_path}' in post variant"
+  done
+
+  post_root_leap_files=()
+  while IFS= read -r rel_path; do
+    [[ -n "${rel_path}" ]] && post_root_leap_files+=("${rel_path}")
+  done < <(find "${post_dir}" -maxdepth 1 -type f -name 'leap*' -exec basename {} \; | sort)
+
+  for rel_path in "${post_root_leap_files[@]}"; do
+    array_contains "${rel_path}" "${strip_files[@]}" \
+      || fail "fixture '${id}': root leap file '${rel_path}' is present in post but missing from strip_for_pre"
+  done
+
+  post_tensorleap_files=()
+  while IFS= read -r abs_path; do
+    [[ -n "${abs_path}" ]] || continue
+    post_tensorleap_files+=("${abs_path#"${post_dir}/"}")
+  done < <(rg -n --ignore-case --files-with-matches "tensorleap" "${post_dir}" || true)
+  for rel_path in "${post_tensorleap_files[@]}"; do
+    array_contains "${rel_path}" "${strip_files[@]}" \
+      || fail "fixture '${id}': post file '${rel_path}' contains 'tensorleap' but is missing from strip_for_pre"
   done
 
   assert_clean_git_tree "${post_dir}" "post variant for fixture '${id}'"
@@ -84,11 +199,70 @@ while IFS= read -r fixture_json; do
   log "  Creating pre variant from source repository"
   git_fixture clone --quiet --no-checkout --filter=blob:none "${repo}" "${pre_dir}"
   git_fixture -C "${pre_dir}" checkout --quiet "${post_ref}"
+  ensure_relevant_model_lfs_hydrated "${pre_dir}" "pre variant for fixture '${id}'"
 
   log "  Stripping pre-integration files from pre variant"
   for rel_path in "${strip_files[@]}"; do
     rm -f -- "${pre_dir:?}/${rel_path}"
   done
+
+  # Remove compiled artifacts that can leak stripped integration semantics.
+  stripped_py_basenames=()
+  for rel_path in "${strip_files[@]}"; do
+    if [[ "${rel_path}" == *.py ]]; then
+      stripped_py_basenames+=("$(basename "${rel_path}" .py)")
+    fi
+  done
+
+  while IFS= read -r abs_path; do
+    [[ -n "${abs_path}" ]] || continue
+    rel_path="${abs_path#"${pre_dir}/"}"
+    rm -f -- "${pre_dir:?}/${rel_path}"
+  done < <(find "${pre_dir}" -type f -path '*/__pycache__/leap*.pyc' | sort)
+
+  for base_name in "${stripped_py_basenames[@]}"; do
+    while IFS= read -r abs_path; do
+      [[ -n "${abs_path}" ]] || continue
+      rel_path="${abs_path#"${pre_dir}/"}"
+      rm -f -- "${pre_dir:?}/${rel_path}"
+    done < <(find "${pre_dir}" -type f -path "*/__pycache__/${base_name}*.pyc" | sort)
+  done
+
+  find "${pre_dir}" -type d -name '__pycache__' -empty -delete
+
+  remaining_pre_root_leap_files=()
+  while IFS= read -r rel_path; do
+    [[ -n "${rel_path}" ]] && remaining_pre_root_leap_files+=("${rel_path}")
+  done < <(find "${pre_dir}" -maxdepth 1 -type f -name 'leap*' -exec basename {} \; | sort)
+
+  ((${#remaining_pre_root_leap_files[@]} == 0)) \
+    || fail "fixture '${id}': pre variant still has root leap files after stripping: ${remaining_pre_root_leap_files[*]}"
+
+  pre_leap_pyc_files=()
+  while IFS= read -r abs_path; do
+    [[ -n "${abs_path}" ]] || continue
+    pre_leap_pyc_files+=("${abs_path#"${pre_dir}/"}")
+  done < <(find "${pre_dir}" -type f -path '*/__pycache__/leap*.pyc' | sort)
+  ((${#pre_leap_pyc_files[@]} == 0)) \
+    || fail "fixture '${id}': pre variant still has compiled leap artifacts after stripping: ${pre_leap_pyc_files[*]}"
+
+  for base_name in "${stripped_py_basenames[@]}"; do
+    pre_compiled_matches=()
+    while IFS= read -r abs_path; do
+      [[ -n "${abs_path}" ]] || continue
+      pre_compiled_matches+=("${abs_path#"${pre_dir}/"}")
+    done < <(find "${pre_dir}" -type f -path "*/__pycache__/${base_name}*.pyc" | sort)
+    ((${#pre_compiled_matches[@]} == 0)) \
+      || fail "fixture '${id}': pre variant still has compiled artifacts for stripped '${base_name}.py': ${pre_compiled_matches[*]}"
+  done
+
+  pre_tensorleap_files=()
+  while IFS= read -r abs_path; do
+    [[ -n "${abs_path}" ]] || continue
+    pre_tensorleap_files+=("${abs_path#"${pre_dir}/"}")
+  done < <(rg -n --ignore-case --files-with-matches "tensorleap" "${pre_dir}" || true)
+  ((${#pre_tensorleap_files[@]} == 0)) \
+    || fail "fixture '${id}': pre variant still contains files with 'tensorleap': ${pre_tensorleap_files[*]}"
 
   log "  Committing stripped pre variant so git tree remains clean"
   git -C "${pre_dir}" add -A

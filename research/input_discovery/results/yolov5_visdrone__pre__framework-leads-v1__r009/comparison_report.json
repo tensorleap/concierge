@@ -1,0 +1,62 @@
+{
+  "oracle": {
+    "inputs": [
+      "image"
+    ],
+    "ground_truths": [
+      "classes"
+    ]
+  },
+  "agent": {
+    "inputs": [
+      "images"
+    ],
+    "ground_truths": [
+      "targets"
+    ]
+  },
+  "comparison": {
+    "exact_names": {
+      "inputs": {
+        "matched": [],
+        "missing": [
+          "image"
+        ],
+        "extra": [
+          "images"
+        ],
+        "match_rate": 0.0
+      },
+      "ground_truths": {
+        "matched": [],
+        "missing": [
+          "classes"
+        ],
+        "extra": [
+          "targets"
+        ],
+        "match_rate": 0.0
+      }
+    },
+    "semantic": {
+      "inputs_present": true,
+      "ground_truths_present": true,
+      "count_match": true,
+      "input_counts": {
+        "oracle": 1,
+        "agent": 1
+      },
+      "ground_truth_counts": {
+        "oracle": 1,
+        "agent": 1
+      },
+      "hint_coverage": {
+        "input_shape_hints": 1,
+        "input_dtype_hints": 1,
+        "ground_truth_shape_hints": 1,
+        "ground_truth_dtype_hints": 1
+      },
+      "verdict": "pass"
+    }
+  }
+}

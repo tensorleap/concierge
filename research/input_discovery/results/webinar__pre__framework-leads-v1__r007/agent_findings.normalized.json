@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0.0",
+  "method_version": "pytorch-agent-findings-v1",
+  "experiment_id": "webinar__pre__framework-leads-v1__r007",
+  "repo": {
+    "path": ".fixtures/webinar/pre"
+  },
+  "inputs": [
+    {
+      "name": "image",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "file": "webinar/config.yml",
+          "line": 13,
+          "snippet": "IMAGE_SIZE:\n  - 448\n  - 640"
+        },
+        {
+          "file": "webinar/data/preprocess.py",
+          "line": 18,
+          "snippet": "image_paths.append(str(images_base_path / splitted_line[0]))"
+        },
+        {
+          "file": "requirements.txt",
+          "line": 7,
+          "snippet": "opencv-python==4.9.0.80 (image loading dependency)"
+        }
+      ],
+      "semantic_hint": "RGB image resized to 448x640, loaded from paths parsed by generate_subset(). Shape inferred from config.yml IMAGE_SIZE [448, 640] with 3 channels (implicit from RGB/object-detection domain).",
+      "shape_hint": "[448, 640, 3]",
+      "dtype_hint": "float32"
+    }
+  ],
+  "ground_truths": [
+    {
+      "name": "bounding_boxes",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "file": "webinar/data/preprocess.py",
+          "line": 19,
+          "snippet": "list_of_bounding_boxes = [word.split(',') for word in splitted_line[1:]]"
+        },
+        {
+          "file": "webinar/data/preprocess.py",
+          "line": 22,
+          "snippet": "list_of_bounding_boxes_int.append([int(x) for x in qq])"
+        },
+        {
+          "file": "webinar/config.yml",
+          "line": 10,
+          "snippet": "MAX_BB_PER_IMAGE: 150"
+        },
+        {
+          "file": "webinar/config.yml",
+          "line": 9,
+          "snippet": "CATEGORIES: [\"car\", \"truck\", \"pedestrian\"]"
+        }
+      ],
+      "semantic_hint": "Bounding boxes with class IDs for object detection. Each image has a variable-length list of bounding boxes (max 150), each bbox is a list of integers parsed from annotation lines (likely [x1,y1,x2,y2,class_id] format). 3 categories: car, truck, pedestrian.",
+      "shape_hint": "[150, 5]",
+      "dtype_hint": "int32"
+    }
+  ],
+  "proposed_mapping": [
+    {
+      "encoder_type": "input",
+      "name": "unknown",
+      "source_candidate": "unknown",
+      "confidence": "medium",
+      "notes": "RGB image tensor of shape [448, 640, 3] fed into YOLOv7 model"
+    },
+    {
+      "encoder_type": "ground_truth",
+      "name": "unknown",
+      "source_candidate": "unknown",
+      "confidence": "medium",
+      "notes": "Padded bounding box array of shape [150, 5] (x1, y1, x2, y2, class_id) used as ground truth for YOLO detection loss"
+    }
+  ],
+  "unknowns": [
+    "Only 2 Python files exist in the repository; no training loop, model-building code, or loss function is present in source. The repo appears to be a pre-integration skeleton.",
+    "The module 'webinar.utils.gcs_utils' imported by preprocess.py is missing from the repository, so the full data pipeline cannot be traced.",
+    "Exact bounding box format (number of fields per bbox) is unknown without access to actual annotation files. The 5-element [x1,y1,x2,y2,class_id] shape is inferred from YOLO convention but not directly confirmed in code.",
+    "No model.predict(), model.fit(), or loss function calls exist in the codebase to confirm how inputs/GTs are consumed by the model.",
+    "Image preprocessing (normalization, channel ordering) details are not present in code. PIXEL_MEAN [0,0,0] in config suggests no mean subtraction, but actual preprocessing logic is missing.",
+    "The 'code-loader-helpers' dependency in requirements.txt suggests Tensorleap integration code may exist elsewhere or be planned, but no such code is present in this repo."
+  ]
+}

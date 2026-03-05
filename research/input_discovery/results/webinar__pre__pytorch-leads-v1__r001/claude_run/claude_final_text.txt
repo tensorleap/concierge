@@ -1,0 +1,151 @@
+I now have all the evidence needed. `leap_binder.py` source is absent (only `.pyc` exists), but all call-chain, loss, and metric evidence is sufficient to identify inputs and ground truths confidently. Compiling the result:
+
+```json
+{
+  "experiment": "webinar__pre__pytorch-leads-v1__r001",
+  "repository": ".fixtures/webinar/pre",
+  "inputs": [
+    {
+      "name": "input_image",
+      "description": "Preprocessed RGB image fed directly to the YOLOv7 model. Loaded per-sample via input_image(idx, subset) and passed as the sole element in a list to model([img]).",
+      "dtype": "float32",
+      "shape": [448, 640, 3],
+      "shape_note": "Height x Width x Channels derived from config.yml IMAGE_SIZE:[448,640] and standard RGB convention.",
+      "confidence": "high",
+      "evidence": [
+        {
+          "file": "leap_integration.py",
+          "line": 20,
+          "snippet": "img = input_image(idx, subset)"
+        },
+        {
+          "file": "leap_integration.py",
+          "line": 22,
+          "snippet": "y_pred = model([img])"
+        },
+        {
+          "file": "webinar/config.yml",
+          "line": 13,
+          "snippet": "IMAGE_SIZE:\n  - 448\n  - 640"
+        },
+        {
+          "file": "webinar/data/preprocess.py",
+          "line": 18,
+          "snippet": "image_paths.append(str(images_base_path / splitted_line[0]))"
+        }
+      ]
+    }
+  ],
+  "ground_truths": [
+    {
+      "name": "bounding_box_gt",
+      "description": "Padded tensor of ground-truth bounding boxes in [x, y, w, h, class_id] format. Loaded via get_bb(idx, subset) and passed as y_true to all loss and metric functions. Padded to MAX_BB_PER_IMAGE=150 rows.",
+      "dtype": "float32",
+      "shape": [150, 5],
+      "shape_note": "MAX_BB_PER_IMAGE=150 from config.yml; 5 columns = [x, y, w, h, class_id] per annotation row inferred from preprocess.py comma-split integers and metrics.py true_coords_labels decomposition into gt_loc (x,y,w,h) and gt_class.",
+      "confidence": "high",
+      "evidence": [
+        {
+          "file": "leap_integration.py",
+          "line": 26,
+          "snippet": "gt = get_bb(idx, subset)"
+        },
+        {
+          "file": "leap_integration.py",
+          "line": 27,
+          "snippet": "od_loss_ = od_loss(gt, y_pred)"
+        },
+        {
+          "file": "leap_integration.py",
+          "lines": [28, 29, 30],
+          "snippet": "regression_metric_(gt, y_pred) / classification_metric_(gt, y_pred) / object_metric_(gt, y_pred)"
+        },
+        {
+          "file": "webinar/utils/metrics.py",
+          "line": 108,
+          "snippet": "gt_loc, gt_class = true_coords_labels(batch_i, y_true, BACKGROUND_LABEL)"
+        },
+        {
+          "file": "webinar/data/preprocess.py",
+          "lines": [19, 23],
+          "snippet": "list_of_bounding_boxes = [word.split(',') for word in splitted_line[1:]]\n...\nlist_of_bounding_boxes_int.append([int(x) for x in qq])"
+        },
+        {
+          "file": "webinar/config.yml",
+          "line": 10,
+          "snippet": "MAX_BB_PER_IMAGE: 150"
+        }
+      ]
+    }
+  ],
+  "encoder_mapping": [
+    {
+      "encoder_name": "input_image_encoder",
+      "maps_to": "input_image",
+      "role": "input",
+      "description": "Reads an image from the GCS-backed path (via gcs_utils._download), decodes it as RGB, resizes/normalizes to [448, 640, 3] float32. The function input_image(idx, subset) is the Tensorleap input binding.",
+      "source_function": "input_image",
+      "source_file": "leap_binder.py (source absent — only .pyc present)",
+      "inferred_from": [
+        "leap_integration.py:20-22 (img consumed directly by model call)",
+        "webinar/config.yml IMAGE_SIZE:[448,640]",
+        "webinar/data/preprocess.py image_paths construction",
+        "webinar/utils/gcs_utils.py _download utility"
+      ],
+      "confidence": "high"
+    },
+    {
+      "encoder_name": "bounding_box_gt_encoder",
+      "maps_to": "bounding_box_gt",
+      "role": "ground_truth",
+      "description": "Reads raw annotation data (comma-separated x,y,w,h,class_id integers per box), converts to float32 tensor, pads rows to MAX_BB_PER_IMAGE=150 yielding shape [150, 5]. The function get_bb(idx, subset) is the Tensorleap ground-truth binding.",
+      "source_function": "get_bb",
+      "source_file": "leap_binder.py (source absent — only .pyc present)",
+      "inferred_from": [
+        "leap_integration.py:26-30 (gt passed as y_true to od_loss, regression_metric, classification_metric, object_metric)",
+        "webinar/utils/metrics.py:108 (true_coords_labels splits y_true into gt_loc + gt_class)",
+        "webinar/data/preprocess.py:19-23 (annotation format is list-of-[x,y,w,h,class_id] ints)",
+        "webinar/config.yml MAX_BB_PER_IMAGE:150"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "model_output_note": {
+    "description": "Model produces a multi-head YOLO detection output. Prediction channels per anchor are ['x','y','w','h','object','car','truck','pedestrian'] (8 dims). Output is reshaped via reshape_output_list() into (loc_list_reshaped, class_list_reshaped) over 3 feature-map scales [[14,20],[28,40],[56,80]] before being passed to YoloLoss.",
+    "evidence": [
+      {
+        "file": "leap_integration.py",
+        "line": 6,
+        "snippet": "LABELS = [\"x\", \"y\", \"w\", \"h\", \"object\"] + CONFIG['CATEGORIES']"
+      },
+      {
+        "file": "webinar/utils/metrics.py",
+        "lines": [51, 53],
+        "snippet": "class_list_reshaped, loc_list_reshaped = reshape_output_list(y_pred, decoded=decoded, image_size=CONFIG['IMAGE_SIZE'], feature_maps=CONFIG['FEATURE_MAPS'])"
+      },
+      {
+        "file": "webinar/config.yml",
+        "line": 9,
+        "snippet": "CATEGORIES: [\"car\", \"truck\", \"pedestrian\"]"
+      }
+    ]
+  },
+  "unknowns": [
+    {
+      "item": "input_image exact preprocessing pipeline",
+      "reason": "leap_binder.py source file is absent from the repository — only a compiled .pyc (CPython 3.9) is present. Exact normalization (mean subtraction, scale factor) cannot be confirmed at source level. PIXEL_MEAN:[0,0,0] in config.yml suggests no mean subtraction, but this cannot be verified without the source.",
+      "file": "__pycache__/leap_binder.cpython-39.pyc"
+    },
+    {
+      "item": "get_bb padding strategy and coordinate space",
+      "reason": "Whether padding rows are zeros or a sentinel (e.g. -1) and whether coordinates are pixel-absolute or normalized [0,1] cannot be confirmed without leap_binder.py source. Metrics code uses xywh_to_xyxy_format on gt_loc suggesting raw pixel coordinates, but scale/normalization step is unverifiable.",
+      "file": "__pycache__/leap_binder.cpython-39.pyc"
+    },
+    {
+      "item": "subset_images_list() implementation and train/val split logic",
+      "reason": "Called in leap_integration.py:52 but defined in leap_binder.py (source absent). Training subset enumeration and labeling conventions cannot be confirmed.",
+      "file": "__pycache__/leap_binder.cpython-39.pyc"
+    }
+  ]
+}
+```

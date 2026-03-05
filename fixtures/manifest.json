@@ -5,9 +5,17 @@
       "repo": "https://github.com/Tensorleap-hub/ultralytics.git",
       "post_ref": "01ad3aadbe3b0c86b90d1c0fb3731a4e24c1e88c",
       "strip_for_pre": [
+        "README.md",
+        "dvclive/params.yaml",
+        "export_model_to_tf.py",
         "leap.yaml",
         "leap_binder.py",
-        "leap_custom_test.py"
+        "leap_custom_test.py",
+        "ultralytics/cfg/default.yaml",
+        "ultralytics/tensorleap_folder/README.md",
+        "ultralytics/tensorleap_folder/global_params.py",
+        "ultralytics/tensorleap_folder/utils.py",
+        "ultralytics/utils/__init__.py"
       ]
     },
     {
@@ -15,9 +23,15 @@
       "repo": "https://github.com/Tensorleap-hub/webinar.git",
       "post_ref": "6ad56fd1e1343e95c259bf55d0cbfe24b39f8b9e",
       "strip_for_pre": [
+        "LICENSE",
+        "README.md",
         "leap.yaml",
         "leap_binder.py",
-        "leap_custom_test.py"
+        "leap_custom_test.py",
+        "leap_integration.py",
+        "pyproject.toml",
+        "webinar/utils/gcs_utils.py",
+        "webinar/utils/metrics.py"
       ]
     },
     {
@@ -25,9 +39,15 @@
       "repo": "https://github.com/Tensorleap-hub/yolov5_visdrone.git",
       "post_ref": "7a04ff7b613fc00cc1eb44ccfc9218c3c2a0c495",
       "strip_for_pre": [
+        "README.md",
+        "data/coco128.yaml",
         "leap.yaml",
         "leap_binder.py",
-        "leap_custom_test.py"
+        "leap_config.py",
+        "leap_config.yaml",
+        "leap_custom_test.py",
+        "leap_integration.py",
+        "leap_utils.py"
       ]
     },
     {
@@ -35,9 +55,14 @@
       "repo": "https://github.com/tensorleap-hub/mnist.git",
       "post_ref": "1c4c6f0d5c4254cc4ae5c2df5ae8ef9f0a61212b",
       "strip_for_pre": [
+        "LICENSE",
+        "README.md",
         "leap.yaml",
         "leap_binder.py",
-        "leap_custom_test.py"
+        "leap_custom_test.py",
+        "leap_integration.py",
+        "mnist/data/preprocess.py",
+        "pyproject.toml"
       ]
     },
     {
@@ -45,9 +70,14 @@
       "repo": "https://github.com/tensorleap-hub/cifar10_resnet.git",
       "post_ref": "5dd3611ca9efdf34c28279e036a7bb90638dda4d",
       "strip_for_pre": [
+        "LICENSE",
+        "README.md",
         "leap.yaml",
         "leap_binder.py",
-        "leap_custom_test.py"
+        "leap_custom_test.py",
+        "leap_integration.py",
+        "leap_test.py",
+        "pyproject.toml"
       ]
     },
     {
@@ -55,9 +85,17 @@
       "repo": "https://github.com/tensorleap-hub/IMDb.git",
       "post_ref": "b4ce7cf109c89402147cc2e7f071165fc143d1d8",
       "strip_for_pre": [
+        "LICENSE",
+        "README.md",
+        "imdb/gcs_utils.py",
         "leap.yaml",
         "leap_binder.py",
-        "leap_custom_test.py"
+        "leap_custom_test.py",
+        "leap_integration.py",
+        "leap_mapping_bert_onnx.yaml",
+        "leap_mapping_densenet.yaml",
+        "leap_test.py",
+        "pyproject.toml"
       ]
     }
   ]

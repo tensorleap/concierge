@@ -1,0 +1,122 @@
+Method: framework-leads-v1
+Python files scanned: 35
+Files with hits: 27
+Total signal hits: 177
+
+Top lead files:
+1. utils/dataloaders.py (score=77.0)
+   - batch_unpack_loop: count=10, contribution=20.0
+     line 329: for i, s in enumerate(sources):  # index, source
+     line 496: for i, (label, segment) in enumerate(zip(self.labels, self.segments)):
+   - torch_import: count=3, contribution=15.0
+     line 23: import torch
+     line 24: import torch.nn.functional as F
+   - tf_data_pipeline_ops: count=2, contribution=12.0
+     line 699: random.shuffle(indices)
+     line 756: random.shuffle(indices)
+   - dataloader_call: count=1, contribution=10.0
+     line 1156: generator=generator)  # or DataLoader(persistent_workers=True)
+
+2. export.py (score=66.0)
+   - tensorflow_import: count=6, contribution=30.0
+     line 300: import tensorflow as tf
+     line 301: from tensorflow.python.framework.convert_to_constants import convert_variables_to_constants_v2
+   - keras_evaluate_or_predict: count=2, contribution=12.0
+     line 311: _ = tf_model.predict(im, tf_nms, agnostic_nms, topk_per_class, topk_all, iou_thres, conf_thres)
+     line 313: outputs = tf_model.predict(inputs, tf_nms, agnostic_nms, topk_per_class, topk_all, iou_thres, conf_thres)
+   - torch_import: count=2, contribution=10.0
+     line 56: import torch
+     line 58: from torch.utils.mobile_optimizer import optimize_for_mobile
+   - batch_unpack_loop: count=2, contribution=8.0
+     line 147: for k, v in d.items():
+     line 511: for k, m in model.named_modules():
+
+3. train.py (score=57.0)
+   - batch_unpack_loop: count=6, contribution=20.0
+     line 133: for k, v in model.named_parameters():
+     line 283: for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
+   - torch_import: count=4, contribution=20.0
+     line 26: import torch
+     line 27: import torch.distributed as dist
+   - torch_load: count=2, contribution=6.0
+     line 120: ckpt = torch.load(weights, map_location='cpu')  # load checkpoint to CPU to avoid CUDA memory leak
+     line 496: d = torch.load(last, map_location='cpu')['opt']
+   - train_fn: count=1, contribution=5.0
+     line 64: def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictionary
+
+4. classify/train.py (score=47.0)
+   - torch_import: count=5, contribution=25.0
+     line 20: import torch
+     line 21: import torch.distributed as dist
+   - batch_unpack_loop: count=2, contribution=8.0
+     line 173: for i, (images, labels) in pbar:  # progress bar
+     line 317: for k, v in kwargs.items():
+   - train_fn: count=1, contribution=5.0
+     line 50: def train(opt, device):
+   - loss_call: count=1, contribution=3.0
+     line 178: loss = criterion(model(images), labels)
+
+5. utils/loss.py (score=47.0)
+   - tf_data_pipeline_ops: count=3, contribution=18.0
+     line 182: ai = torch.arange(na, device=self.device).float().view(na, 1).repeat(1, nt)  # same as .repeat_interleave(nt)
+     line 183: targets = torch.cat((targets.repeat(na, 1, 1), ai[..., None]), 2)  # append anchor indices
+   - torch_forward_def: count=3, contribution=12.0
+     line 25: def forward(self, pred, true):
+     line 45: def forward(self, pred, true):
+   - torch_import: count=2, contribution=10.0
+     line 6: import torch
+     line 7: import torch.nn as nn
+   - batch_unpack_loop: count=1, contribution=4.0
+     line 128: for i, pi in enumerate(p):  # layer index, layer predictions
+
+6. utils/torch_utils.py (score=45.0)
+   - torch_import: count=6, contribution=25.0
+     line 16: import torch
+     line 17: import torch.distributed as dist
+   - batch_unpack_loop: count=5, contribution=20.0
+     line 127: for i, d in enumerate(devices):
+     line 241: for name, m in model.named_modules():
+
+7. val.py (score=37.0)
+   - batch_unpack_loop: count=6, contribution=20.0
+     line 51: for *xyxy, conf, cls in predn.tolist():
+     line 63: for p, b in zip(predn.tolist(), box.tolist()):
+   - keras_evaluate_or_predict: count=1, contribution=6.0
+     line 314: eval.evaluate()
+   - torch_import: count=1, contribution=5.0
+     line 28: import torch
+   - main_entry: count=1, contribution=3.0
+     line 394: if __name__ == "__main__":
+
+8. utils/activations.py (score=35.0)
+   - torch_forward_def: count=8, contribution=20.0
+     line 14: def forward(x):
+     line 21: def forward(x):
+   - torch_import: count=3, contribution=15.0
+     line 6: import torch
+     line 7: import torch.nn as nn
+
+9. utils/general.py (score=32.0)
+   - batch_unpack_loop: count=4, contribution=16.0
+     line 364: for i, r in enumerate(requirements):
+     line 772: for i, s in enumerate(segments):
+   - torch_import: count=2, contribution=10.0
+     line 33: import torch
+     line 231: import torch.backends.cudnn as cudnn
+   - model_call: count=1, contribution=3.0
+     line 995: pred_cls2 = model(torch.Tensor(ims).to(d.device)).argmax(1)  # classifier prediction
+   - torch_load: count=1, contribution=3.0
+     line 912: x = torch.load(f, map_location=torch.device('cpu'))
+
+10. detect.py (score=31.0)
+   - batch_unpack_loop: count=3, contribution=12.0
+     line 111: for path, im, im0s, vid_cap, s in dataset:
+     line 135: for i, det in enumerate(pred):  # per image
+   - torch_import: count=2, contribution=10.0
+     line 33: import torch
+     line 34: import torch.backends.cudnn as cudnn
+   - model_call: count=2, contribution=6.0
+     line 123: pred = model(im, augment=augment, visualize=visualize)
+     line 213: strip_optimizer(weights[0])  # update model (to fix SourceChangeWarning)
+   - main_entry: count=1, contribution=3.0
+     line 255: if __name__ == "__main__":

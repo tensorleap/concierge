@@ -1,458 +1,168 @@
-# Agent-Led Input/GT Discovery Research (Framework-Agnostic, Code-First)
+# Input/GT Discovery Research (Current State)
+
+Last updated: 2026-03-05
+
+This is the living research brief for input/ground-truth discovery prior to production implementation in Concierge.
+
+## Goal
+
+Recommend correct model inputs and ground truths for Tensorleap encoders in repositories that do not yet have Tensorleap integration.
+
+Core direction:
+
+1. Use static analysis to generate high-quality leads.
+2. Use an agent for semantic code tracing from those leads.
+3. Ask the user to confirm proposed mappings.
+4. Use runtime/model introspection as a support layer, not the only source of truth.
+
+## Current Best Method (Recommended)
+
+1. Prepare clean fixture `pre` repos:
+   1. Remove integration files (`leap_*`, manifest-listed integration artifacts).
+   2. Remove files containing `tensorleap`.
+   3. Remove compiled residue (`__pycache__/leap*.pyc` and compiled matches for stripped modules).
+2. Run framework-agnostic lead extraction:
+   1. Score files by train/val/data-flow/model/loss signals.
+   2. Detect framework (`pytorch`, `tensorflow`, `mixed`, `unknown`) using code + artifact evidence.
+3. Run semantic investigator (Claude Opus):
+   1. Inject lead summary directly into prompt.
+   2. Keep task read-only, evidence-backed, uncertainty-explicit.
+4. Normalize output into stable findings schema.
+5. Evaluate with semantic-first rubric:
+   1. input/GT presence
+   2. count plausibility
+   3. shape/dtype hint coverage
+   4. exact names only as diagnostics
+6. Present candidates + mapping proposal to user for confirmation.
+
+## Key Decisions (Active)
+
+1. Input detection is an agent task, not static-only parsing.
+2. Framework-agnostic method replaces PyTorch-only method.
+3. `lead_pack_read_success` is informational when lead context is already in prompt.
+4. Exact input names are secondary; semantics and compatibility are primary.
+5. Research runner defaults to Opus (`claude-opus-4-6`).
+6. Fixture prep now includes automatic relevant-model LFS hydration (best-effort by default, strict mode optional).
 
-This is a living research document. Update `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` as we iterate across conversations.
+## What We Learned
 
-This document is intentionally separate from production implementation planning in `PLAN.md`. The purpose here is to validate ideas quickly with temporary research scripts and collaborative analysis before deciding what belongs in Concierge production code.
+### Strong positives
 
-## Purpose / Big Picture
+1. `yolov5_visdrone` (`r009`) is a strong success case:
+   1. Framework detected correctly (`pytorch`, high confidence).
+   2. Agent traced native training path (`train.py` + dataloaders + loss) and recovered semantically correct input/GT candidates.
+2. `ultralytics` (`r010`) shows the approach scales to larger repos:
+   1. Agent produced rich, evidence-backed candidates from native code.
+   2. Main failure was output-shape/schema mismatch in normalization, not semantic reasoning quality.
+3. Contamination controls were essential and effective:
+   1. Removing Tensorleap-authored files and compiled artifacts prevented false positives.
 
-We want a new way to identify model inputs and ground truths for Tensorleap integration authoring. The current static-first method is useful for model-file discovery, but not strong enough for reliable input/GT recommendation. The research goal is to prove a better method:
+### Important gaps
 
-1. Use static search only to generate leads.
-2. Use an agent to semantically read repository code from those leads.
-3. Present proposed input/GT mappings to the user for confirmation.
-4. Use runtime/model introspection only as a secondary fallback or validation layer.
+1. `imdb` is a weak representative fixture for typical customer repos:
+   1. Minimal code surface.
+   2. No train loop.
+   3. Dual model-path ambiguity (dense vs bert).
+2. BERT input splitting issue remains:
+   1. Agent often keeps BERT token bundle as one conceptual input instead of splitting (`input_ids`, `attention_mask`, `token_type_ids`).
+   2. Ground truth inference is generally fine.
+3. Normalizer robustness is still a practical risk:
+   1. Model outputs can use alternate key shapes (`model_inputs`, `candidate_inputs`, etc.).
 
-If this works, we will have a practical, evidence-based path for recommending correct input encoders and ground-truth encoders in repositories without existing Tensorleap integration.
+## LFS Findings
 
-## Non-Production Research Constraints (Hard Rules)
+1. We implemented fixture-level relevant-model LFS hydration in prepare/verify scripts.
+2. This improved fixture realism and enables future runtime signature checks where artifacts are available.
+3. It did not, by itself, fix IMDB BERT splitting in current code-first prompt flow.
+4. One known unresolved remote object remains in `mnist` (`model/mnist_onnx.onnx`):
+   1. best-effort mode logs warnings and continues.
+   2. strict mode (`STRICT_FIXTURE_LFS=1`) fails fast.
 
-1. Research mode only until explicitly changed by user.
-2. No production Concierge code changes during this phase.
-3. Temporary scripts and artifacts are allowed for experimentation only.
-4. No CI integration for research scripts.
-5. No TDD requirement for research scripts.
-6. Keep experiments lightweight, reversible, and fast to rerun.
-7. Work is collaborative: decisions, prompt changes, and heuristic changes are reviewed with the user before being treated as direction.
+## Repository-by-Repository Status
 
-## Scope
+1. `webinar`:
+   1. Early runs were contaminated; later runs were clean.
+   2. Useful for testing contamination defenses and sparse-context behavior.
+2. `yolov5_visdrone`:
+   1. Best current proof-of-value for semantic recovery on real PyTorch training code.
+3. `ultralytics`:
+   1. Good stress test for scale and mixed signals.
+   2. Confirms need for stronger normalizer/schema handling.
+4. `imdb`:
+   1. Useful edge case for tokenizer-bundle splitting and ambiguous branches.
+   2. Not a primary benchmark for mainstream expected customer flows.
 
-Current scope is framework-agnostic with code-first semantic discovery.
+## Recommendations For Concierge (Go Implementation)
 
-In scope:
+### 1) Keep a deterministic pipeline with explicit stages
 
-1. Lead discovery using mixed signals (PyTorch, TensorFlow/Keras, and framework-agnostic train/val/data-flow patterns).
-2. Framework detection (`pytorch`, `tensorflow`, `mixed`, `unknown`) before semantic tracing.
-3. Agent-driven semantic analysis to infer candidate inputs and GTs from repository-native code.
-4. Comparison against known fixture post states as ground truth.
-5. Iterative prompt/heuristic refinement based on measured quality.
+Implement stage outputs as typed Go structs and persist each stage artifact:
 
-Out of scope for this phase:
+1. `fixture_state` / repo snapshot
+2. `lead_pack`
+3. `agent_prompt_bundle`
+4. `agent_raw_output`
+5. `normalized_findings`
+6. `comparison_report`
 
-1. Production wiring in Concierge.
-2. CI policy, release process, and hardening.
-3. End-to-end runtime execution as primary discovery path.
+This makes failures local and debuggable.
 
-## Research Hypotheses
+### 2) Build framework-agnostic lead extraction natively in Go
 
-1. Framework-agnostic lead extraction plus framework detection provides stronger starting context than framework-specific assumptions.
-2. Train/validation entry points are high-value anchors for discovering input/GT mapping across frameworks.
-3. Agent semantic traversal from leads (imports, call chains, data pipeline construction, batch unpacking, model call sites, loss/metric consumption) can recover usable input/GT candidates.
-4. User confirmation after agent proposal reduces wrong authoring decisions.
-5. Runtime model inspection is most useful as fallback/cross-check, not as primary discovery.
+1. Use fast file scanning + regex-based signals (and lightweight ranking).
+2. Keep signal weights configurable in a versioned config.
+3. Emit both machine JSON and human summary.
 
-## Candidate Lead Signals (Framework-Agnostic)
+### 3) Add branch-aware input inference rules before/after agent
 
-Framework-agnostic anchors:
+High-impact rule set:
 
-1. Training/validation entry points (`train`, `fit`, `main`, `val`, `validate`, `evaluation`, `test`).
-2. Batch unpacking patterns (`for ... in loader`, tuple/dict unpacking).
-3. Model invocation sites (`model(...)`, `forward(...)`, `fit/evaluate/predict` call sites).
-4. Loss/metric consumption sites where targets are consumed.
+1. If tokenizer output is dict-like and framework is BERT/transformers, expand to per-key candidates.
+2. If branch selection is statically resolvable (for example `MODEL_TYPE` assignment), prioritize active branch candidates.
+3. Keep alternate-branch candidates as conditional suggestions.
 
-PyTorch anchors:
+### 4) Harden normalization
 
-1. `torch.utils.data.DataLoader` import/instantiation.
-2. `Dataset` implementations and custom dataset classes.
-3. `collate_fn` definitions and call wiring.
-4. Tensor movement/conversion patterns around model calls (`.to(device)`, `.float()`, normalization).
+1. Accept multiple schema variants from agent output.
+2. Map synonymous fields (`inputs`, `model_inputs`, `candidate_inputs`, etc.).
+3. Fail with actionable diagnostics, not silent empty candidates.
 
-TensorFlow/Keras anchors:
+### 5) Introduce controlled runtime signature support (after code-first pass)
 
-1. `tf.data.Dataset` construction (`from_tensor_slices`, `from_generator`, `TFRecordDataset`).
-2. `map`, `batch`, `prefetch`, and dataset pipelines feeding `fit/evaluate/predict`.
-3. Keras input pipelines and generator adapters.
-4. Label/target extraction in training/metric/loss code paths.
+1. If model artifacts exist and are hydrated, optionally inspect runtime signature:
+   1. ONNX input names/shapes/dtypes.
+   2. Keras/TensorFlow input tensors where feasible.
+2. Use runtime as corroboration layer, not sole decision-maker.
+3. Report disagreements between code-derived and runtime-derived candidate sets.
 
-## Research Repositories (Playground)
+### 6) Keep quality gates focused on real reliability
 
-Prioritized repositories for experiments:
+Hard failures:
 
-1. `webinar`
-2. `yolov5_visdrone`
-3. `ultralytics`
+1. tool errors
+2. permission errors
+3. malformed/empty final payload
 
-Requested but currently unresolved:
+Informational (non-blocking in prompt-injection mode):
 
-1. `hexagon-integration` (not currently reachable from this environment as of 2026-03-05).
+1. no explicit `Read(lead_pack.json)` tool call
 
-Ground-truth comparison source:
+### 7) UX recommendations for Concierge
 
-1. Fixture `post_ref` state and integration artifacts (for example `leap_binder.py`, `leap.yaml`, `leap_custom_test.py`) prepared in `.fixtures/<id>/post`.
+1. Always show evidence snippets for each proposed input/GT.
+2. Ask user to confirm/adjust mappings before authoring encoders.
+3. Make alternative branch choices explicit (for example dense vs bert).
 
-## Agent Task Definition (Research Version)
+## Implementation Plan (Go, Suggested Sequence)
 
-Input detection is treated as an agent task, not a static-only parser task.
+1. Port lead extraction + framework detection to Go with artifact persistence.
+2. Port prompt assembly + run metadata/quality gate plumbing.
+3. Port robust normalizer with multi-shape parsing.
+4. Add heuristic post-processor for dict-input splitting and branch resolution.
+5. Add optional runtime signature inspector (LFS-aware precondition).
+6. Integrate into Concierge step flow and user confirmation UI.
+7. Validate on fixtures emphasizing `yolov5_visdrone` and `ultralytics`; keep `imdb` as edge-case regression.
 
-Research agent contract:
+## Obsolete Items Removed
 
-1. Read-only investigation of repository code.
-2. Start from lead pack generated by static search.
-3. Trace code paths from training/validation entry points to data loading and batching.
-4. Infer candidate model inputs and candidate ground truths.
-5. Return structured output with evidence and confidence.
-6. Explicitly list unknowns and ambiguities.
-
-Expected output fields (draft):
-
-1. Candidate inputs (name, shape/type hints, evidence locations).
-2. Candidate ground truths (name, semantics, evidence locations).
-3. Proposed encoder mapping (input encoders + GT encoders).
-4. Confidence per candidate.
-5. Unresolved questions for user confirmation.
-
-## Method Overview
-
-Phase A: Build lead extraction and context packaging.
-
-1. Write temporary Python scripts that scan repo text for PyTorch lead signals.
-2. Produce a compact lead pack (files, symbols, snippets, and ranks).
-3. Keep scripts under a dedicated temporary research area.
-
-Phase B: Agent semantic inference.
-
-1. Define a static system prompt for read-only semantic investigation (framework-agnostic).
-2. Inject lead summary directly into the user prompt and provide targeted repository context to the agent.
-3. Collect structured candidate input/GT mapping output.
-
-Phase C: Ground-truth evaluation.
-
-1. Compare agent output to fixture post-state integration definitions.
-2. Score matches/misses for inputs and GTs.
-3. Capture failure modes and uncertainty patterns.
-
-Phase D: Refinement loop.
-
-1. Refine lead heuristics and prompt instructions.
-2. Re-run experiments on the same fixtures.
-3. Track whether precision/recall and evidence quality improve.
-
-Phase E: Runtime fallback exploration (secondary).
-
-1. Evaluate lightweight runtime/model introspection only after code-first approach is characterized.
-2. Use it as cross-check/fallback hints, not as first-line discovery.
-
-## Current Best Method (as of 2026-03-05)
-
-1. Build clean `pre` fixtures first:
-   1. Strip explicit Tensorleap integration files.
-   2. Strip any file containing `tensorleap`.
-   3. Strip compiled integration residue (`leap*.pyc`).
-2. Run framework-agnostic static lead extraction:
-   1. Rank candidate files by train/val/data-flow signal.
-   2. Detect framework (`pytorch`/`tensorflow`/`mixed`/`unknown`) from code + artifacts.
-3. Inject lead summary into Claude user prompt (no hard dependency on reading `lead_pack.json` as a tool call).
-4. Run read-only semantic investigation with evidence requirements:
-   1. Trace from train/val entry points to dataloading/data pipeline.
-   2. Identify tensors/features fed into model calls.
-   3. Identify targets consumed by loss/metric code.
-5. Normalize model output into stable research schema.
-6. Evaluate with semantic-first scoring:
-   1. Presence and counts of inputs/GTs.
-   2. Shape/dtype/semantic hint quality.
-   3. Exact-name matching only as secondary diagnostics.
-7. Present proposed input/GT mapping to user for confirmation.
-8. Keep runtime introspection as fallback/cross-check, not primary.
-
-## Concrete Plan of Work
-
-### Step 1: Research skeleton and conventions
-
-1. Create temporary research folders for scripts, prompts, and results.
-2. Define JSON schemas for lead pack and agent output.
-3. Define experiment naming/versioning convention.
-
-### Step 2: Static lead extractor (temporary Python)
-
-1. Implement repository scan for lead signals and ranked lead files.
-2. Emit machine-readable lead pack and short human-readable summary.
-3. Run on `webinar` first.
-
-### Step 3: Static system prompt for semantic investigator
-
-1. Draft one reusable system prompt for read-only PyTorch input/GT discovery.
-2. Enforce evidence-based claims and explicit uncertainty reporting.
-3. Produce structured output that is easy to compare to fixture truth.
-
-### Step 4: First experiment on `webinar`
-
-1. Generate lead pack.
-2. Run agent investigation.
-3. Compare output to `.fixtures/webinar/post`.
-4. Record findings and gaps in this document.
-
-### Step 5: Iterate on harder fixtures
-
-1. Repeat for `yolov5_visdrone`.
-2. Repeat for `ultralytics`.
-3. Compare trend across repository complexity.
-
-### Step 6: Optional secondary runtime probe
-
-1. Design a minimal, temporary runtime probe concept.
-2. Evaluate only as supplemental validation of code-first inference.
-3. Decide if this should remain fallback-only.
-
-### Step 7: Recommendation for production adoption
-
-1. Summarize what worked and what failed.
-2. Propose minimal production slice for Concierge.
-3. Explicitly separate production candidates from discarded research ideas.
-
-## Validation and Acceptance (Research Phase)
-
-This phase is accepted when all of the following are true:
-
-1. We can run the research workflow on the prioritized fixtures.
-2. Agent output is evidence-backed and user-reviewable.
-3. We have measurable comparison against fixture post ground truth.
-4. We can articulate a clear go/no-go decision for productionization.
-
-Research validation style:
-
-1. Manual and script-driven checks are sufficient.
-2. No CI requirement.
-3. No TDD requirement.
-4. Focus is empirical signal quality, not production software quality.
-
-## Collaboration Protocol
-
-1. We review each major prompt/heuristic revision together before locking it for the next run.
-2. We prefer small experiment increments and frequent readouts.
-3. We keep this file updated after each meaningful experiment.
-4. We do not promote anything to production code without explicit user approval.
-
-## Progress
-
-- [x] (2026-03-05 08:00Z) Framed the new direction: input/GT detection is agent-led with static leads.
-- [x] (2026-03-05 08:00Z) Prioritized code-first semantic discovery over runtime introspection.
-- [x] (2026-03-05 08:00Z) Chosen research playground repos and fixture-ground-truth comparison approach.
-- [x] (2026-03-05 08:00Z) Created this living research plan document.
-- [x] (2026-03-05 09:11Z) Created temporary research workspace at `research/input_discovery/` with `scripts/`, `schemas/`, `prompts/`, and `results/`.
-- [x] (2026-03-05 09:11Z) Defined concrete JSON schemas for lead pack and agent findings outputs.
-- [x] (2026-03-05 09:22Z) Drafted first static system prompt + user template for read-only PyTorch semantic investigator.
-- [x] (2026-03-05 09:11Z) Implemented first temporary lead-extraction Python script (`extract_pytorch_leads.py`).
-- [x] (2026-03-05 09:37Z) Ran first `webinar` Claude semantic investigation with full human-readable activity logs and prompt snapshots.
-- [x] (2026-03-05 09:37Z) Produced normalized findings and oracle comparison report for `webinar__pre__pytorch-leads-v1__r001`.
-- [x] (2026-03-05 09:56Z) Fixed fixture leakage by expanding `strip_for_pre` and adding guards so `pre` contains no root `leap*` files.
-- [x] (2026-03-05 09:56Z) Re-ran `webinar` experiment on clean pre fixture as `webinar__pre__pytorch-leads-v1__r002` with updated readable logs.
-- [x] (2026-03-05 10:07Z) Added Claude run quality gates (`lead_pack_read_success`, tool/permission error checks) and automatic non-zero exits on degraded runs.
-- [x] (2026-03-05 10:07Z) Added explicit lead-pack directory permission (`--add-dir`) in Claude runner and validated clean run quality on `webinar__pre__pytorch-leads-v1__r003`.
-- [x] (2026-03-05 10:07Z) Updated fixture comparison to semantic-first scoring (candidate presence/count + shape/dtype hints), with exact-name matching kept as secondary diagnostics.
-- [x] (2026-03-05 10:18Z) Hardened fixture scripts to strip and block compiled integration residue (`*/__pycache__/leap*.pyc` and compiled artifacts matching stripped `*.py` files).
-- [x] (2026-03-05 10:20Z) Switched research runner default model to Opus (`claude-opus-4-6`) and logged requested/resolved model IDs in activity + metadata.
-- [x] (2026-03-05 10:21Z) Re-ran `webinar` as `r004` and `r005` with Opus on cleaned fixtures; both runs passed quality gates and semantic comparison.
-- [x] (2026-03-05 11:02Z) Added Tensorleap-content stripping rule: any `post` file containing `tensorleap` must be listed in `strip_for_pre` and removed from `pre`.
-- [x] (2026-03-05 11:02Z) Regenerated and verified all fixtures under the new rule; all `pre` fixtures now have zero files containing `tensorleap`.
-- [x] (2026-03-05 11:03Z) Re-ran lead extraction as `webinar__pre__pytorch-leads-v1__r006`; `python_files_scanned=2` and `files_with_hits=0` after Tensorleap-content stripping.
-- [x] (2026-03-05 10:42Z) Added framework-agnostic lead extractor (`framework-leads-v1`) with mixed PyTorch + TensorFlow/Keras signals and artifact-based framework detection.
-- [x] (2026-03-05 10:42Z) Added framework-agnostic semantic investigator prompts and ran `webinar__pre__framework-leads-v1__r007` with Opus.
-- [x] (2026-03-05 10:43Z) Updated output normalizer to support `model_inputs` payload shape from framework-agnostic runs; `r007` now compares as semantic `pass`.
-- [x] (2026-03-05 10:55Z) Ran `yolov5_visdrone__pre__framework-leads-v1__r009`; framework detection `pytorch` (high), semantic comparison `pass`, and agent evidence grounded in native training/dataloader/loss code.
-- [x] (2026-03-05 10:56Z) Verified `yolov5_visdrone/pre` has no `tensorleap`/`leap_*` contamination and no integration-file residue detected by content scan.
-- [x] (2026-03-05 11:10Z) Updated quality interpretation: when lead content is injected into prompt, `lead_pack_read_success=false` is informational only and no longer treated as automatic failure.
-
-## Surprises & Discoveries
-
-- Observation: Static model-file discovery is not enough to infer semantic input/GT mapping in customer code.
-  Evidence: Discussion with Tensorleap developer plus current Concierge limitations.
-- Observation: `DataLoader` references and train/val entry units are likely strong discovery anchors for PyTorch.
-  Evidence: Developer-guided workflow description and repository structure expectations.
-- Observation: Runtime introspection is feasible in Concierge context but should be secondary at first.
-  Evidence: Existing preprocess/integration-test flow already executes repository/runtime logic.
-- Observation: First lead extraction on `.fixtures/webinar/pre` returned weak direct PyTorch anchors (no `DataLoader`/`Dataset` hits), with top signals from generic batch-loop patterns.
-  Evidence: `research/input_discovery/results/webinar__pre__pytorch-leads-v1__r001/lead_summary.txt` reports only 2 hit files over 5 scanned Python files.
-- Observation: Claude research runner now stores full prompt/activity artifacts in human-readable form, but non-interactive Claude execution is currently blocked by expired OAuth token.
-  Evidence: `research/input_discovery/results/webinar__pre__pytorch-leads-v1__r001/claude_run/claude_activity_log.md` and `claude_final_text.txt` show `API Error: 401 ... Please run /login`.
-- Observation: After re-authentication, Claude completed the run and inferred one input (`image`) and one GT candidate (`bounding_boxes`) with high-confidence evidence from `leap_integration.py`.
-  Evidence: `research/input_discovery/results/webinar__pre__pytorch-leads-v1__r001/claude_run/claude_final_findings.json`.
-- Observation: Oracle comparison shows exact input-name match (`image`) and GT semantic match with naming mismatch (`bbs` oracle vs `bounding_boxes` agent candidate).
-  Evidence: `research/input_discovery/results/webinar__pre__pytorch-leads-v1__r001/comparison_report.json`.
-- Observation: Despite PyTorch-first intent, this fixture path behaves as TensorFlow/Keras integration in the available code path.
-  Evidence: Claude output notes model call `model([img])` and TensorFlow/Keras context from repository files, captured in `claude_final_text.txt`.
-- Observation: `webinar__pre__pytorch-leads-v1__r001` was contaminated because `.fixtures/webinar/pre` still had `leap_integration.py`, so that run is not a valid pre-integration benchmark.
-  Evidence: historical `r001` activity log includes reads from `leap_integration.py`; fixture stripping rules at that time removed only `leap.yaml`, `leap_binder.py`, and `leap_custom_test.py`.
-- Observation: After fixture-strip hardening, clean `webinar/pre` has no root `leap*` files and `r002` still recovers one input and one GT candidate from non-integration modules.
-  Evidence: `research/input_discovery/results/webinar__pre__pytorch-leads-v1__r002/lead_summary.txt`, `claude_run/claude_activity_log.md`, and `comparison_report.json`.
-- Observation: Claude output shape varies (nested `candidates.*` vs top-level `inputs`/`ground_truths`), requiring a normalizer update.
-  Evidence: `r002` initially normalized to zero candidates until `normalize_claude_output.py` was updated to support top-level fields.
-- Observation: `r002` had degraded run quality due a denied `Read(lead_pack.json)` tool call; the run still produced output because lead summary existed in prompt.
-  Evidence: `webinar__pre__pytorch-leads-v1__r002/claude_run/claude_activity_log.md` tool section contains permission denial for lead pack read.
-- Observation: With new quality gates and `--add-dir`, `r003` confirms successful lead-pack read and zero tool/permission errors.
-  Evidence: `webinar__pre__pytorch-leads-v1__r003/claude_run/run_quality.json`.
-- Observation: Semantic comparison on `r003` is `pass` despite GT name mismatch, aligning with the direction to de-emphasize exact names.
-  Evidence: `webinar__pre__pytorch-leads-v1__r003/comparison_report.json` shows `comparison.semantic.verdict = "pass"` with full hint coverage.
-- Observation: Pre fixtures had compiled integration contamination (`__pycache__/leap_binder.cpython-39.pyc`) even after source-file stripping, and Claude explicitly referenced it.
-  Evidence: historical `r003` activity log mentions root `__pycache__/leap_binder.cpython-39.pyc`; direct scan previously found this artifact in `webinar`, `cifar10_resnet`, and `imdb` pre fixtures.
-- Observation: Opus returned a different but semantically rich output schema (`candidate_inputs`, `candidate_ground_truths`, `proposed_encoder_mapping`) than earlier runs.
-  Evidence: `webinar__pre__pytorch-leads-v1__r004/claude_run/claude_final_text.txt`.
-- Observation: Requested model and resolved runtime model may differ; explicit resolved-model logging removes ambiguity.
-  Evidence: `r004` stream init reports `model=claude-opus-4-6`; `r005` metadata/activity log now records both requested and resolved model IDs.
-- Observation: “Clean pre” still contained Tensorleap-authored code because content-level filtering was missing; this directly contaminated lead signals.
-  Evidence: `r005` identified false-positive PyTorch leads in `webinar/utils/metrics.py`, a Tensorleap-decorator file in the pre fixture.
-- Observation: After content-level stripping, webinar pre fixture lead signal dropped to zero (`files_with_hits=0`), removing the previous false-positive source.
-  Evidence: `research/input_discovery/results/webinar__pre__pytorch-leads-v1__r006/lead_summary.txt`.
-- Observation: Framework-agnostic lead extraction can still detect framework direction when code-level leads are absent by using model/dependency artifacts.
-  Evidence: `webinar__pre__framework-leads-v1__r007/lead_pack.json` reports `framework_detection.candidate=tensorflow` with high confidence from `.h5` + dependency evidence.
-- Observation: Generic prompt recovered usable candidates from minimal repository context (config + preprocess) and achieved semantic pass, while preserving uncertainty in `unknowns`.
-  Evidence: `webinar__pre__framework-leads-v1__r007/comparison_report.json` and normalized findings.
-- Observation: On a clean non-contaminated PyTorch repo (`yolov5_visdrone/pre`), the method recovered semantically correct input/GT candidates from repository-native code paths (`train.py`, `utils/dataloaders.py`, `utils/loss.py`).
-  Evidence: `yolov5_visdrone__pre__framework-leads-v1__r009/claude_run/claude_activity_log.md`, `agent_findings.normalized.json`, `comparison_report.json`.
-- Observation: `lead_pack_read_success=false` does not imply degraded context when lead summary is already injected in the prompt; the run can still be semantically valid and evidence-backed.
-  Evidence: `yolov5_visdrone__pre__framework-leads-v1__r009/claude_run/run_quality.json` + successful semantic verdict in `comparison_report.json`.
-
-## Decision Log
-
-- Decision: Restrict research scope to PyTorch first.
-  Rationale: Clearer high-signal anchors and faster iteration.
-  Date/Author: 2026-03-05 / user + assistant.
-- Decision: Treat input/GT discovery as agent task; use static analysis for lead generation only.
-  Rationale: Semantic correctness requires code understanding across module boundaries.
-  Date/Author: 2026-03-05 / user + assistant.
-- Decision: Use fixture post states as empirical oracle for comparison.
-  Rationale: Enables measurable quality evaluation of the research method.
-  Date/Author: 2026-03-05 / user + assistant.
-- Decision: Keep research artifacts temporary and out of production standards (no CI/TDD for this phase).
-  Rationale: Maximize learning speed before production commitment.
-  Date/Author: 2026-03-05 / user + assistant.
-- Decision: Keep `webinar__pre__pytorch-leads-v1__r001` as baseline output before changing heuristics.
-  Rationale: Preserves a clean reference point for measuring whether later heuristic/prompt changes actually improve signal quality.
-  Date/Author: 2026-03-05 / assistant.
-- Decision: Persist all Claude run inputs/outputs as first-class research artifacts (system prompt, user prompt, command, stream events, stderr, final payload).
-  Rationale: User requested full inspectability and this improves reproducibility of prompt/behavior investigations.
-  Date/Author: 2026-03-05 / user + assistant.
-- Decision: Add a temporary normalization step from raw Claude narrative output to strict findings schema before oracle comparison.
-  Rationale: Claude may return valid analysis with wrapper prose; normalization preserves experiment momentum while prompt strictness is still being tuned.
-  Date/Author: 2026-03-05 / assistant.
-- Decision: Treat `webinar__pre__pytorch-leads-v1__r001` as invalid for pre-integration quality claims and use `r002` as the first valid `webinar/pre` benchmark.
-  Rationale: `r001` used leaked integration entrypoint (`leap_integration.py`) that should not exist in `pre`.
-  Date/Author: 2026-03-05 / user + assistant.
-- Decision: Enforce fixture invariant: all root-level `leap*` files present in `post` must be listed in `strip_for_pre` and absent in `pre`.
-  Rationale: Prevent integration artifact leakage that biases discovery experiments.
-  Date/Author: 2026-03-05 / user + assistant.
-- Decision: Treat exact input/GT names as secondary diagnostics and keep semantic signals (presence/count/shape/dtype hints) as primary quality criteria.
-  Rationale: Name prediction is inherently unstable across repositories and should not dominate pass/fail decisions.
-  Date/Author: 2026-03-05 / user + assistant.
-- Decision: Mark runs invalid by default on tool/permission/result errors, but treat `lead_pack_read_success` as informational when lead content is injected into the prompt.
-  Rationale: Direct prompt injection already supplies lead context; explicit `Read(lead_pack.json)` is optional in that mode.
-  Date/Author: 2026-03-05 / user + assistant.
-- Decision: Pre fixtures must not retain compiled integration artifacts, not only source integration files.
-  Rationale: Compiled `leap*` artifacts can leak integration semantics and bias agent findings.
-  Date/Author: 2026-03-05 / user + assistant.
-- Decision: Use Opus as the default research model and record both requested/resolved model identifiers in run artifacts.
-  Rationale: maximize analysis quality and preserve auditability of the exact model used per run.
-  Date/Author: 2026-03-05 / user + assistant.
-- Decision: Treat any fixture `post` file containing the token `tensorleap` as integration contamination for research pre-state generation; require stripping it via manifest.
-  Rationale: avoid Tensorleap-authored code influencing input/GT discovery experiments intended to emulate non-integrated customer repos.
-  Date/Author: 2026-03-05 / user + assistant.
-- Decision: Replace PyTorch-only leading with framework-agnostic leading as default research direction (framework detection first, then semantic inference).
-  Rationale: repository reality can be TensorFlow, PyTorch, mixed, or sparse; single-framework assumptions reduce reliability.
-  Date/Author: 2026-03-05 / user + assistant.
-
-## Outcomes & Retrospective
-
-Current status: research workflow is executable end-to-end (lead extraction -> Claude investigation with readable logs -> normalization -> oracle comparison) with fixture-strip guardrails now enforcing clean `pre` variants.
-
-First execution readout (`webinar__pre__pytorch-leads-v1__r001`):
-
-1. Lead extraction: weak direct framework signals, but enough hints for semantic traversal.
-2. Agent run: completed with full logs and evidence-backed candidates.
-3. Oracle scoring:
-   1. Inputs exact-name match: `1/1` (`image`).
-   2. GT exact-name match: `0/1` (`bbs` expected vs `bounding_boxes` proposed).
-4. Practical interpretation: semantic GT detection appears promising; canonical naming alignment is still needed.
-
-Second execution readout (`webinar__pre__pytorch-leads-v1__r002`, valid clean-pre run):
-
-1. Fixture validity: `pre` has no root `leap*` files; no integration entrypoint leakage.
-2. Lead extraction remains weak for PyTorch-specific signals (only generic loop signal in `webinar/utils/metrics.py`).
-3. Agent still infers candidate `image` input and `bounding_boxes` GT from non-integration repository code.
-4. Oracle scoring remains:
-   1. Inputs exact-name match: `1/1` (`image`).
-   2. GT exact-name match: `0/1` (`bbs` expected vs `bounding_boxes` proposed).
-
-Third execution readout (`webinar__pre__pytorch-leads-v1__r003`, quality-gated run):
-
-1. Run-quality gates:
-   1. `lead_pack_read_attempted = true`
-   2. `lead_pack_read_success = true`
-   3. `tool_error_count = 0`
-   4. `permission_error_count = 0`
-2. Semantic scoring:
-   1. `inputs_present = true`
-   2. `ground_truths_present = true`
-   3. `count_match = true`
-   4. `hint_coverage` includes shape + dtype hints for both input and GT.
-3. Exact-name diagnostics remain secondary:
-   1. input exact match `1.0`
-   2. GT exact match `0.0`
-
-Fourth execution readout (`webinar__pre__pytorch-leads-v1__r004`, Opus + cleaned compiled artifacts):
-
-1. Contamination check: no `__pycache__/leap*.pyc` artifacts in pre fixtures after regeneration.
-2. Run-quality gates all green:
-   1. `lead_pack_read_success = true`
-   2. `tool_error_count = 0`
-   3. `permission_error_count = 0`
-3. Semantic scoring remains `pass` with full input/GT presence and hint coverage.
-4. Output-shape variance required normalizer support for Opus-specific keys (`candidate_inputs`, `candidate_ground_truths`, `proposed_encoder_mapping`).
-
-Fifth execution readout (`webinar__pre__pytorch-leads-v1__r005`, Opus + explicit model audit):
-
-1. Activity log now records both:
-   1. `Requested model: claude-opus-4-6`
-   2. `Resolved model: claude-opus-4-6`
-2. Metadata file includes `model` + `resolved_model` with start/end timestamps.
-3. Run-quality gates and semantic scoring remain stable (`pass`).
-
-Sixth execution readout (`webinar__pre__framework-leads-v1__r007`, framework-agnostic baseline):
-
-1. Framework detection from sparse context resolves to `tensorflow` with high confidence using artifact + dependency evidence.
-2. Agent recovered semantically usable candidates despite weak direct code leads.
-3. Semantic scoring is `pass`; exact naming remains secondary.
-
-Seventh execution readout (`yolov5_visdrone__pre__framework-leads-v1__r009`, clean PyTorch test):
-
-1. Framework detection resolves to `pytorch` with high confidence (`pytorch_score=314.0`, `tensorflow_score=90.0`).
-2. Agent traces true training data path in native code:
-   1. input candidate from image tensor flow (`images`/`imgs`) to model call.
-   2. GT candidate from detection `targets` consumed by loss.
-3. Semantic comparison against fixture oracle is `pass` (`1` input + `1` GT with strong shape/dtype hints).
-4. Operational note: `lead_pack_read_success=false` occurred, but this is non-blocking because lead context was already injected in prompt and no tool/permission/result errors occurred.
-
-Known risks:
-
-1. Agent may overfit to naming conventions and miss non-standard pipelines.
-2. Evidence extraction might be noisy in large repositories.
-3. Ground-truth mapping from fixture integration files may require interpretation choices.
-4. Output schema variation across model versions still requires resilient normalization logic.
-
-Mitigations:
-
-1. Require evidence-backed outputs and explicit unknowns.
-2. Use staged difficulty progression (`webinar` -> `yolov5_visdrone` -> `ultralytics`).
-3. Record scoring rubric decisions in this file to keep comparisons consistent.
-4. Keep semantic-first scoring and treat exact names + optional tool-read events as diagnostics, not primary pass/fail signals.
-
-## Idempotence and Recovery
-
-1. Research scripts should be rerunnable without mutating fixture source repos.
-2. Each experiment output should be written to a timestamped result path.
-3. If an experiment design proves weak, keep artifacts and record why before replacing it.
-
-## Interfaces and Dependencies (Research Only)
-
-1. Python 3 for temporary research scripts.
-2. Fixture repos under `.fixtures/`.
-3. Agent runtime (Claude) for read-only semantic analysis.
-4. Structured JSON outputs for lead packs and agent findings.
+This version intentionally drops historical run-by-run narrative and deprecated PyTorch-only framing. Detailed logs remain in `research/input_discovery/results/` and should be treated as supporting evidence, not primary plan text.

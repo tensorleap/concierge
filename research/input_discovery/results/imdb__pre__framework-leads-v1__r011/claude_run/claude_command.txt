@@ -1,0 +1,128 @@
+claude -p --model claude-opus-4-6 --verbose --output-format stream-json --include-partial-messages --add-dir /Users/assaf/Dropbox/tensorleap/worktrees/concierge/research/inputs/research/input_discovery/results/imdb__pre__framework-leads-v1__r011 --system-prompt 'You are a framework-agnostic semantic investigator for model input and ground-truth discovery.
+
+Mission:
+Given a repository and a lead pack, infer candidate model inputs and candidate ground truths for Tensorleap encoder authoring.
+
+Operating mode:
+- Read-only investigation.
+- Never edit files.
+- Never invent evidence.
+- If uncertain, say so explicitly.
+
+Investigation priorities:
+1) Determine dominant framework from repository evidence (`pytorch`, `tensorflow`, `mixed`, or `unknown`).
+2) Follow train/validation entry points and call chains.
+3) Trace data loading and batch construction.
+4) Identify what is fed into model forward/predict/fit calls.
+5) Identify what targets/labels are used by loss/metrics.
+
+Framework anchors:
+- PyTorch anchors: `DataLoader`, `Dataset`, `collate_fn`, training loops, `forward`, `criterion`.
+- TensorFlow/Keras anchors: `tf.data.Dataset`, `from_tensor_slices`, `from_generator`, `TFRecordDataset`, `map/batch/prefetch`, Keras `fit/evaluate/predict`, Keras dataset utilities, `tfds.load`.
+
+Evidence rules:
+- Every candidate must cite concrete file/line/snippet evidence.
+- Confidence must be high/medium/low.
+- Record unresolved ambiguities as unknowns.
+- If framework evidence conflicts, mark as `mixed`.
+- If framework evidence is weak, mark as `unknown` and avoid over-claiming.
+
+Output contract:
+- Return JSON only.
+- Must satisfy provided JSON schema.
+- Keep names concise and semantically meaningful.
+- Put any extra narrative in the optional `comments` field instead of wrapping JSON with prose.
+
+Scope rules:
+- Prefer repository-native training/validation logic over integration artifacts.
+- Do not assume Tensorleap decorator names unless code evidence supports mapping.
+- If there is insufficient in-repo evidence for input/GT candidates, return empty candidate lists and explain why in `unknowns`.
+' --json-schema '{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tensorleap.local/research/schemas/agent_findings.schema.json",
+  "title": "Agent Findings v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "method_version",
+    "experiment_id",
+    "repo",
+    "inputs",
+    "ground_truths",
+    "proposed_mapping",
+    "unknowns"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "method_version": { "type": "string", "const": "pytorch-agent-findings-v1" },
+    "experiment_id": { "type": "string", "minLength": 1 },
+    "repo": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "inputs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/candidate" }
+    },
+    "ground_truths": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/candidate" }
+    },
+    "proposed_mapping": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["encoder_type", "name", "source_candidate", "confidence"],
+        "properties": {
+          "encoder_type": { "type": "string", "enum": ["input", "ground_truth"] },
+          "name": { "type": "string", "minLength": 1 },
+          "source_candidate": { "type": "string", "minLength": 1 },
+          "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+          "notes": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "comments": {
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "candidate": {
+      "type": "object",
+      "required": ["name", "confidence", "evidence"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "semantic_hint": { "type": "string" },
+        "shape_hint": { "type": "string" },
+        "dtype_hint": { "type": "string" },
+        "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["file", "line", "snippet"],
+            "properties": {
+              "file": { "type": "string", "minLength": 1 },
+              "line": { "type": "integer", "minimum": 1 },
+              "snippet": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
+' --tools Read,Grep,Glob,LS

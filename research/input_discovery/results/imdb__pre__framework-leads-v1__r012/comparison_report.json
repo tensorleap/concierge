@@ -1,0 +1,68 @@
+{
+  "oracle": {
+    "inputs": [
+      "attention_masks",
+      "input_ids",
+      "input_tokens",
+      "token_type_ids"
+    ],
+    "ground_truths": [
+      "sentiment"
+    ]
+  },
+  "agent": {
+    "inputs": [
+      "tokenized_text_sequence"
+    ],
+    "ground_truths": [
+      "sentiment_label"
+    ]
+  },
+  "comparison": {
+    "exact_names": {
+      "inputs": {
+        "matched": [],
+        "missing": [
+          "attention_masks",
+          "input_ids",
+          "input_tokens",
+          "token_type_ids"
+        ],
+        "extra": [
+          "tokenized_text_sequence"
+        ],
+        "match_rate": 0.0
+      },
+      "ground_truths": {
+        "matched": [],
+        "missing": [
+          "sentiment"
+        ],
+        "extra": [
+          "sentiment_label"
+        ],
+        "match_rate": 0.0
+      }
+    },
+    "semantic": {
+      "inputs_present": true,
+      "ground_truths_present": true,
+      "count_match": false,
+      "input_counts": {
+        "oracle": 4,
+        "agent": 1
+      },
+      "ground_truth_counts": {
+        "oracle": 1,
+        "agent": 1
+      },
+      "hint_coverage": {
+        "input_shape_hints": 1,
+        "input_dtype_hints": 1,
+        "ground_truth_shape_hints": 1,
+        "ground_truth_dtype_hints": 1
+      },
+      "verdict": "pass"
+    }
+  }
+}

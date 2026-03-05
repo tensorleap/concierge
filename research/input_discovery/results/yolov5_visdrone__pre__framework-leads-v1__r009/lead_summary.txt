@@ -1,0 +1,101 @@
+Experiment: yolov5_visdrone__pre__framework-leads-v1__r009
+Repo: /Users/assaf/Dropbox/tensorleap/worktrees/concierge/research/inputs/.fixtures/yolov5_visdrone/pre
+Method: framework-leads-v1
+Python files scanned: 35
+Files with hits: 27
+Total signal hits: 177
+Framework detection: pytorch (high)
+Framework scores: pytorch=314.0, tensorflow=90.0
+
+Top lead files:
+1. utils/dataloaders.py (score=77.0)
+   - batch_unpack_loop[agnostic]: count=10, contribution=20.0
+   - torch_import[pytorch]: count=3, contribution=15.0
+   - tf_data_pipeline_ops[tensorflow]: count=2, contribution=12.0
+
+2. export.py (score=66.0)
+   - tensorflow_import[tensorflow]: count=6, contribution=30.0
+   - keras_evaluate_or_predict[tensorflow]: count=2, contribution=12.0
+   - torch_import[pytorch]: count=2, contribution=10.0
+
+3. train.py (score=57.0)
+   - batch_unpack_loop[agnostic]: count=6, contribution=20.0
+   - torch_import[pytorch]: count=4, contribution=20.0
+   - torch_load[pytorch]: count=2, contribution=6.0
+
+4. classify/train.py (score=47.0)
+   - torch_import[pytorch]: count=5, contribution=25.0
+   - batch_unpack_loop[agnostic]: count=2, contribution=8.0
+   - train_fn[agnostic]: count=1, contribution=5.0
+
+5. utils/loss.py (score=47.0)
+   - tf_data_pipeline_ops[tensorflow]: count=3, contribution=18.0
+   - torch_forward_def[pytorch]: count=3, contribution=12.0
+   - torch_import[pytorch]: count=2, contribution=10.0
+
+6. utils/torch_utils.py (score=45.0)
+   - torch_import[pytorch]: count=6, contribution=25.0
+   - batch_unpack_loop[agnostic]: count=5, contribution=20.0
+
+7. val.py (score=37.0)
+   - batch_unpack_loop[agnostic]: count=6, contribution=20.0
+   - keras_evaluate_or_predict[tensorflow]: count=1, contribution=6.0
+   - torch_import[pytorch]: count=1, contribution=5.0
+
+8. utils/activations.py (score=35.0)
+   - torch_forward_def[pytorch]: count=8, contribution=20.0
+   - torch_import[pytorch]: count=3, contribution=15.0
+
+9. utils/general.py (score=32.0)
+   - batch_unpack_loop[agnostic]: count=4, contribution=16.0
+   - torch_import[pytorch]: count=2, contribution=10.0
+   - model_call[agnostic]: count=1, contribution=3.0
+
+10. detect.py (score=31.0)
+   - batch_unpack_loop[agnostic]: count=3, contribution=12.0
+   - torch_import[pytorch]: count=2, contribution=10.0
+   - model_call[agnostic]: count=2, contribution=6.0
+
+11. utils/loggers/__init__.py (score=29.0)
+   - batch_unpack_loop[agnostic]: count=4, contribution=16.0
+   - torch_import[pytorch]: count=2, contribution=10.0
+   - torch_load[pytorch]: count=1, contribution=3.0
+
+12. utils/metrics.py (score=25.0)
+   - batch_unpack_loop[agnostic]: count=6, contribution=20.0
+   - torch_import[pytorch]: count=1, contribution=5.0
+
+13. utils/plots.py (score=25.0)
+   - batch_unpack_loop[agnostic]: count=9, contribution=20.0
+   - torch_import[pytorch]: count=1, contribution=5.0
+
+14. classify/val.py (score=22.0)
+   - batch_unpack_loop[agnostic]: count=2, contribution=8.0
+   - torch_import[pytorch]: count=1, contribution=5.0
+   - loss_call[agnostic]: count=1, contribution=3.0
+
+15. utils/loggers/wandb/wandb_utils.py (score=20.0)
+   - batch_unpack_loop[agnostic]: count=5, contribution=20.0
+
+16. hubconf.py (score=19.0)
+   - torch_import[pytorch]: count=2, contribution=10.0
+   - main_entry[agnostic]: count=1, contribution=3.0
+   - model_call[agnostic]: count=1, contribution=3.0
+
+17. utils/benchmarks.py (score=16.0)
+   - batch_unpack_loop[agnostic]: count=2, contribution=8.0
+   - validate_fn[agnostic]: count=1, contribution=5.0
+   - main_entry[agnostic]: count=1, contribution=3.0
+
+18. classify/predict.py (score=11.0)
+   - torch_import[pytorch]: count=1, contribution=5.0
+   - main_entry[agnostic]: count=1, contribution=3.0
+   - model_call[agnostic]: count=1, contribution=3.0
+
+19. utils/flask_rest_api/restapi.py (score=11.0)
+   - torch_import[pytorch]: count=1, contribution=5.0
+   - main_entry[agnostic]: count=1, contribution=3.0
+   - model_call[agnostic]: count=1, contribution=3.0
+
+20. utils/autobatch.py (score=10.0)
+   - torch_import[pytorch]: count=2, contribution=10.0

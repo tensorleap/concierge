@@ -1,6 +1,36 @@
 {
   "fixtures": [
     {
+      "id": "ultralytics",
+      "repo": "https://github.com/Tensorleap-hub/ultralytics.git",
+      "post_ref": "01ad3aadbe3b0c86b90d1c0fb3731a4e24c1e88c",
+      "strip_for_pre": [
+        "leap.yaml",
+        "leap_binder.py",
+        "leap_custom_test.py"
+      ]
+    },
+    {
+      "id": "webinar",
+      "repo": "https://github.com/Tensorleap-hub/webinar.git",
+      "post_ref": "6ad56fd1e1343e95c259bf55d0cbfe24b39f8b9e",
+      "strip_for_pre": [
+        "leap.yaml",
+        "leap_binder.py",
+        "leap_custom_test.py"
+      ]
+    },
+    {
+      "id": "yolov5_visdrone",
+      "repo": "https://github.com/Tensorleap-hub/yolov5_visdrone.git",
+      "post_ref": "7a04ff7b613fc00cc1eb44ccfc9218c3c2a0c495",
+      "strip_for_pre": [
+        "leap.yaml",
+        "leap_binder.py",
+        "leap_custom_test.py"
+      ]
+    },
+    {
       "id": "mnist",
       "repo": "https://github.com/tensorleap-hub/mnist.git",
       "post_ref": "1c4c6f0d5c4254cc4ae5c2df5ae8ef9f0a61212b",

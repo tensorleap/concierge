@@ -20,6 +20,7 @@ This ExecPlan is a living document. Keep `Progress`, `Gap Analysis`, `Surprises 
 - 2026-03-04: Landed commit `2b90758` on `main`; marked Steps `10J`, `10K`, `10L`, and `10M` as `ACCEPTED` (input/GT encoder detection + authoring flow now merged).
 - 2026-03-04: Added blocking Step `10M1` as the immediate next step after `10M` to fix incorrect requirement ordering and decouple encoder requirement detection from integration-test call inference before continuing to `10N`.
 - 2026-03-04: Tightened Step `10M1` to require fixture-ground-truth iterative development: derive encoder contract truth from fixture `post`, detect missing encoder requirements on fixture `pre`, and enforce pre/post contract matching invariants before proceeding.
+- 2026-03-05: Step `10M1` execution failed to converge with the post/pre oracle-only requirement-source strategy; replaced it with a research-parity implementation sequence (`10M1A-10M1G`) that ports the proven Python discovery pipeline into Go with mandatory per-step tests.
 
 ## Purpose / Exit Target
 
@@ -39,11 +40,11 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | G2 | README §10/§11: user approvals + diff review + commit workflow | Implemented runtime git diff approval/reject/commit flow | Closed; retain regression coverage | 9B (`ACCEPTED`) |
 | G3 | README §10: agent collaboration for focused objectives | Implemented and merged (`internal/agent/*`, agent executor dispatch, transcript evidence) | Closed; maintain with regression tests only | 9C (`ACCEPTED`) |
 | G4 | README §6.2: persistent mutable state (`.concierge/state.json`) | Implemented and persisted with invalidation reasons | Closed; retain regression coverage | 7A (`ACCEPTED`) |
-| G5 | README §6.1/§8.2: richer snapshot/inspection coverage | Implemented readiness expansion for runtime/model/CLI/auth/server probes | Partially closed; remaining contract-level detection gaps tracked in `10A-10N` plus blocking reorder/redesign step `10M1` | 8A (`ACCEPTED`), 10A-10N, 10M1 |
+| G5 | README §6.1/§8.2: richer snapshot/inspection coverage | Implemented readiness expansion for runtime/model/CLI/auth/server probes | Partially closed; remaining contract-level detection gaps tracked in `10A-10O` plus blocking input/GT discovery redesign (`10M1A-10M1G`) | 8A (`ACCEPTED`), 10A-10O, 10M1A-10M1G |
 | G6 | README §8 planner semantics: deterministic next primary action with gate-aware ordering | Implemented severity-first planner policy with upload gate awareness | Closed for existing issue families; future families added in authoring slices | 8B (`ACCEPTED`) |
 | G7 | README §9 + user requirement: preprocess authoring must be detection-driven and individually tested | Deterministic preprocess detection + authoring flow are implemented and merged (`10H`, `10I`) | Remaining gap is capability-level fixture proof that preprocess flows converge end-to-end | 10H (`ACCEPTED`), 10I (`ACCEPTED`), 12C |
-| G8 | README §9 + user requirement: input-encoder authoring must be detection-driven and individually tested | Deterministic input-encoder detector + symbol-scoped authoring flow are implemented and merged (`10J`, `10K`) | Remaining gap is fixture-backed convergence proof for input-encoder capabilities | 10J (`ACCEPTED`), 10K (`ACCEPTED`), 12D |
-| G9 | README §9 + user requirement: GT-encoder authoring must be detection-driven and individually tested | Deterministic GT-encoder detector + authoring flow are implemented and merged (`10L`, `10M`) | Remaining gap is fixture-backed convergence proof for GT-encoder capabilities | 10L (`ACCEPTED`), 10M (`ACCEPTED`), 12E |
+| G8 | README §9 + user requirement: input-encoder authoring must be detection-driven and individually tested | Deterministic input-encoder detector + symbol-scoped authoring flow are implemented and merged (`10J`, `10K`) | Previous required-symbol strategy stalled in `10M1`; remaining gap is research-parity input discovery (leads + semantic tracing + normalization + confirmation) before fixture convergence | 10J (`ACCEPTED`), 10K (`ACCEPTED`), 10M1A-10M1G, 12D |
+| G9 | README §9 + user requirement: GT-encoder authoring must be detection-driven and individually tested | Deterministic GT-encoder detector + authoring flow are implemented and merged (`10L`, `10M`) | Previous required-symbol strategy stalled in `10M1`; remaining gap is research-parity GT discovery and confirmation pipeline before fixture convergence | 10L (`ACCEPTED`), 10M (`ACCEPTED`), 10M1A-10M1G, 12E |
 | G10 | README §2.3/§8.2 model contract + user requirement: model discovery/selection/fixing must be explicit and tested | Model discovery and authoring-first remediation are implemented and merged (`10B`, `10G`) | Remaining gap is capability-level fixture E2E coverage for model remediation | 10B (`ACCEPTED`), 10G (`ACCEPTED`), 12B |
 | G11 | README §9: runtime harness is core validation layer | Harness is optional via env and currently stub-script-based | No high-resolution runtime correctness evidence in normal runs | 11A, 11B |
 | G12 | README §9.2: integration-test call coverage enforcement | No AST/runtime enforcement of required decorator calls in integration test | False positives possible despite incomplete wiring | 10N, 10O, 12F |
@@ -53,7 +54,8 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | G16 | README docs requirements + operator handoff | README/docs do not yet describe detection->suggest->author->validate authoring loop by capability | Onboarding and operations remain ambiguous for the core concierge value proposition | 14A |
 | G17 | V1 quality gate requirement: commit approval must run after delta-scoped integration checks | Pre-commit stage is implemented with step-local validation and changed-file syntax gates (`10B1`) | Closed for runtime commit ordering and delta quality gates; keep regression coverage | 10B1 (`ACCEPTED`) |
 | G18 | README §10 + user requirement: agent tasks need Tensorleap domain context plus strict scoped edits | Agent context pipeline is implemented and merged (knowledge pack, scoped policy, repo context pack, structured prompt wiring) | Closed for context injection baseline; fixture-level context-quality assertions remain pending | 10C-10F (`ACCEPTED`), 12H |
-| G19 | User requirement (2026-03-04): enforce mandatory contract order `preprocess -> input encoders -> GT encoders -> integration test` and stop deriving encoder requirements from integration-test calls | Current inspector/planner flow can surface integration-test missing before encoder requirements are actionable; encoder expected-symbol inference currently depends on integration-test call graph | Encoder authoring can be misordered/broken, and integration-test prompts appear before encoder contracts are grounded | 10M1 (`PENDING`) |
+| G19 | User requirement (2026-03-04 + 2026-03-05): enforce mandatory contract order `preprocess -> input encoders -> GT encoders -> integration test` and stop deriving encoder requirements from integration-test calls | Current inspector/planner flow can surface integration-test missing before encoder requirements are actionable; previous `10M1` requirement-source attempt did not reliably recover encoder contracts | Encoder authoring can be misordered/broken, and integration-test prompts can appear before encoder contracts are grounded | 10M1F (`PENDING`) |
+| G20 | `RESEARCH.md` conclusions (2026-03-05): replicate Python input/GT discovery success in Go with staged artifacts and semantic-first evaluation | No production Go pipeline persists `lead_pack`, `agent_prompt_bundle`, `agent_raw_output`, `normalized_findings`, and `comparison_report`; normalization and branch heuristics are not research-parity | Python-proven discovery quality cannot be reproduced deterministically in Concierge runtime | 10M1A-10M1E, 10M1G |
 
 ## Progress
 
@@ -101,7 +103,13 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 10K: Input-encoder suggestion and authoring flow | `ACCEPTED` | 2026-03-04 (`main`, commit `2b90758`) | Render missing-input suggestions to users and pass symbol-level context to authoring executor. |
 | Step 10L: GT-encoder need detection | `ACCEPTED` | 2026-03-04 (`main`, commit `2b90758`) | Detect GT encoder deficits and labeled-subset contract violations. |
 | Step 10M: GT-encoder suggestion and authoring flow | `ACCEPTED` | 2026-03-04 (`main`, commit `2b90758`) | Render GT-target suggestions and enforce labeled-subset constraints in authoring tasks. |
-| Step 10M1: Encoder requirement-source redesign + strict contract-order gating | `PENDING` | — | Make `preprocess -> input -> GT -> integration-test` a hard planning order and remove integration-test-call dependency from encoder requirement detection, with explicit user contract fallback when repo inference is insufficient. |
+| Step 10M1A: Input/GT discovery pipeline stage contracts + artifact persistence | `PENDING` | — | Port research pipeline stage model into Go with typed artifacts (`fixture_state`, `lead_pack`, `agent_prompt_bundle`, `agent_raw_output`, `normalized_findings`, `comparison_report`) persisted per iteration. |
+| Step 10M1B: Framework-agnostic lead extraction in Go | `PENDING` | — | Implement deterministic code/artifact signal extraction and framework detection (`pytorch`, `tensorflow`, `mixed`, `unknown`) with ranked lead output. |
+| Step 10M1C: Semantic investigator prompt/run plumbing | `PENDING` | — | Add discovery-specific agent prompt bundle, metadata capture, and quality gates that treat lead-pack read confirmation as informational when leads are injected directly. |
+| Step 10M1D: Multi-shape findings normalizer hardening | `PENDING` | — | Accept schema variants and synonymous fields from agent outputs; fail with actionable diagnostics on malformed or empty normalized payloads. |
+| Step 10M1E: Branch-aware input/GT post-processing rules | `PENDING` | — | Add deterministic tokenizer-dict splitting and resolvable branch-priority heuristics while retaining conditional alternatives. |
+| Step 10M1F: User mapping confirmation + strict contract-order planner gating | `PENDING` | — | Require user confirmation/adjustment of proposed input/GT mappings, persist accepted contracts, enforce `preprocess -> input -> GT -> integration-test` ordering, and remove integration-test call graph as encoder requirement source. |
+| Step 10M1G: Fixture parity + optional runtime signature corroboration | `PENDING` | — | Validate Go discovery pipeline against research-success fixtures (`yolov5_visdrone`, `ultralytics`) with `imdb` edge-case coverage and optional ONNX/Keras signature corroboration. |
 | Step 10N: Integration-test wiring need detection | `PENDING` | — | Add AST-based required-call detection for `@tensorleap_integration_test` paths. |
 | Step 10O: Integration-test wiring authoring flow | `PENDING` | — | Add targeted authoring objective to wire missing integration-test calls deterministically. |
 | Step 11A: Real runtime harness core (Layer 2) | `PENDING` | — | Replace stub harness with runtime script, schema-v1 events, and default-on validation. |
@@ -138,669 +146,223 @@ Out of scope for this release train:
 
 ## Detailed Step Specifications
 
-Detailed breakdowns for completed steps are intentionally omitted from this section.
-Use the `Progress` table above as the source of record for completed step titles/status.
-Detailed specifications below cover only pending steps.
-
-### Step 10B1: Pre-commit integration quality gate (delta-scoped) (`ACCEPTED`)
+### Step 10M1B: Framework-agnostic lead extraction in Go (`PENDING`)
 
 Objective:
 
-Add a v1 pre-commit gate so commit approval is offered only after delta-scoped integration quality checks pass.
+Implement the research-proven framework-agnostic lead extractor in Go with deterministic ranking and framework detection, based on the insights and conclusions in RESEARCH.md
 
-Locked decisions:
+Files to add:
 
-1. This step is part of v1 scope.
-2. Commit must be offered only after pre-commit checks run.
-3. Blocking scope is integration-only, not full-repo lint/test/build.
-4. If nice-to-have checker infrastructure fails (for example interpreter/tool missing), that checker is silently skipped.
-5. If pre-commit checks fail, keep uncommitted changes in the working tree (no auto-revert).
-
-Scope:
-
-1. Add pre-commit gating to runtime orchestration.
-2. Keep CI lint/test/build expansion in Step `13B`.
-3. Do not add full-repo blocking gates to `concierge run` in this step.
-
-Non-scope:
-
-1. Full repository lint enforcement in interactive run loop.
-2. Mandatory compile/test for arbitrary user languages.
-3. Branch/PR workflow semantic changes.
+1. `internal/adapters/inspect/framework_leads.go`
+2. `internal/adapters/inspect/framework_leads_test.go`
+3. `internal/adapters/inspect/framework_signal_weights.go`
+4. `internal/adapters/inspect/testdata/framework_leads_cases.json`
 
 Files to modify:
 
-1. `internal/core/types.go`
-2. `internal/core/ports/interfaces.go`
-3. `internal/orchestrator/engine.go`
-4. `internal/orchestrator/engine_test.go`
-5. `internal/gitmanager/manager.go`
-6. `internal/gitmanager/manager_test.go`
-7. `internal/adapters/report/stdout_reporter.go`
-8. `internal/adapters/report/stdout_reporter_test.go` (if output contract assertions require updates)
+1. `internal/adapters/inspect/input_gt_discovery_pipeline.go`
+2. `internal/adapters/inspect/baseline_inspector.go`
 
-Interface/API changes:
+Locked behavior:
 
-1. Add `StageCommit` in core stage enum and `DefaultStages()`.
-2. Update `ports.GitManager` signature to accept validation context:
-   1. From: `Handle(ctx, snapshot, result)`
-   2. To: `Handle(ctx, snapshot, result, validation)`
-3. Keep CLI flags unchanged for this step (no new user-facing knobs).
-
-Architecture and flow changes:
-
-1. Update orchestration stage order to:
-   1. `snapshot`
-   2. `inspect`
-   3. `plan`
-   4. `execute`
-   5. `validate`
-   6. `commit`
-   7. `report`
-2. Run validator before commit decision.
-3. Run pre-commit gate inside git manager using:
-   1. Step-local validation blockers only: `SeverityError` issues whose preferred ensure-step matches current primary step.
-   2. Changed-file syntax checks only:
-      1. `*.py`: `python3 -m py_compile` (fallback `python`).
-      2. `*.yaml` / `*.yml`: parse with Go YAML parser.
-4. If pre-commit gate has blocking failures:
-   1. Skip commit prompt.
-   2. Do not commit.
-   3. Keep working tree changes.
-   4. Add report notes/evidence stating commit was skipped due to pre-commit failures.
-5. If checker infrastructure fails (tool missing/exec failure unrelated to file syntax), silently skip that checker and continue evaluating remaining checks.
-
-Separation from unrelated repository debt:
-
-1. No full-repo lint/test/build gate in runtime loop.
-2. Only current-step integration validation blockers can block commit.
-3. Only files changed in this iteration are syntax-checked.
-4. Existing unrelated repository issues remain visible in inspect/report but do not block commit in this step.
+1. Scanner scores files using train/validation/data-flow/model/loss signals across supported Python code patterns.
+2. Detector emits one of `pytorch`, `tensorflow`, `mixed`, or `unknown` with evidence-backed confidence.
+3. Signal weights are versioned and overridable through checked-in config constants (not ad-hoc runtime flags).
+4. Stage output includes machine JSON (`lead_pack`) and a human-readable summary used in prompts/reports.
+5. Lead extraction remains repo-local and deterministic for the same workspace snapshot.
 
 Tests:
 
-1. `TestDefaultStagesIncludesCommitAfterValidate`
-2. `TestEngineValidatesBeforeGitManagerHandle`
-3. `TestGitManagerBlocksCommitWhenCurrentStepValidationHasErrors`
-4. `TestGitManagerDoesNotBlockOnOtherStepErrors`
-5. `TestGitManagerBlocksCommitOnPythonSyntaxFailure`
-6. `TestGitManagerBlocksCommitOnYAMLSyntaxFailure`
-7. `TestGitManagerSilentlySkipsMissingInterpreterChecker`
-8. `TestGitManagerSkipsApprovalPromptWhenPreCommitGateFails`
-9. `TestGitManagerPreservesDirtyWorktreeOnPreCommitFailure`
-10. `TestGitManagerRejectFlowStillRestoresTree`
-11. `TestGitManagerHappyPathStillCommits`
-12. `TestStdoutReporterShowsCommitSkippedDueToPreCommitChecks`
+1. `TestFrameworkLeadExtractorRanksTrainingPathFilesFirst`
+2. `TestFrameworkLeadExtractorDetectsPyTorchTensorFlowMixedAndUnknown`
+3. `TestFrameworkLeadExtractorProducesStableOrderingForEqualScores`
+4. `TestFrameworkLeadSummaryIncludesEvidenceSnippets`
 
 Validation commands:
 
-1. `go test ./internal/orchestrator ./internal/gitmanager ./internal/adapters/report`
-2. `go test ./internal/core ./internal/core/ports`
+1. `go test ./internal/adapters/inspect -run FrameworkLeadExtractor -v`
+2. `go test ./internal/adapters/inspect`
 3. `go test ./...`
 
 Acceptance criteria:
 
-1. Concierge never offers commit approval before running pre-commit integration quality checks.
-2. Unrelated repo-wide quality debt does not block step commits.
-3. Checker infrastructure failures are silently skipped.
-4. Failed pre-commit checks keep uncommitted edits and produce clear report evidence.
-5. Existing stepwise commit audit trail remains intact for passing steps.
+1. Lead extraction output is deterministic and framework-agnostic.
+2. Prompt construction can rely on lead summaries without custom per-framework branches.
 
 Rollback boundary:
 
-- Revert pre-commit gate wiring in `core`, `orchestrator`, `gitmanager`, and reporter updates for this step only.
+- Revert framework-lead extraction implementation and weight configuration only.
 
 ---
 
-### Step 10C: Tensorleap knowledge pack baseline (`ACCEPTED`)
+### Step 10M1C: Semantic investigator prompt/run plumbing (`PENDING`)
 
 Objective:
 
-Create a checked-in Tensorleap domain knowledge pack (mandatory integration contracts only) plus source manifest for deterministic agent context injection.
+Port the Python semantic investigator flow into Go agent orchestration with explicit quality gates and evidence capture.
 
 Files to add:
 
-1. `internal/agent/context/tensorleap_knowledge_v1.md`
-2. `internal/agent/context/tensorleap_knowledge_sources.yaml`
-3. `internal/agent/context/loader.go`
-4. `internal/agent/context/loader_test.go`
+1. `internal/agent/context/input_gt_discovery_prompt.go`
+2. `internal/agent/context/input_gt_discovery_prompt_test.go`
+3. `internal/adapters/inspect/input_gt_investigator.go`
+4. `internal/adapters/inspect/input_gt_investigator_test.go`
 
 Files to modify:
 
-1. `internal/adapters/execute/agent_executor.go`
-2. `internal/agent/types.go`
-
-Interface/API changes:
-
-1. `type DomainKnowledgePack struct { Version string; Sections map[string]string; Sources []KnowledgeSource }`
-2. `LoadDomainKnowledgePack() (DomainKnowledgePack, error)`
+1. `internal/adapters/inspect/input_gt_discovery_pipeline.go`
+2. `internal/adapters/execute/agent_executor.go`
+3. `internal/core/ports/interfaces.go`
 
 Locked behavior:
 
-1. Runtime reads only checked-in knowledge-pack files; no network/doc fetch during `concierge run`.
-2. Knowledge pack content is limited to Concierge v1 mandatory contracts (`leap.yaml`, preprocess, input encoders, GT encoders, integration test wiring, load model `.onnx/.h5` requirements).
-3. Source manifest includes source URL + section label + `last_reviewed_at` metadata for each included rule block.
-4. Missing/invalid required sections fail deterministically before agent invocation.
+1. Prompt bundle always embeds lead summary directly and requires evidence-backed, uncertainty-explicit semantic tracing.
+2. Investigator task is read-only for discovery stages (no repo edits in this step).
+3. Hard failures:
+   1. agent tool execution errors
+   2. permission failures
+   3. missing/malformed final payload
+4. `lead_pack_read_success` is informational only when the lead summary is already injected in prompt context.
+5. Raw agent output + run metadata are persisted as stage artifacts for normalization.
 
 Tests:
 
-1. `TestLoadDomainKnowledgePackSuccess`
-2. `TestLoadDomainKnowledgePackRejectsMissingRequiredSections`
-3. `TestLoadDomainKnowledgePackParsesSourceManifest`
+1. `TestInputGTDiscoveryPromptInjectsLeadSummary`
+2. `TestInputGTInvestigatorForcesReadOnlyTaskScope`
+3. `TestInputGTInvestigatorTreatsLeadPackReadSignalAsInformational`
+4. `TestInputGTInvestigatorPersistsRawOutputAndRunMetadata`
 
 Validation commands:
 
-1. `go test ./internal/agent ./internal/adapters/execute -run KnowledgePack -v`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. Agent-authoring path can load a deterministic, versioned Tensorleap knowledge pack from repo-local files.
-2. Knowledge-pack provenance is auditable via the checked-in source manifest.
-
-Rollback boundary:
-
-- Revert `internal/agent/context/*` and direct loader wiring only.
-
----
-
-### Step 10D: Step-scoped domain slice and edit-scope policy (`ACCEPTED`)
-
-Objective:
-
-Enforce strict, step-specific authoring scope by mapping each ensure-step to minimal Tensorleap rule slices and explicit edit boundaries.
-
-Files to add:
-
-1. `internal/adapters/execute/agent_scope_policy.go`
-2. `internal/adapters/execute/agent_scope_policy_test.go`
-
-Files to modify:
-
-1. `internal/adapters/execute/agent_executor.go`
-2. `internal/agent/types.go`
-
-Interface/API changes:
-
-1. `type AgentScopePolicy struct { AllowedFiles []string; ForbiddenAreas []string; RequiredOutcomes []string; StopAndAskTriggers []string; DomainSections []string }`
-2. `PolicyForStep(step core.EnsureStepID, snapshot core.WorkspaceSnapshot, status core.IntegrationStatus) (AgentScopePolicy, error)`
-
-Locked behavior:
-
-1. `ensure.preprocess_contract` policy requires preprocess + model-loading rule sections and forbids unrelated encoder/integration-test rewiring edits.
-2. `ensure.input_encoders` policy includes input-encoder-only domain sections and excludes GT/integration-test-specific rules.
-3. `ensure.ground_truth_encoders` policy includes GT-only domain sections and excludes input/integration-test-specific rules.
-4. Policy is attached to agent task evidence so scope decisions are auditable.
-
-Tests:
-
-1. `TestPolicyForPreprocessIncludesModelLoadAndPreprocessSections`
-2. `TestPolicyForInputEncodersExcludesGTAndIntegrationTestSections`
-3. `TestPolicyForStepReturnsErrorWhenScopeCannotBeResolved`
-
-Validation commands:
-
-1. `go test ./internal/adapters/execute -run ScopePolicy -v`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. Every agent-backed ensure-step has deterministic allowed/forbidden edit scope and domain-rule slice coverage.
-2. Out-of-scope guidance is explicit and test-covered.
-
-Rollback boundary:
-
-- Revert scope-policy module and direct `agent_executor` wiring only.
-
----
-
-### Step 10E: Repo-specific context pack assembly (`ACCEPTED`)
-
-Objective:
-
-Assemble deterministic repo-facts context bundles from snapshot/inspector/planner/validator outputs so the agent gets relevant repository state without broad exploration overhead.
-
-Files to add:
-
-1. `internal/adapters/execute/repo_context_pack.go`
-2. `internal/adapters/execute/repo_context_pack_test.go`
-
-Files to modify:
-
-1. `internal/adapters/execute/agent_executor.go`
-2. `internal/core/types.go`
-
-Interface/API changes:
-
-1. `type AgentRepoContext struct { RepoRoot string; EntryFile string; BinderFile string; LeapYAMLBoundary string; SelectedModelPath string; ModelCandidates []string; DecoratorInventory []string; IntegrationTestCalls []string; BlockingIssues []string; ValidationFindings []string }`
-2. `BuildAgentRepoContext(step core.EnsureStepID, snapshot core.WorkspaceSnapshot, status core.IntegrationStatus, validation core.ValidationResult) (AgentRepoContext, error)`
-
-Locked behavior:
-
-1. Context includes step-relevant repository facts only (entry file, integration script location, model candidate state, current blockers, and relevant validation findings).
-2. Context builder applies deterministic truncation/ordering to avoid prompt bloat and preserve reproducibility.
-3. When required context is missing for the selected step, execution fails before agent invocation with an actionable deterministic error.
-4. Context pack is persisted as evidence artifact per iteration.
-
-Tests:
-
-1. `TestBuildAgentRepoContextIncludesSelectedModelAndCandidates`
-2. `TestBuildAgentRepoContextDeterministicOrderingAndTruncation`
-3. `TestBuildAgentRepoContextFailsWhenRequiredStepContextMissing`
-
-Validation commands:
-
-1. `go test ./internal/adapters/execute ./internal/core -run RepoContext -v`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. Agent tasks receive deterministic, step-relevant repo context without relying on implicit repo rediscovery.
-2. Missing context blockers are surfaced before agent execution begins.
-
-Rollback boundary:
-
-- Revert repo-context pack builder and `agent_executor`/`core` wiring only.
-
----
-
-### Step 10F: Claude prompt/system-context wiring (`ACCEPTED`)
-
-Objective:
-
-Inject a stable system prompt plus structured user prompt sections combining objective, strict scope policy, repo context, and Tensorleap domain slices.
-
-Files to add:
-
-1. `internal/agent/prompt_contract.go`
-2. `internal/agent/prompt_contract_test.go`
-
-Files to modify:
-
-1. `internal/agent/runner.go`
-2. `internal/agent/runner_test.go`
-3. `internal/adapters/execute/agent_executor.go`
-4. `internal/agent/types.go`
-
-Interface/API changes:
-
-1. Extend `agent.AgentTask` with explicit context payload fields (scope policy, repo context, domain knowledge slice IDs/version).
-2. `BuildClaudeSystemPrompt() string` and `BuildClaudeTaskPrompt(task AgentTask) string`.
-
-Locked behavior:
-
-1. Runner passes explicit `--system-prompt` for global operating policy (scope discipline, ambiguity handling, and Tensorleap contract fidelity).
-2. Task prompt uses fixed section order:
-   1. Objective
-   2. Edit Scope
-   3. Repository Facts
-   4. Tensorleap Rules
-   5. Acceptance Checks
-3. Prompt assembly is deterministic and includes knowledge-pack version metadata.
-4. No runtime auto-refresh/doc-fetch behavior is introduced.
-
-Tests:
-
-1. `TestRunnerInvokesClaudeWithSystemPrompt`
-2. `TestBuildClaudeTaskPromptIncludesAllRequiredSections`
-3. `TestBuildClaudeTaskPromptForInputStepExcludesOutOfScopeRuleSections`
-4. `TestRunnerFailsFastWhenRequiredContextPayloadIsMissing`
-
-Validation commands:
-
-1. `go test ./internal/agent ./internal/adapters/execute -run Prompt -v`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. Agent invocation includes a stable system prompt and structured step-specific task prompt.
-2. Prompt contents are narrow, deterministic, and auditable via transcript/evidence artifacts.
-
-Rollback boundary:
-
-- Revert prompt-contract module and direct runner/executor task wiring only.
-
----
-
-### Step 10G: Model contract authoring flow (`ACCEPTED`)
-
-Objective:
-
-Create a dedicated authoring path for model contract remediation with explicit user-facing recommendations.
-
-Files to add:
-
-1. `internal/adapters/execute/model_authoring_context.go`
-2. `internal/adapters/execute/model_authoring_context_test.go`
-
-Files to modify:
-
-1. `internal/adapters/execute/agent_executor.go`
-2. `internal/cli/run.go` (approval prompt context)
-3. `internal/core/types.go` (authoring recommendation payload, if needed)
-
-Interface/API changes:
-
-1. Add `AuthoringRecommendation` structure to execution evidence payload conventions.
-2. Extend agent task context to include:
-   1. resolved/ambiguous model candidate list
-   2. include/exclude mismatch details
-   3. model format constraints (`.onnx` / `.h5`)
-
-Locked behavior:
-
-1. Precondition: Steps `10C-10F` are complete; model authoring does not run without injected knowledge pack, scope policy, repo context pack, and structured prompt wiring.
-2. For model issues, CLI prompt must show recommended model target before approval.
-3. Agent objective must include a strict “do not touch unrelated training logic” constraint.
-4. Execution evidence must include selected model path and rationale.
-
-Tests:
-
-1. `TestModelAuthoringRecommendationRenderedInApprovalPrompt`
-2. `TestModelAuthoringAgentTaskIncludesCandidateContext`
-3. `TestModelAuthoringEvidenceContainsSelectedModelPath`
-
-Validation commands:
-
-1. `go test ./internal/adapters/execute ./internal/cli -run ModelAuthoring -v`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. Model remediation is independently actionable and auditable.
-2. User sees explicit rationale for model-path suggestions before approving edits.
-
-Rollback boundary:
-
-- Revert model authoring context files and related prompt/agent wiring only.
-
----
-
-### Step 10H: Preprocess need detection (`ACCEPTED`)
-
-Objective:
-
-Emit preprocess-specific issue codes from deterministic contract analysis and lightweight static checks.
-
-Files to add:
-
-1. `internal/adapters/inspect/preprocess_contract.go`
-2. `internal/adapters/inspect/preprocess_contract_test.go`
-
-Files to modify:
-
-1. `internal/adapters/inspect/baseline_inspector.go`
-2. `internal/core/issues.go` (only if additional deterministic preprocess detection code is required)
-3. `internal/core/issue_step_map.go` (if new preprocess-related code is introduced)
-
-Locked behavior:
-
-1. Detect missing preprocess function from discovered contracts.
-2. Detect obvious invalid preprocess signatures/return semantics via static guardrails.
-3. Emit existing preprocess issue codes (`preprocess_function_missing`, `preprocess_response_invalid`, etc.) with actionable messages.
-
-Tests:
-
-1. `TestPreprocessDetectorEmitsMissingFunctionIssue`
-2. `TestPreprocessDetectorEmitsInvalidSignatureIssue`
-3. `TestPreprocessDetectorDoesNotFlagValidDefinitions`
-
-Validation commands:
-
-1. `go test ./internal/adapters/inspect -run Preprocess -v`
-2. `go test ./internal/adapters/inspect ./internal/core`
+1. `go test ./internal/agent/context ./internal/adapters/inspect -run InputGTInvestigator -v`
+2. `go test ./internal/adapters/execute ./internal/core/ports`
 3. `go test ./...`
 
 Acceptance criteria:
 
-1. Planner deterministically selects `ensure.preprocess_contract` when preprocess is absent/invalid.
-2. Detection results are stable across repeated runs on unchanged snapshots.
+1. Concierge can run the semantic investigator stage with deterministic prompt structure and persisted raw artifacts.
+2. Discovery flow fails fast only on reliability-critical errors.
 
 Rollback boundary:
 
-- Revert preprocess detector files and inspector mappings only.
+- Revert semantic investigator prompt/run plumbing only.
 
 ---
 
-### Step 10I: Preprocess authoring flow (`ACCEPTED`)
+### Step 10M1D: Multi-shape findings normalizer hardening (`PENDING`)
 
 Objective:
 
-Provide a dedicated preprocess authoring objective with deterministic constraints and review evidence.
+Harden Go normalization so semantic findings with schema variants still produce deterministic candidate sets.
 
 Files to add:
 
-1. `internal/adapters/execute/preprocess_authoring_context.go`
-2. `internal/adapters/execute/preprocess_authoring_context_test.go`
+1. `internal/adapters/inspect/input_gt_normalizer.go`
+2. `internal/adapters/inspect/input_gt_normalizer_test.go`
+3. `internal/adapters/inspect/testdata/input_gt_normalizer_cases.json`
 
 Files to modify:
 
-1. `internal/adapters/execute/agent_executor.go`
-2. `internal/cli/run.go`
-3. `internal/gitmanager/messages.go` (review focus text)
+1. `internal/adapters/inspect/input_gt_investigator.go`
+2. `internal/adapters/inspect/input_gt_discovery_pipeline.go`
+3. `internal/adapters/inspect/input_encoder_contract.go`
+4. `internal/adapters/inspect/gt_encoder_contract.go`
 
 Locked behavior:
 
-1. Precondition: Steps `10C-10F` are complete; preprocess authoring does not run without injected knowledge pack, scope policy, repo context pack, and structured prompt wiring.
-2. Agent objective for preprocess must include:
-   1. mandatory train + validation subsets
-   2. deterministic, non-empty subset expectation when feasible
-   3. prohibition against unrelated refactors
-3. Approval prompt must explicitly describe preprocess-specific intended change.
-4. Evidence must capture preprocess symbol(s) targeted.
+1. Normalizer accepts synonymous fields such as:
+   1. `inputs`, `model_inputs`, `candidate_inputs`
+   2. `ground_truths`, `targets`, `candidate_ground_truths`
+2. Normalizer handles list- and object-shaped payload variants.
+3. Empty normalized candidates are blocking errors with actionable diagnostics.
+4. Unknown fields are preserved in diagnostics/evidence but do not crash normalization.
+5. Normalized output is stable and sorted for deterministic downstream comparisons.
 
 Tests:
 
-1. `TestPreprocessAuthoringTaskIncludesTrainValidationConstraint`
-2. `TestPreprocessAuthoringReviewFocusHighlightsSubsetRequirement`
-3. `TestPreprocessAuthoringEvidenceCapturesTargetSymbols`
+1. `TestInputGTNormalizerAcceptsSynonymousInputAndTargetKeys`
+2. `TestInputGTNormalizerAcceptsListAndObjectVariants`
+3. `TestInputGTNormalizerRejectsEmptyCandidatesWithActionableError`
+4. `TestInputGTNormalizerPreservesUnknownFieldsInDiagnostics`
 
 Validation commands:
 
-1. `go test ./internal/adapters/execute ./internal/cli ./internal/gitmanager -run PreprocessAuthoring -v`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. Preprocess authoring is independently triggerable and auditable.
-2. Suggested changes are clearly explained before user approval.
-
-Rollback boundary:
-
-- Revert preprocess authoring context/prompt/message changes only.
-
----
-
-### Step 10J: Input-encoder need detection (`ACCEPTED`)
-
-Objective:
-
-Detect missing input encoders and incomplete input coverage per model input contract.
-
-Files to add:
-
-1. `internal/adapters/inspect/input_encoder_contract.go`
-2. `internal/adapters/inspect/input_encoder_contract_test.go`
-
-Files to modify:
-
-1. `internal/adapters/inspect/baseline_inspector.go`
-2. `internal/core/issue_step_map.go` (only if additional input-encoder issue granularity is needed)
-
-Locked behavior:
-
-1. Derive expected input encoder set from discovered model inputs + integration contracts.
-2. Emit issues for:
-   1. missing input encoder function(s)
-   2. incomplete symbol coverage
-   3. impossible mapping due to unresolved model contract
-3. Issue messages must include symbol-level detail.
-
-Tests:
-
-1. `TestInputEncoderDetectorEmitsMissingEncoderIssue`
-2. `TestInputEncoderDetectorEmitsCoverageIncompleteIssue`
-3. `TestInputEncoderDetectorNoFalsePositiveWhenCoverageComplete`
-
-Validation commands:
-
-1. `go test ./internal/adapters/inspect -run InputEncoder -v`
-2. `go test ./internal/adapters/inspect ./internal/core`
+1. `go test ./internal/adapters/inspect -run InputGTNormalizer -v`
+2. `go test ./internal/adapters/inspect`
 3. `go test ./...`
 
 Acceptance criteria:
 
-1. Planner can select `ensure.input_encoders` from deterministic detector output.
-2. Detector output identifies exactly which encoder symbols are missing.
+1. Normalization failures are explicit and debuggable instead of silently producing empty mappings.
+2. Research-success outputs from `yolov5_visdrone` and `ultralytics` parse without schema rewrites.
 
 Rollback boundary:
 
-- Revert input-encoder detector files and related inspector wiring only.
+- Revert normalizer hardening and contract-consumer wiring only.
 
 ---
 
-### Step 10K: Input-encoder suggestion and authoring flow (`ACCEPTED`)
+### Step 10M1E: Branch-aware input/GT post-processing rules (`PENDING`)
 
 Objective:
 
-Render symbol-level encoder suggestions to the user and pass the same context to authoring execution.
+Port high-impact branch/tokenizer heuristics from research into deterministic post-processing before planner recommendations.
 
 Files to add:
 
-1. `internal/adapters/execute/input_encoder_authoring_context.go`
-2. `internal/adapters/execute/input_encoder_authoring_context_test.go`
+1. `internal/adapters/inspect/input_gt_postprocess.go`
+2. `internal/adapters/inspect/input_gt_postprocess_test.go`
 
 Files to modify:
 
-1. `internal/adapters/execute/agent_executor.go`
-2. `internal/cli/run.go`
-3. `internal/adapters/report/stdout_reporter.go` (or equivalent recommendation output path)
+1. `internal/adapters/inspect/input_gt_normalizer.go`
+2. `internal/adapters/inspect/model_discovery.go`
+3. `internal/adapters/inspect/input_encoder_contract.go`
+4. `internal/adapters/inspect/gt_encoder_contract.go`
 
 Locked behavior:
 
-1. Precondition: Steps `10C-10F` are complete; input-encoder authoring does not run without injected knowledge pack, scope policy, repo context pack, and structured prompt wiring.
-2. Approval prompt lists missing input encoder symbols.
-3. Agent objective includes those exact symbols and model-shape constraints.
-4. Evidence captures recommendation list and resolved authored symbols.
+1. Transformer tokenizer dict candidates are expanded into per-key inputs (`input_ids`, `attention_mask`, `token_type_ids`) when those keys are evidenced.
+2. If branch selection is statically resolvable, active-branch candidates are ranked first.
+3. Alternate-branch candidates remain as conditional suggestions (not discarded).
+4. Post-processed candidates carry evidence snippets linking each candidate to repository code.
+5. Candidate ordering remains deterministic for identical snapshot inputs.
 
 Tests:
 
-1. `TestInputEncoderRecommendationListsMissingSymbols`
-2. `TestInputEncoderAuthoringTaskCarriesSymbolList`
-3. `TestInputEncoderAuthoringEvidenceIncludesRecommendationAndResult`
+1. `TestInputGTPostProcessSplitsTokenizerDictIntoPerKeyInputs`
+2. `TestInputGTPostProcessPrioritizesResolvableActiveBranch`
+3. `TestInputGTPostProcessRetainsConditionalAlternateBranchCandidates`
+4. `TestInputGTPostProcessPreservesDeterministicOrdering`
 
 Validation commands:
 
-1. `go test ./internal/adapters/execute ./internal/cli ./internal/adapters/report -run InputEncoderAuthoring -v`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. Input-encoder authoring workflow is explicit, reviewable, and symbol-specific.
-2. User-facing suggestions and agent context are consistent.
-
-Rollback boundary:
-
-- Revert input-encoder authoring context and reporting/prompt wiring only.
-
----
-
-### Step 10L: GT-encoder need detection (`ACCEPTED`)
-
-Objective:
-
-Detect missing or invalid ground-truth encoders as a separate capability from input encoders.
-
-Files to add:
-
-1. `internal/adapters/inspect/gt_encoder_contract.go`
-2. `internal/adapters/inspect/gt_encoder_contract_test.go`
-
-Files to modify:
-
-1. `internal/adapters/inspect/baseline_inspector.go`
-2. `internal/core/issue_step_map.go` (if additional GT issue specificity is introduced)
-
-Locked behavior:
-
-1. Detect missing GT encoders for labeled subsets.
-2. Detect contract mismatch where GT encoders are configured but incompatible with discovered targets.
-3. Preserve existing v1 rule that unlabeled subsets must not require GT execution.
-
-Tests:
-
-1. `TestGTEncoderDetectorEmitsMissingIssue`
-2. `TestGTEncoderDetectorEmitsContractMismatchIssue`
-3. `TestGTEncoderDetectorRespectsUnlabeledSubsetRule`
-
-Validation commands:
-
-1. `go test ./internal/adapters/inspect -run GTEncoder -v`
-2. `go test ./internal/adapters/inspect ./internal/core`
+1. `go test ./internal/adapters/inspect -run InputGTPostProcess -v`
+2. `go test ./internal/adapters/inspect`
 3. `go test ./...`
 
 Acceptance criteria:
 
-1. Planner can select `ensure.ground_truth_encoders` from deterministic detector output.
-2. Detector output separates GT concerns from input-encoder concerns.
+1. Branch/tokenizer edge cases no longer collapse to single ambiguous input candidates.
+2. Planner/reporter receive explicit primary and conditional candidate sets.
 
 Rollback boundary:
 
-- Revert GT detector files and related inspector wiring only.
+- Revert branch-aware post-processing heuristics only.
 
 ---
 
-### Step 10M: GT-encoder suggestion and authoring flow (`ACCEPTED`)
+### Step 10M1F: User mapping confirmation + strict contract-order planner gating (`PENDING`)
 
 Objective:
 
-Add GT-specific recommendation and authoring flow with labeled-subset constraints.
+Insert explicit user confirmation for discovered mappings, persist accepted contracts, and enforce hard contract ordering before integration-test wiring.
 
 Files to add:
 
-1. `internal/adapters/execute/gt_encoder_authoring_context.go`
-2. `internal/adapters/execute/gt_encoder_authoring_context_test.go`
-
-Files to modify:
-
-1. `internal/adapters/execute/agent_executor.go`
-2. `internal/cli/run.go`
-3. `internal/gitmanager/messages.go` (review focus messaging)
-
-Locked behavior:
-
-1. Precondition: Steps `10C-10F` are complete; GT-encoder authoring does not run without injected knowledge pack, scope policy, repo context pack, and structured prompt wiring.
-2. Prompt and agent context must distinguish GT targets from input targets.
-3. Agent objective must include “run on labeled subsets only” guidance.
-4. Evidence must record GT symbols authored/repaired.
-
-Tests:
-
-1. `TestGTEncoderAuthoringTaskIncludesLabeledSubsetConstraint`
-2. `TestGTEncoderReviewFocusMentionsGroundTruthTargets`
-3. `TestGTEncoderAuthoringEvidenceContainsTargetSymbols`
-
-Validation commands:
-
-1. `go test ./internal/adapters/execute ./internal/cli ./internal/gitmanager -run GTEncoderAuthoring -v`
-2. `go test ./...`
-
-Acceptance criteria:
-
-1. GT authoring is independently triggerable and auditable.
-2. Constraints prevent conflating GT with input encoder work.
-
-Rollback boundary:
-
-- Revert GT authoring context and prompt/review message changes only.
-
----
-
-### Step 10M1: Encoder requirement-source redesign + strict contract-order gating (`PENDING`)
-
-Objective:
-
-Fix the current authoring regression by enforcing the mandatory contract order (`preprocess -> input encoders -> GT encoders -> integration test`) and removing integration-test-call dependency from encoder requirement detection.
+1. `internal/cli/encoder_mapping_prompt.go`
+2. `internal/cli/encoder_mapping_prompt_test.go`
 
 Files to modify:
 
@@ -813,78 +375,104 @@ Files to modify:
 7. `internal/cli/run.go`
 8. `internal/state/types.go`
 9. `internal/state/store.go`
-10. `internal/e2e/fixtures/fixtures_test.go`
-
-Files to add:
-
-1. `internal/adapters/inspect/encoder_requirement_contract.go`
-2. `internal/adapters/inspect/encoder_requirement_contract_test.go`
+10. `internal/adapters/execute/input_encoder_authoring_context.go`
+11. `internal/adapters/execute/gt_encoder_authoring_context.go`
 
 Locked behavior:
 
-1. Planner must never select `ensure.integration_test_contract` while any blocking preprocess/input/GT contract issue exists.
-2. `integration_test_missing` is a deferred check until preprocess/input/GT contracts pass; it becomes blocking only after those prerequisites are satisfied.
-3. Input/GT encoder requirement detection must not use `IntegrationTestCalls` as a required-symbol source.
-4. Required encoder symbols are sourced in this order:
-   1. explicit repository signals (decorators/contracts),
-   2. model/interface-derived signals when deterministic,
-   3. explicit user-provided contract when repository inference is insufficient.
-5. User-provided encoder contract must be persisted in `.concierge/state/state.json` and reused deterministically in later runs.
-6. Step `10K` and `10M` recommendation payloads must consume the new encoder requirement contract source.
-
-Fixture-ground-truth development technique (mandatory):
-
-1. Use fixture repositories as the contract oracle for this step.
-2. For each fixture id, treat `.fixtures/<id>/post` as ground truth for encoder requirement contracts.
-3. Implement deterministic extraction of:
-   1. required input encoder symbols from `post`,
-   2. required GT encoder symbols from `post`.
-4. Run detector logic on `.fixtures/<id>/pre` and compare against `post` ground truth using these invariants:
-   1. required input symbols detected for `pre` must equal required input symbols extracted from `post`,
-   2. required GT symbols detected for `pre` must equal required GT symbols extracted from `post`,
-   3. missing input symbols reported for `pre` must equal (`post required input` - `pre registered input`),
-   4. missing GT symbols reported for `pre` must equal (`post required GT` - `pre registered GT`),
-   5. `post` must report no missing input/GT symbols.
-5. Development loop for this step is iterative and fixture-first:
-   1. pick one fixture and one detector gap,
-   2. add/adjust detector logic,
-   3. add/update pre-vs-post fixture assertions,
-   4. rerun targeted fixture tests,
-   5. repeat until all fixtures satisfy invariants.
-6. Do not start Step `10N` until all Step `10M1` fixture pre-vs-post invariants pass.
+1. Planner must never select `ensure.integration_test_contract` while blocking preprocess/input/GT issues exist.
+2. `integration_test_missing` remains deferred until preprocess/input/GT contracts are satisfied.
+3. Input/GT requirement detection must not use integration-test call graph as required-symbol source.
+4. CLI presents proposed input/GT mappings with evidence snippets and allows user confirm/adjust/decline.
+5. Accepted mapping contract is persisted in `.concierge/state/state.json` with invalidation keyed to relevant file fingerprints.
+6. Steps `10K` and `10M` consume persisted confirmed mapping contracts when present.
 
 Tests:
 
 1. `TestPlannerDefersIntegrationTestStepUntilEncoderContractsPass`
 2. `TestInputEncoderDetectorIgnoresIntegrationTestCallGraphForRequiredSymbols`
 3. `TestGTEncoderDetectorIgnoresIntegrationTestCallGraphForRequiredSymbols`
-4. `TestFixtureInputEncoderContractPreMatchesPostGroundTruth`
-5. `TestFixtureGTEncoderContractPreMatchesPostGroundTruth`
-6. `TestFixturePostContractHasNoMissingEncoderSymbols`
-7. `TestRunPromptsForEncoderContractWhenInferenceIsInsufficient`
-8. `TestRunPersistsAndReloadsEncoderContractFromState`
-9. `TestFixturePlannerPrimaryStepDoesNotJumpToIntegrationTestBeforeEncoders`
+4. `TestRunPromptsForInputGTMappingConfirmation`
+5. `TestRunPersistsAndReloadsConfirmedInputGTMappingContract`
+6. `TestConfirmedMappingContractInvalidatesWhenSourceFilesChange`
+
+Validation commands:
+
+1. `go test ./internal/adapters/planner ./internal/adapters/inspect -run 'IntegrationTestStep|EncoderDetector|MappingContract' -v`
+2. `go test ./internal/cli ./internal/state ./internal/core`
+3. `go test ./...`
+
+Acceptance criteria:
+
+1. Encoder authoring recommendations are derived from confirmed discovery contracts.
+2. Concierge cannot jump to integration-test wiring before preprocess/input/GT contracts are satisfied.
+
+Rollback boundary:
+
+- Revert mapping confirmation UX, planner ordering gate, and mapping-contract state wiring only.
+
+---
+
+### Step 10M1G: Fixture parity + optional runtime signature corroboration (`PENDING`)
+
+Objective:
+
+Prove Go discovery parity with Python research wins and add optional runtime signature corroboration as a support signal.
+
+Files to add:
+
+1. `internal/adapters/inspect/runtime_signature.go`
+2. `internal/adapters/inspect/runtime_signature_test.go`
+3. `internal/e2e/fixtures/case_input_gt_discovery_parity_test.go`
+4. `internal/e2e/fixtures/testdata/cases/input_gt_discovery_parity/*.golden.json`
+
+Files to modify:
+
+1. `internal/adapters/inspect/input_gt_discovery_pipeline.go`
+2. `internal/e2e/fixtures/fixtures_test.go`
+3. `scripts/fixtures_prepare.sh`
+4. `scripts/fixtures_verify.sh`
+5. `scripts/fixtures_run_checks.sh`
+
+Locked behavior:
+
+1. Runtime signature inspection is optional and runs only when model artifacts are present/hydrated.
+2. Supported corroboration signals:
+   1. ONNX input names/shapes/dtypes
+   2. Keras/TensorFlow input tensor signatures when available
+3. Runtime disagreement with code-derived findings is reported explicitly; discovery remains code/semantic-first.
+4. Fixture parity gate must cover:
+   1. `yolov5_visdrone` (`r009`) as required success case
+   2. `ultralytics` (`r010`) as required scale case
+   3. `imdb` as edge-case regression (including tokenizer-bundle split expectations)
+5. Parity assertions are semantic-first (presence, plausibility, shape/dtype hints); exact names are diagnostic only.
+6. Do not start Step `10N` until parity suite passes with legacy `10M1` strategy paths removed.
+
+Tests:
+
+1. `TestRuntimeSignatureInspectorReadsONNXInputsWhenAvailable`
+2. `TestRuntimeSignatureInspectorReportsDisagreementsWithoutOverridingCodeFindings`
+3. `TestFixtureInputGTDiscoveryParity_Yolov5Visdrone`
+4. `TestFixtureInputGTDiscoveryParity_Ultralytics`
+5. `TestFixtureInputGTDiscoveryParity_IMDBEdgeCase`
 
 Validation commands:
 
 1. `bash scripts/fixtures_prepare.sh`
 2. `bash scripts/fixtures_verify.sh`
-3. `go test ./internal/adapters/inspect -run EncoderContract -v`
-4. `go test ./internal/e2e/fixtures -run 'Fixture(PlannerPrimaryStepPreVariant|InputEncoderContract|GTEncoderContract|PostContractHasNoMissingEncoderSymbols)' -v`
-5. `go test ./internal/adapters/planner ./internal/core ./internal/state ./internal/cli`
+3. `go test ./internal/adapters/inspect -run RuntimeSignature -v`
+4. `go test ./internal/e2e/fixtures -run InputGTDiscoveryParity -v`
+5. `bash scripts/fixtures_run_checks.sh`
 6. `go test ./...`
 
 Acceptance criteria:
 
-1. Encoder authoring is actionable before integration-test wiring exists.
-2. Concierge cannot prompt integration-test wiring as the next blocking step while encoder contracts are unresolved.
-3. Encoder requirement detection remains deterministic without integration-test call inference.
-4. Re-running Concierge preserves and reuses user-provided encoder contracts when needed.
-5. All fixtures pass pre-vs-post encoder contract matching invariants, with `post` treated as ground truth.
+1. Go discovery pipeline reproduces the Python research success pattern on required fixtures.
+2. Discovery contracts are stable enough to drive `10K`/`10M` and unblock `10N` without fallback to integration-test call inference.
 
 Rollback boundary:
 
-- Revert encoder requirement contract source, planner ordering gate, and state wiring introduced by this step only.
+- Revert runtime-signature corroboration and parity-suite additions only.
 
 ---
 
@@ -906,9 +494,10 @@ Files to modify:
 
 Locked behavior:
 
-1. Detect decorators defined but not called in integration-test call path.
-2. Detect calls to unknown/non-discovered interfaces.
-3. Emit precise issue locations when AST traversal can resolve line/column.
+1. Precondition: Steps `10M1A-10M1G` are complete and encoder mapping contracts are available from the discovery pipeline/user confirmation flow.
+2. Detect decorators defined but not called in integration-test call path.
+3. Detect calls to unknown/non-discovered interfaces.
+4. Emit precise issue locations when AST traversal can resolve line/column.
 
 Tests:
 
@@ -1631,7 +1220,7 @@ Status semantics:
 
 Phase acceptance condition:
 
-1. Steps `1` through `14B` (including `10A0`, `10A`, `10B`, `10B1`, `10C-10O`, `10M1`, `11A-11B`, `12A-12H`, `13A-13B`, `14A-14B`) are `ACCEPTED`.
+1. Steps `1` through `14B` (including `10A0`, `10A`, `10B`, `10B1`, `10C-10O`, `10M1A-10M1G`, `11A-11B`, `12A-12H`, `13A-13B`, `14A-14B`) are `ACCEPTED`.
 2. Capability-level fixture E2E jobs are part of required CI and green.
 3. Concierge can perform user-approved detection->suggest->author->validate loops for model/preprocess/input-encoder/GT-encoder/integration-test wiring and complete guarded upload workflow end-to-end.
 
@@ -1645,7 +1234,8 @@ Phase acceptance condition:
 ## Surprises & Discoveries
 
 - Steps `10H-10M` are implemented and merged, so preprocess/input/GT detector + authoring paths now emit capability-specific issue families and recommendations from live contracts.
-- Step `10M1` is now a hard blocker because current ordering and encoder requirement-source logic can surface integration-test blockers before encoder contracts are grounded.
+- The first `10M1` strategy failed to converge because post/pre oracle-only required-symbol inference was not enough to reproduce the Python discovery success pattern.
+- The plan now requires a staged discovery port (`10M1A-10M1G`) with explicit tests at each stage before integration-test wiring work continues.
 - Existing fixture E2E covers artifact deltas and persistence, but it does not yet prove capability-isolated authoring convergence (model/preprocess/input/GT/wiring) one-by-one.
 - Runtime harness integration exists only as a stub baseline; it must become default runtime evidence before capability E2E can assert semantic behavior robustly.
 
@@ -1684,22 +1274,25 @@ Phase acceptance condition:
 - Decision: Implement Step `10M1` with fixture-ground-truth iterative development (`post` as oracle, `pre` as detection target), and gate completion on pre/post contract-match invariants across all fixtures.
   Rationale: Encoder detection quality must be empirically anchored to real repository pairs, not heuristics validated in isolation.
   Date/Author: 2026-03-04 / user + assistant.
+- Decision: Replace the single blocking `10M1` step with a research-parity sequence (`10M1A-10M1G`) that ports Python lead extraction, semantic investigation, normalization, branch heuristics, and confirmation flow into Go with per-step tests.
+  Rationale: The previous strategy failed; reproducing proven research behavior requires explicit stage parity and deterministic test gates.
+  Date/Author: 2026-03-05 / user + assistant.
 
 ## Outcomes & Retrospective
 
-Current state: baseline architecture through Step `10M` is accepted and merged; Step `10M1` is now the immediate blocking next step to fix encoder authoring order/source correctness before continuing to integration-test wiring (`10N-10O`), runtime harness deepening (`11A-11B`), capability E2E/CI hardening (`12A-13B`), and release documentation/hardening (`14A-14B`).
+Current state: baseline architecture through Step `10M` is accepted and merged; the original `10M1` strategy failed and has been replaced by blocking sequence `10M1A-10M1G` to port Python-proven input/GT discovery into Go before continuing to integration-test wiring (`10N-10O`), runtime harness deepening (`11A-11B`), capability E2E/CI hardening (`12A-13B`), and release documentation/hardening (`14A-14B`).
 
 Primary residual risks:
 
-1. Encoder requirement detection and step ordering are currently incorrect until `10M1` lands, which can mis-prioritize integration-test checks and break encoder authoring flow.
-2. Agent-authoring prompts may be too generic unless they receive symbol-level context from detectors.
-3. Capability E2E may become flaky unless fixture mutation tooling is strictly deterministic.
+1. Input/GT discovery quality is currently below research parity until `10M1A-10M1G` lands, which can still mis-prioritize integration-test checks and break encoder authoring flow.
+2. Agent discovery output normalization can regress if schema variance and branch heuristics are not tested independently.
+3. Capability E2E may become flaky unless fixture mutation tooling and discovery parity cases are strictly deterministic.
 
 Mitigations:
 
-1. Complete `10M1` first (strict preprocess->input->GT->integration-test order + encoder requirement source redesign), then proceed with `10N-10O` integration-test wiring detection/authoring.
-2. Keep existing context-injection pipeline (`10C-10F`) under regression coverage while finalizing recommendation payload tests (`10O` + fixture context tests in `12H`).
-3. Introduce deterministic fixture case generation before capability E2E tests (`12A` before `12B-12H`).
+1. Complete `10M1A-10M1G` first (staged discovery parity + strict preprocess->input->GT->integration-test ordering + confirmed mapping contracts), then proceed with `10N-10O`.
+2. Keep existing context-injection pipeline (`10C-10F`) under regression coverage while discovery prompt/normalization/post-processing paths are introduced.
+3. Introduce deterministic fixture case generation before capability E2E tests (`12A` before `12B-12H`) and require discovery parity fixtures in `10M1G`.
 
 ## Interfaces and Dependencies
 

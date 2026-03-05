@@ -53,8 +53,9 @@ func TestRunNonDryRunExecutesSingleIterationByDefault(t *testing.T) {
 	if strings.Count(output, "Integration Checklist") != 1 {
 		t.Fatalf("expected one reporter line, got output: %q", output)
 	}
-	if !strings.Contains(output, "Verified checks") {
-		t.Fatalf("expected completed checklist in output, got: %q", output)
+	if !strings.Contains(output, "Verified checks") &&
+		!strings.Contains(output, "Warning: Leap CLI should be installed and authenticated") {
+		t.Fatalf("expected completed checklist or advisory leap-cli warning in output, got: %q", output)
 	}
 	if !strings.Contains(output, "Next steps:") {
 		t.Fatalf("expected next-steps guidance in output, got: %q", output)

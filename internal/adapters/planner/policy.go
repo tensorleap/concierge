@@ -30,6 +30,7 @@ func (p planningPolicy) build(status core.IntegrationStatus) (core.EnsureStep, [
 		completeStep, _ := core.EnsureStepByID(core.EnsureStepComplete)
 		return completeStep, nil, true
 	}
+	candidates = enforceEncoderBeforeIntegrationOrder(status, candidates)
 
 	primary := candidates[0]
 	if primary.ID == core.EnsureStepUploadPush && !uploadReadinessClear(status.Issues) {
@@ -158,4 +159,32 @@ func containsStep(steps []core.EnsureStep, stepID core.EnsureStepID) bool {
 		}
 	}
 	return false
+}
+
+func enforceEncoderBeforeIntegrationOrder(status core.IntegrationStatus, steps []core.EnsureStep) []core.EnsureStep {
+	if len(steps) == 0 {
+		return steps
+	}
+	if steps[0].ID != core.EnsureStepIntegrationTestContract {
+		return steps
+	}
+	if status.Contracts == nil || status.Contracts.ConfirmedMapping != nil {
+		return steps
+	}
+	if status.Contracts.InputGTDiscovery == nil || status.Contracts.InputGTDiscovery.ComparisonReport == nil {
+		return steps
+	}
+	report := status.Contracts.InputGTDiscovery.ComparisonReport
+	if len(report.PrimaryInputSymbols) == 0 && len(report.PrimaryGroundTruthSymbols) == 0 {
+		return steps
+	}
+
+	encoderStep, ok := core.EnsureStepByID(core.EnsureStepInputEncoders)
+	if !ok {
+		return steps
+	}
+	if containsStep(steps, encoderStep.ID) {
+		return steps
+	}
+	return append([]core.EnsureStep{encoderStep}, steps...)
 }

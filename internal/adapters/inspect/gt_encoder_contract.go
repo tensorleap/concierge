@@ -92,57 +92,17 @@ func expectedGTEncoderSymbols(contracts *core.IntegrationContracts, registration
 	if contracts == nil {
 		return uniqueSortedContractSymbols(expected)
 	}
-
-	registrationsByFunction := mapEncoderRegistrationsByFunction(registrations)
-	excludedCalls := contractSymbolSet(
-		contracts.LoadModelFunctions,
-		contracts.PreprocessFunctions,
-		contracts.InputEncoders,
-		contracts.IntegrationTestFunctions,
-	)
-
-	for _, rawCall := range contracts.IntegrationTestCalls {
-		call := strings.TrimSpace(canonicalSymbol(rawCall))
-		if call == "" {
-			continue
-		}
-		key := strings.ToLower(call)
-		if _, excluded := excludedCalls[key]; excluded {
-			continue
-		}
-
-		if registration, ok := registrationsByFunction[key]; ok {
-			expected = append(expected, registration.Symbol)
-			continue
-		}
-
-		if shouldTreatAsGroundTruthCall(call, contracts) {
-			expected = append(expected, inferEncoderSymbol(call))
-		}
+	if contracts.ConfirmedMapping != nil && len(contracts.ConfirmedMapping.GroundTruthSymbols) > 0 {
+		expected = append(expected, contracts.ConfirmedMapping.GroundTruthSymbols...)
+		return uniqueSortedContractSymbols(expected)
+	}
+	// Discovery-derived symbols are intentionally only enforced when no GT encoder
+	// registrations exist yet; once at least one encoder exists, confirmation is
+	// required to avoid noisy false positives from alternate semantic branches.
+	if len(expected) == 0 && len(contracts.DiscoveredGroundTruthSymbols) > 0 {
+		expected = append(expected, contracts.DiscoveredGroundTruthSymbols...)
+		return uniqueSortedContractSymbols(expected)
 	}
 
 	return uniqueSortedContractSymbols(expected)
-}
-
-func shouldTreatAsGroundTruthCall(call string, contracts *core.IntegrationContracts) bool {
-	if looksLikeGroundTruthEncoderCall(call) {
-		return true
-	}
-
-	lower := strings.ToLower(strings.TrimSpace(call))
-	if !strings.HasPrefix(lower, "encode_") {
-		return false
-	}
-
-	if contracts == nil {
-		return false
-	}
-
-	for _, inputFunction := range contracts.InputEncoders {
-		if strings.EqualFold(strings.TrimSpace(inputFunction), lower) {
-			return false
-		}
-	}
-
-	return len(contracts.GroundTruthEncoders) > 0
 }

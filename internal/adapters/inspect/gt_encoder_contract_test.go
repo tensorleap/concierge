@@ -29,7 +29,7 @@ func TestGTEncoderDetectorEmitsMissingIssue(t *testing.T) {
 		"",
 	}, "\n"))
 
-	status := inspectStatus(t, root)
+	status := inspectStatusWithConfirmedMapping(t, root, nil, []string{"label"})
 
 	issue, ok := firstIssueByCode(status.Issues, core.IssueCodeGTEncoderMissing)
 	if !ok {
@@ -72,7 +72,7 @@ func TestGTEncoderDetectorEmitsContractMismatchIssue(t *testing.T) {
 		"",
 	}, "\n"))
 
-	status := inspectStatus(t, root)
+	status := inspectStatusWithConfirmedMapping(t, root, nil, []string{"label"})
 
 	issue, ok := firstIssueByCode(status.Issues, core.IssueCodeGTEncoderCoverageIncomplete)
 	if !ok {
@@ -109,7 +109,7 @@ func TestGTEncoderDetectorRespectsUnlabeledSubsetRule(t *testing.T) {
 		"",
 	}, "\n"))
 
-	status := inspectStatus(t, root)
+	status := inspectStatusWithConfirmedMapping(t, root, nil, []string{"label"})
 
 	issue, ok := firstIssueByCode(status.Issues, core.IssueCodeUnlabeledSubsetGTInvocation)
 	if !ok {
@@ -120,5 +120,52 @@ func TestGTEncoderDetectorRespectsUnlabeledSubsetRule(t *testing.T) {
 	}
 	if issue.Location == nil || issue.Location.Symbol != "label" {
 		t.Fatalf("expected symbol location %q, got %+v", "label", issue.Location)
+	}
+}
+
+func TestGTEncoderDetectorSupportsMultilineFunctionSignatures(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_custom_test.py\n")
+	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "model/demo.h5", "binary\n")
+	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model, tensorleap_preprocess, tensorleap_gt_encoder, tensorleap_integration_test",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    return 'model/demo.h5'",
+		"",
+		"@tensorleap_preprocess()",
+		"def preprocess_data():",
+		"    return []",
+		"",
+		"@tensorleap_gt_encoder('classes')",
+		"def encode_classes(idx: int, preprocess):",
+		"    return idx",
+		"",
+		"@tensorleap_gt_encoder('bbs')",
+		"def encode_bbs(",
+		"    idx: int,",
+		"    preprocess",
+		") -> tuple[",
+		"    int,",
+		"    int,",
+		"]:",
+		"    return idx, idx",
+		"",
+		"@tensorleap_integration_test()",
+		"def run_flow():",
+		"    encode_classes(0, None)",
+		"    encode_bbs(0, None)",
+		"",
+	}, "\n"))
+
+	status := inspectStatusWithConfirmedMapping(t, root, nil, []string{"classes", "bbs"})
+
+	if hasIssueCode(status.Issues, core.IssueCodeGTEncoderMissing) {
+		t.Fatalf("did not expect %q issue, got %+v", core.IssueCodeGTEncoderMissing, status.Issues)
+	}
+	if hasIssueCode(status.Issues, core.IssueCodeGTEncoderCoverageIncomplete) {
+		t.Fatalf("did not expect %q issue, got %+v", core.IssueCodeGTEncoderCoverageIncomplete, status.Issues)
 	}
 }

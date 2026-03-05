@@ -19,15 +19,16 @@ const (
 
 // RunState captures mutable orchestration state persisted between runs.
 type RunState struct {
-	Version                 int               `json:"version"`
-	SelectedProjectRoot     string            `json:"selectedProjectRoot"`
-	SelectedModelPath       string            `json:"selectedModelPath,omitempty"`
-	LastSnapshotID          string            `json:"lastSnapshotId,omitempty"`
-	LastHead                string            `json:"lastHead,omitempty"`
-	LastWorktreeFingerprint string            `json:"lastWorktreeFingerprint,omitempty"`
-	LastPrimaryStep         core.EnsureStepID `json:"lastPrimaryStep,omitempty"`
-	LastRunAt               time.Time         `json:"lastRunAt,omitempty"`
-	InvalidationReasons     []string          `json:"invalidationReasons,omitempty"`
+	Version                 int                          `json:"version"`
+	SelectedProjectRoot     string                       `json:"selectedProjectRoot"`
+	SelectedModelPath       string                       `json:"selectedModelPath,omitempty"`
+	ConfirmedEncoderMapping *core.EncoderMappingContract `json:"confirmedEncoderMapping,omitempty"`
+	LastSnapshotID          string                       `json:"lastSnapshotId,omitempty"`
+	LastHead                string                       `json:"lastHead,omitempty"`
+	LastWorktreeFingerprint string                       `json:"lastWorktreeFingerprint,omitempty"`
+	LastPrimaryStep         core.EnsureStepID            `json:"lastPrimaryStep,omitempty"`
+	LastRunAt               time.Time                    `json:"lastRunAt,omitempty"`
+	InvalidationReasons     []string                     `json:"invalidationReasons,omitempty"`
 }
 
 // DefaultRunState returns a schema-initialized state for projectRoot.
@@ -66,12 +67,14 @@ func UpdateForIteration(
 	report core.IterationReport,
 	selectedProjectRoot string,
 	selectedModelPath string,
+	confirmedMapping *core.EncoderMappingContract,
 	invalidationReasons []string,
 ) RunState {
 	next := previous
 	next.Version = CurrentVersion
 	next.SelectedProjectRoot = normalizeRoot(selectedProjectRoot)
 	next.SelectedModelPath = normalizeModelPath(selectedModelPath)
+	next.ConfirmedEncoderMapping = cloneEncoderMappingContract(confirmedMapping)
 	next.LastSnapshotID = snapshot.ID
 	next.LastHead = snapshot.Repository.Head
 	next.LastWorktreeFingerprint = snapshot.WorktreeFingerprint
@@ -98,4 +101,21 @@ func normalizeRoot(projectRoot string) string {
 		root = abs
 	}
 	return filepath.Clean(root)
+}
+
+func cloneEncoderMappingContract(mapping *core.EncoderMappingContract) *core.EncoderMappingContract {
+	if mapping == nil {
+		return nil
+	}
+	cloned := *mapping
+	if len(mapping.InputSymbols) > 0 {
+		cloned.InputSymbols = append([]string(nil), mapping.InputSymbols...)
+	}
+	if len(mapping.GroundTruthSymbols) > 0 {
+		cloned.GroundTruthSymbols = append([]string(nil), mapping.GroundTruthSymbols...)
+	}
+	if len(mapping.Notes) > 0 {
+		cloned.Notes = append([]string(nil), mapping.Notes...)
+	}
+	return &cloned
 }

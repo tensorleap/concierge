@@ -1,6 +1,7 @@
 package inspect
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -31,7 +32,7 @@ func TestInputEncoderDetectorEmitsMissingEncoderIssue(t *testing.T) {
 		"",
 	}, "\n"))
 
-	status := inspectStatus(t, root)
+	status := inspectStatusWithConfirmedMapping(t, root, []string{"image"}, nil)
 
 	issue, ok := firstIssueByCode(status.Issues, core.IssueCodeInputEncoderMissing)
 	if !ok {
@@ -83,7 +84,7 @@ func TestInputEncoderDetectorEmitsCoverageIncompleteIssue(t *testing.T) {
 		"",
 	}, "\n"))
 
-	status := inspectStatus(t, root)
+	status := inspectStatusWithConfirmedMapping(t, root, []string{"image", "meta"}, nil)
 
 	issue, ok := firstIssueByCode(status.Issues, core.IssueCodeInputEncoderCoverageIncomplete)
 	if !ok {
@@ -128,7 +129,7 @@ func TestInputEncoderDetectorNoFalsePositiveWhenCoverageComplete(t *testing.T) {
 		"",
 	}, "\n"))
 
-	status := inspectStatus(t, root)
+	status := inspectStatusWithConfirmedMapping(t, root, []string{"image", "meta"}, nil)
 
 	if hasIssueCode(status.Issues, core.IssueCodeInputEncoderMissing) {
 		t.Fatalf("did not expect %q issue, got %+v", core.IssueCodeInputEncoderMissing, status.Issues)
@@ -136,4 +137,25 @@ func TestInputEncoderDetectorNoFalsePositiveWhenCoverageComplete(t *testing.T) {
 	if hasIssueCode(status.Issues, core.IssueCodeInputEncoderCoverageIncomplete) {
 		t.Fatalf("did not expect %q issue, got %+v", core.IssueCodeInputEncoderCoverageIncomplete, status.Issues)
 	}
+}
+
+func inspectStatusWithConfirmedMapping(
+	t *testing.T,
+	root string,
+	inputSymbols []string,
+	groundTruthSymbols []string,
+) core.IntegrationStatus {
+	t.Helper()
+	snapshot := snapshotForRoot(root)
+	snapshot.ConfirmedEncoderMapping = &core.EncoderMappingContract{
+		InputSymbols:       append([]string(nil), inputSymbols...),
+		GroundTruthSymbols: append([]string(nil), groundTruthSymbols...),
+	}
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), snapshot)
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	return status
 }

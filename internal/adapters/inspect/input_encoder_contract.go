@@ -13,7 +13,7 @@ import (
 
 var (
 	encoderDecoratorInvocationPattern = regexp.MustCompile(`^\s*@\s*([A-Za-z_][A-Za-z0-9_\.]*)\s*(?:\((.*)\))?\s*$`)
-	encoderFunctionDefinitionPattern  = regexp.MustCompile(`^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(.*\)\s*(?:->\s*[^:]+)?\s*:`)
+	encoderFunctionDefinitionPattern  = regexp.MustCompile(`^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 	encoderKeywordSymbolPattern       = regexp.MustCompile(`(?i)\b(?:input|feature|target|name)\s*=\s*['"]([^'"]+)['"]`)
 	encoderQuotedSymbolPattern        = regexp.MustCompile(`['"]([^'"]+)['"]`)
 )
@@ -327,33 +327,16 @@ func expectedInputEncoderSymbols(contracts *core.IntegrationContracts, registrat
 	if contracts == nil {
 		return uniqueSortedContractSymbols(expected)
 	}
-
-	registrationsByFunction := mapEncoderRegistrationsByFunction(registrations)
-	excludedCalls := contractSymbolSet(
-		contracts.LoadModelFunctions,
-		contracts.PreprocessFunctions,
-		contracts.GroundTruthEncoders,
-		contracts.IntegrationTestFunctions,
-	)
-
-	for _, rawCall := range contracts.IntegrationTestCalls {
-		call := strings.TrimSpace(canonicalSymbol(rawCall))
-		if call == "" {
-			continue
-		}
-		key := strings.ToLower(call)
-		if _, excluded := excludedCalls[key]; excluded {
-			continue
-		}
-
-		if registration, ok := registrationsByFunction[key]; ok {
-			expected = append(expected, registration.Symbol)
-			continue
-		}
-
-		if looksLikeInputEncoderCall(call) {
-			expected = append(expected, inferEncoderSymbol(call))
-		}
+	if contracts.ConfirmedMapping != nil && len(contracts.ConfirmedMapping.InputSymbols) > 0 {
+		expected = append(expected, contracts.ConfirmedMapping.InputSymbols...)
+		return uniqueSortedContractSymbols(expected)
+	}
+	// Discovery-derived symbols are intentionally only enforced when no input encoder
+	// registrations exist yet; once at least one encoder exists, confirmation is
+	// required to avoid noisy false positives from alternate semantic branches.
+	if len(expected) == 0 && len(contracts.DiscoveredInputSymbols) > 0 {
+		expected = append(expected, contracts.DiscoveredInputSymbols...)
+		return uniqueSortedContractSymbols(expected)
 	}
 
 	return uniqueSortedContractSymbols(expected)
@@ -444,17 +427,6 @@ func uniqueSortedContractSymbols(values []string) []string {
 		return symbols[i] < symbols[j]
 	})
 	return symbols
-}
-
-func looksLikeInputEncoderCall(call string) bool {
-	lower := strings.ToLower(strings.TrimSpace(call))
-	if lower == "" {
-		return false
-	}
-	if looksLikeGroundTruthEncoderCall(lower) {
-		return false
-	}
-	return strings.HasPrefix(lower, "encode_") || strings.HasPrefix(lower, "input_")
 }
 
 func looksLikeGroundTruthEncoderCall(call string) bool {

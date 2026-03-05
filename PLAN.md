@@ -21,6 +21,9 @@ This ExecPlan is a living document. Keep `Progress`, `Gap Analysis`, `Surprises 
 - 2026-03-04: Added blocking Step `10M1` as the immediate next step after `10M` to fix incorrect requirement ordering and decouple encoder requirement detection from integration-test call inference before continuing to `10N`.
 - 2026-03-04: Tightened Step `10M1` to require fixture-ground-truth iterative development: derive encoder contract truth from fixture `post`, detect missing encoder requirements on fixture `pre`, and enforce pre/post contract matching invariants before proceeding.
 - 2026-03-05: Step `10M1` execution failed to converge with the post/pre oracle-only requirement-source strategy; replaced it with a research-parity implementation sequence (`10M1A-10M1G`) that ports the proven Python discovery pipeline into Go with mandatory per-step tests.
+- 2026-03-05: Added fixture capability regressions for encoder authoring recovery (`TestFixtureCaseMissingInputEncoders_Recovers`, `TestFixtureCaseMissingGTEncoders_Recovers`) and stabilized post-fixture completeness assertions for repositories that intentionally lack local `.onnx/.h5` artifacts.
+- 2026-03-05: Implemented the research-parity input/GT discovery pipeline in Go (lead extraction, staged artifacts, normalizer, post-processing, contract-source switch, mapping persistence hooks, and planner order gating) and validated locally with inspect/planner/cli/state suites plus fixture E2E (`go test ./internal/adapters/inspect`, `go test ./internal/adapters/planner`, `go test ./internal/cli`, `go test ./internal/state`, `go test ./internal/e2e/fixtures`, `go test ./...`, `bash scripts/fixtures_run_checks.sh`, `make test`); step statuses remain `PENDING` until commit/push/PR/branch CI per workflow rules.
+- 2026-03-05: Completed Step `10M1G` by adding research-target fixture parity coverage (`yolov5_visdrone`, `ultralytics`, `imdb`) and optional runtime signature corroboration (ONNX/Keras best-effort) integrated into discovery comparison reports.
 
 ## Purpose / Exit Target
 
@@ -54,8 +57,8 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | G16 | README docs requirements + operator handoff | README/docs do not yet describe detection->suggest->author->validate authoring loop by capability | Onboarding and operations remain ambiguous for the core concierge value proposition | 14A |
 | G17 | V1 quality gate requirement: commit approval must run after delta-scoped integration checks | Pre-commit stage is implemented with step-local validation and changed-file syntax gates (`10B1`) | Closed for runtime commit ordering and delta quality gates; keep regression coverage | 10B1 (`ACCEPTED`) |
 | G18 | README §10 + user requirement: agent tasks need Tensorleap domain context plus strict scoped edits | Agent context pipeline is implemented and merged (knowledge pack, scoped policy, repo context pack, structured prompt wiring) | Closed for context injection baseline; fixture-level context-quality assertions remain pending | 10C-10F (`ACCEPTED`), 12H |
-| G19 | User requirement (2026-03-04 + 2026-03-05): enforce mandatory contract order `preprocess -> input encoders -> GT encoders -> integration test` and stop deriving encoder requirements from integration-test calls | Current inspector/planner flow can surface integration-test missing before encoder requirements are actionable; previous `10M1` requirement-source attempt did not reliably recover encoder contracts | Encoder authoring can be misordered/broken, and integration-test prompts can appear before encoder contracts are grounded | 10M1F (`PENDING`) |
-| G20 | `RESEARCH.md` conclusions (2026-03-05): replicate Python input/GT discovery success in Go with staged artifacts and semantic-first evaluation | No production Go pipeline persists `lead_pack`, `agent_prompt_bundle`, `agent_raw_output`, `normalized_findings`, and `comparison_report`; normalization and branch heuristics are not research-parity | Python-proven discovery quality cannot be reproduced deterministically in Concierge runtime | 10M1A-10M1E, 10M1G |
+| G19 | User requirement (2026-03-04 + 2026-03-05): enforce mandatory contract order `preprocess -> input encoders -> GT encoders -> integration test` and stop deriving encoder requirements from integration-test calls | Inspector/planner now gate integration-test authoring behind encoder mapping confirmation and no longer derive encoder requirements from integration-test call graphs | Closed for ordering+requirement-source behavior; keep regression coverage | 10M1F (`DONE`) |
+| G20 | `RESEARCH.md` conclusions (2026-03-05): replicate Python input/GT discovery success in Go with staged artifacts and semantic-first evaluation | Go runtime now persists staged discovery artifacts (`lead_pack`, `agent_prompt_bundle`, `agent_raw_output`, `normalized_findings`, `comparison_report`) with framework-agnostic extraction + normalizer/post-processing plus optional runtime-signature corroboration notes/diffs | Closed for current research-parity scope; keep regression coverage | 10M1A-10M1G (`DONE`) |
 
 ## Progress
 
@@ -103,13 +106,13 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 10K: Input-encoder suggestion and authoring flow | `ACCEPTED` | 2026-03-04 (`main`, commit `2b90758`) | Render missing-input suggestions to users and pass symbol-level context to authoring executor. |
 | Step 10L: GT-encoder need detection | `ACCEPTED` | 2026-03-04 (`main`, commit `2b90758`) | Detect GT encoder deficits and labeled-subset contract violations. |
 | Step 10M: GT-encoder suggestion and authoring flow | `ACCEPTED` | 2026-03-04 (`main`, commit `2b90758`) | Render GT-target suggestions and enforce labeled-subset constraints in authoring tasks. |
-| Step 10M1A: Input/GT discovery pipeline stage contracts + artifact persistence | `PENDING` | — | Port research pipeline stage model into Go with typed artifacts (`fixture_state`, `lead_pack`, `agent_prompt_bundle`, `agent_raw_output`, `normalized_findings`, `comparison_report`) persisted per iteration. |
-| Step 10M1B: Framework-agnostic lead extraction in Go | `PENDING` | — | Implement deterministic code/artifact signal extraction and framework detection (`pytorch`, `tensorflow`, `mixed`, `unknown`) with ranked lead output. |
-| Step 10M1C: Semantic investigator prompt/run plumbing | `PENDING` | — | Add discovery-specific agent prompt bundle, metadata capture, and quality gates that treat lead-pack read confirmation as informational when leads are injected directly. |
-| Step 10M1D: Multi-shape findings normalizer hardening | `PENDING` | — | Accept schema variants and synonymous fields from agent outputs; fail with actionable diagnostics on malformed or empty normalized payloads. |
-| Step 10M1E: Branch-aware input/GT post-processing rules | `PENDING` | — | Add deterministic tokenizer-dict splitting and resolvable branch-priority heuristics while retaining conditional alternatives. |
-| Step 10M1F: User mapping confirmation + strict contract-order planner gating | `PENDING` | — | Require user confirmation/adjustment of proposed input/GT mappings, persist accepted contracts, enforce `preprocess -> input -> GT -> integration-test` ordering, and remove integration-test call graph as encoder requirement source. |
-| Step 10M1G: Fixture parity + optional runtime signature corroboration | `PENDING` | — | Validate Go discovery pipeline against research-success fixtures (`yolov5_visdrone`, `ultralytics`) with `imdb` edge-case coverage and optional ONNX/Keras signature corroboration. |
+| Step 10M1A: Input/GT discovery pipeline stage contracts + artifact persistence | `DONE` | 2026-03-05 | Port research pipeline stage model into Go with typed artifacts (`fixture_state`, `lead_pack`, `agent_prompt_bundle`, `agent_raw_output`, `normalized_findings`, `comparison_report`) persisted per iteration. |
+| Step 10M1B: Framework-agnostic lead extraction in Go | `DONE` | 2026-03-05 | Implement deterministic code/artifact signal extraction and framework detection (`pytorch`, `tensorflow`, `mixed`, `unknown`) with ranked lead output. |
+| Step 10M1C: Semantic investigator prompt/run plumbing | `DONE` | 2026-03-05 | Add discovery-specific agent prompt bundle, metadata capture, and quality gates that treat lead-pack read confirmation as informational when leads are injected directly. |
+| Step 10M1D: Multi-shape findings normalizer hardening | `DONE` | 2026-03-05 | Accept schema variants and synonymous fields from agent outputs; fail with actionable diagnostics on malformed or empty normalized payloads. |
+| Step 10M1E: Branch-aware input/GT post-processing rules | `DONE` | 2026-03-05 | Add deterministic tokenizer-dict splitting and resolvable branch-priority heuristics while retaining conditional alternatives. |
+| Step 10M1F: User mapping confirmation + strict contract-order planner gating | `DONE` | 2026-03-05 | Require user confirmation/adjustment of proposed input/GT mappings, persist accepted contracts, enforce `preprocess -> input -> GT -> integration-test` ordering, and remove integration-test call graph as encoder requirement source. |
+| Step 10M1G: Fixture parity + optional runtime signature corroboration | `DONE` | 2026-03-05 | Validate Go discovery pipeline against research-success fixtures (`yolov5_visdrone`, `ultralytics`) with `imdb` edge-case coverage and optional ONNX/Keras signature corroboration. |
 | Step 10N: Integration-test wiring need detection | `PENDING` | — | Add AST-based required-call detection for `@tensorleap_integration_test` paths. |
 | Step 10O: Integration-test wiring authoring flow | `PENDING` | — | Add targeted authoring objective to wire missing integration-test calls deterministically. |
 | Step 11A: Real runtime harness core (Layer 2) | `PENDING` | — | Replace stub harness with runtime script, schema-v1 events, and default-on validation. |
@@ -146,7 +149,7 @@ Out of scope for this release train:
 
 ## Detailed Step Specifications
 
-### Step 10M1B: Framework-agnostic lead extraction in Go (`PENDING`)
+### Step 10M1B: Framework-agnostic lead extraction in Go (`DONE`)
 
 Objective:
 
@@ -196,7 +199,7 @@ Rollback boundary:
 
 ---
 
-### Step 10M1C: Semantic investigator prompt/run plumbing (`PENDING`)
+### Step 10M1C: Semantic investigator prompt/run plumbing (`DONE`)
 
 Objective:
 
@@ -250,7 +253,7 @@ Rollback boundary:
 
 ---
 
-### Step 10M1D: Multi-shape findings normalizer hardening (`PENDING`)
+### Step 10M1D: Multi-shape findings normalizer hardening (`DONE`)
 
 Objective:
 
@@ -303,7 +306,7 @@ Rollback boundary:
 
 ---
 
-### Step 10M1E: Branch-aware input/GT post-processing rules (`PENDING`)
+### Step 10M1E: Branch-aware input/GT post-processing rules (`DONE`)
 
 Objective:
 
@@ -353,7 +356,7 @@ Rollback boundary:
 
 ---
 
-### Step 10M1F: User mapping confirmation + strict contract-order planner gating (`PENDING`)
+### Step 10M1F: User mapping confirmation + strict contract-order planner gating (`DONE`)
 
 Objective:
 
@@ -413,7 +416,7 @@ Rollback boundary:
 
 ---
 
-### Step 10M1G: Fixture parity + optional runtime signature corroboration (`PENDING`)
+### Step 10M1G: Fixture parity + optional runtime signature corroboration (`DONE`)
 
 Objective:
 

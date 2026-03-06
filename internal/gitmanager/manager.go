@@ -131,8 +131,11 @@ func (m *Manager) Handle(ctx context.Context, snapshot core.WorkspaceSnapshot, r
 	}
 
 	message := CommitMessage(result.Step, result.Summary)
-	if _, err := m.runGit(ctx, repoRoot, "add", "-A", "--", ".", conciergePathExclude); err != nil {
+	if _, err := m.runGit(ctx, repoRoot, "add", "-A", "--", "."); err != nil {
 		return core.GitDecision{}, core.WrapError(core.KindUnknown, "gitmanager.handle.add", err)
+	}
+	if _, err := m.runGit(ctx, repoRoot, "reset", "--quiet", "--", ".concierge"); err != nil {
+		return core.GitDecision{}, core.WrapError(core.KindUnknown, "gitmanager.handle.reset_concierge", err)
 	}
 	if _, err := m.runGit(ctx, repoRoot, "commit", "-m", message); err != nil {
 		return core.GitDecision{}, core.WrapError(core.KindUnknown, "gitmanager.handle.commit", err)

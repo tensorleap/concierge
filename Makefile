@@ -12,7 +12,7 @@ LDFLAGS := -s -w \
 
 UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v '/internal/e2e/fixtures$$')
 
-.PHONY: build test test-fixtures clean fixtures-prepare fixtures-verify fixtures-reset fixtures-checks
+.PHONY: build test test-fixtures test-live-claude clean fixtures-prepare fixtures-verify fixtures-reset fixtures-checks
 
 build:
 	@mkdir -p $(BIN_DIR)
@@ -20,6 +20,9 @@ build:
 
 test:
 	go test $(UNIT_TEST_PACKAGES)
+
+test-live-claude:
+	CONCIERGE_LIVE_CLAUDE=1 go test ./internal/agent ./internal/cli -run 'LiveClaude' -v
 
 test-fixtures: fixtures-prepare fixtures-verify
 	go test ./internal/e2e/fixtures -v

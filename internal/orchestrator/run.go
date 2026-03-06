@@ -20,6 +20,7 @@ const (
 	RunStopReasonSuccess       RunStopReason = "success"
 	RunStopReasonMaxIterations RunStopReason = "max_iterations"
 	RunStopReasonCancelled     RunStopReason = "cancelled"
+	RunStopReasonInterrupted   RunStopReason = "interrupted_step"
 )
 
 // RunResult aggregates per-iteration reports for one run invocation.
@@ -44,7 +45,7 @@ func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOpti
 			}, err
 		}
 
-		report, snapshot, err := e.runIteration(ctx, req, opts.BeforeReport)
+		report, snapshot, err := e.runIteration(ctx, req, i+1, opts.BeforeReport)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return RunResult{
@@ -61,6 +62,12 @@ func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOpti
 				return RunResult{Reports: reports}, err
 			}
 		}
+		if hasInterruptedAgent(report) {
+			return RunResult{
+				Reports:    reports,
+				StopReason: RunStopReasonInterrupted,
+			}, nil
+		}
 		if report.Step.ID == core.EnsureStepComplete {
 			return RunResult{
 				Reports:    reports,
@@ -73,4 +80,13 @@ func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOpti
 		Reports:    reports,
 		StopReason: RunStopReasonMaxIterations,
 	}, nil
+}
+
+func hasInterruptedAgent(report core.IterationReport) bool {
+	for _, item := range report.Evidence {
+		if item.Name == "agent.interrupted" && item.Value == "true" {
+			return true
+		}
+	}
+	return false
 }

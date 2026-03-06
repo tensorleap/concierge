@@ -1,6 +1,10 @@
 package agent
 
-import "github.com/tensorleap/concierge/internal/core"
+import (
+	"time"
+
+	"github.com/tensorleap/concierge/internal/core"
+)
 
 // AgentTask describes one task-scoped objective delegated to a coding agent.
 type AgentTask struct {
@@ -49,6 +53,9 @@ type AgentDomainKnowledgePack struct {
 type AgentResult struct {
 	Applied        bool                `json:"applied"`
 	TranscriptPath string              `json:"transcriptPath,omitempty"`
+	RawStreamPath  string              `json:"rawStreamPath,omitempty"`
 	Summary        string              `json:"summary,omitempty"`
+	Interrupted    bool                `json:"interrupted,omitempty"`
+	LastActivityAt time.Time           `json:"lastActivityAt,omitempty"`
 	Evidence       []core.EvidenceItem `json:"evidence,omitempty"`
 }

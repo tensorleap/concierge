@@ -57,11 +57,17 @@ func TestRunNonDryRunExecutesSingleIterationByDefault(t *testing.T) {
 		!strings.Contains(output, "Warning: Leap CLI should be installed and authenticated") {
 		t.Fatalf("expected completed checklist or advisory leap-cli warning in output, got: %q", output)
 	}
-	if !strings.Contains(output, "Next steps:") {
-		t.Fatalf("expected next-steps guidance in output, got: %q", output)
-	}
-	if !strings.Contains(output, "run `leap push` from the repository root.") {
-		t.Fatalf("expected leap push guidance in output, got: %q", output)
+	if strings.Contains(output, "Warning: Leap CLI should be installed and authenticated") {
+		if !strings.Contains(output, "Next step: run `leap --version`;") {
+			t.Fatalf("expected leap-cli warning next-step guidance in output, got: %q", output)
+		}
+	} else {
+		if !strings.Contains(output, "Next steps:") {
+			t.Fatalf("expected next-steps guidance in output, got: %q", output)
+		}
+		if !strings.Contains(output, "run `leap push` from the repository root.") {
+			t.Fatalf("expected leap push guidance in output, got: %q", output)
+		}
 	}
 }
 

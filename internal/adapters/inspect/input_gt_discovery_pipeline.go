@@ -19,8 +19,38 @@ const (
 )
 
 var (
-	inputGTIdentifierPattern   = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\b`)
-	inputGTTokenizerKeyPattern = regexp.MustCompile(`['"]((?:input_ids|attention_mask|attention_masks|token_type_ids|token_type_id|pixel_values))['"]`)
+	inputGTIdentifierPattern    = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\b`)
+	inputGTTokenizerKeyPattern  = regexp.MustCompile(`['"]((?:input_ids|attention_mask|attention_masks|token_type_ids|token_type_id|pixel_values))['"]`)
+	inputGTGenericIdentifierSet = map[string]struct{}{
+		"i":        {},
+		"j":        {},
+		"k":        {},
+		"x":        {},
+		"y":        {},
+		"z":        {},
+		"item":     {},
+		"items":    {},
+		"input":    {},
+		"inputs":   {},
+		"inp":      {},
+		"sample":   {},
+		"samples":  {},
+		"datum":    {},
+		"data":     {},
+		"value":    {},
+		"values":   {},
+		"val":      {},
+		"arg":      {},
+		"args":     {},
+		"row":      {},
+		"rows":     {},
+		"col":      {},
+		"cols":     {},
+		"batch":    {},
+		"batches":  {},
+		"feature":  {},
+		"features": {},
+	}
 )
 
 func inspectInputGTDiscovery(ctx context.Context, snapshot core.WorkspaceSnapshot, status *core.IntegrationStatus) error {
@@ -99,6 +129,7 @@ func buildInputGTAgentPromptBundle(
 		"You are a read-only semantic investigator for Tensorleap input/ground-truth discovery.",
 		"Trace repository evidence from the provided lead summary.",
 		"Return evidence-backed candidates and uncertainty notes.",
+		"Ignore generic iterator/placeholder variable names (for example input, item, x, i) unless there is direct evidence they map to real model inputs.",
 		"Do not edit files.",
 	}, "\n"))
 
@@ -106,6 +137,7 @@ func buildInputGTAgentPromptBundle(
 		fmt.Sprintf("Repository: %s", repoRoot),
 		fmt.Sprintf("Method: %s", leadPack.MethodVersion),
 		"Task: identify candidate model inputs, candidate ground truths, and encoder mapping suggestions.",
+		"Use discretion to avoid generic placeholders as input names unless strong binding evidence exists.",
 		"Lead summary:",
 		leadSummary,
 	}, "\n"))
@@ -267,11 +299,13 @@ func extractInputGTCandidatesFromLine(line string) ([]string, []string) {
 }
 
 func classifyInputIdentifier(identifier string) (string, bool) {
+	if shouldIgnoreGenericIdentifier(identifier) {
+		return "", false
+	}
+
 	switch identifier {
 	case "image", "images", "img", "imgs", "pixel_values":
 		return "image", true
-	case "input", "inputs":
-		return "input", true
 	case "input_ids", "input_id":
 		return "input_ids", true
 	case "attention_mask", "attention_masks":
@@ -286,6 +320,10 @@ func classifyInputIdentifier(identifier string) (string, bool) {
 }
 
 func classifyGroundTruthIdentifier(identifier string) (string, bool) {
+	if shouldIgnoreGenericIdentifier(identifier) {
+		return "", false
+	}
+
 	switch identifier {
 	case "label", "labels", "class", "classes", "cls", "targets", "target", "gt", "ground_truth":
 		return "classes", true
@@ -298,6 +336,15 @@ func classifyGroundTruthIdentifier(identifier string) (string, bool) {
 		return "classes", true
 	}
 	return "", false
+}
+
+func shouldIgnoreGenericIdentifier(identifier string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(identifier))
+	if normalized == "" {
+		return true
+	}
+	_, found := inputGTGenericIdentifierSet[normalized]
+	return found
 }
 
 func canonicalDiscoveredSymbol(raw string) string {

@@ -3,8 +3,8 @@ package fixtures
 import (
 	"context"
 	"encoding/json"
-	"io/fs"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -49,12 +49,20 @@ func TestFixturePreVsPostIssueDeltas(t *testing.T) {
 				core.IssueCodeLeapYAMLMissing,
 				core.IssueCodeIntegrationScriptMissing,
 				core.IssueCodePreprocessFunctionMissing,
+				core.IssueCodeInputEncoderMissing,
+				core.IssueCodeInputEncoderCoverageIncomplete,
+				core.IssueCodeGTEncoderMissing,
+				core.IssueCodeGTEncoderCoverageIncomplete,
 			) {
 				t.Fatalf(
-					"pre variant must include at least one integration-contract bootstrap issue (%q, %q, or %q), got %+v",
+					"pre variant must include at least one bootstrap/authoring issue (%q, %q, %q, %q, %q, %q, or %q), got %+v",
 					core.IssueCodeLeapYAMLMissing,
 					core.IssueCodeIntegrationScriptMissing,
 					core.IssueCodePreprocessFunctionMissing,
+					core.IssueCodeInputEncoderMissing,
+					core.IssueCodeInputEncoderCoverageIncomplete,
+					core.IssueCodeGTEncoderMissing,
+					core.IssueCodeGTEncoderCoverageIncomplete,
 					preStatus.Issues,
 				)
 			}
@@ -82,6 +90,8 @@ func TestFixturePlannerPrimaryStepPreVariant(t *testing.T) {
 		core.EnsureStepLeapYAML:                {},
 		core.EnsureStepIntegrationScript:       {},
 		core.EnsureStepPreprocessContract:      {},
+		core.EnsureStepInputEncoders:           {},
+		core.EnsureStepGroundTruthEncoders:     {},
 		core.EnsureStepIntegrationTestContract: {},
 	}
 

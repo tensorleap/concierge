@@ -1,0 +1,10 @@
+Experiment: webinar__pre__framework-leads-v1__r007
+Repo: /Users/assaf/Dropbox/tensorleap/worktrees/concierge/research/inputs/.fixtures/webinar/pre
+Method: framework-leads-v1
+Python files scanned: 2
+Files with hits: 0
+Total signal hits: 0
+Framework detection: tensorflow (high)
+Framework scores: pytorch=5.0, tensorflow=25.0
+
+Top lead files:

@@ -87,6 +87,12 @@ func (i *BaselineInspector) Inspect(ctx context.Context, snapshot core.Workspace
 	if err := inspectModelContract(repoRoot, contract, snapshot.SelectedModelPath, &status); err != nil {
 		return core.IntegrationStatus{}, err
 	}
+	if status.Contracts == nil && !hasLeapYAML {
+		status.Contracts = &core.IntegrationContracts{}
+	}
+	if err := inspectInputGTDiscovery(ctx, snapshot, &status); err != nil {
+		return core.IntegrationStatus{}, err
+	}
 	inspectInputEncoderContract(repoRoot, &status)
 	inspectGTEncoderContract(repoRoot, &status)
 	inspectRuntimeContract(snapshot, &status)

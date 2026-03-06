@@ -1,0 +1,1646 @@
+{
+  "schema_version": "1.0.0",
+  "method_version": "framework-leads-v1",
+  "generated_at": "2026-03-05T10:53:34+00:00",
+  "experiment": {
+    "id": "yolov5_visdrone__pre__framework-leads-v1__r009",
+    "repo_id": "yolov5_visdrone",
+    "repo_variant": "pre",
+    "run_id": "r009"
+  },
+  "repo": {
+    "path": "/Users/assaf/Dropbox/tensorleap/worktrees/concierge/research/inputs/.fixtures/yolov5_visdrone/pre",
+    "python_files_scanned": 35
+  },
+  "framework_detection": {
+    "candidate": "pytorch",
+    "confidence": "high",
+    "scores": {
+      "pytorch": 314.0,
+      "tensorflow": 90.0
+    },
+    "components": {
+      "signal_scores": {
+        "pytorch": 295.0,
+        "tensorflow": 78.0
+      },
+      "artifact_scores": {
+        "pytorch": 19.0,
+        "tensorflow": 12.0
+      }
+    },
+    "evidence": [
+      {
+        "framework": "tensorflow",
+        "type": "dependency_file",
+        "path": "poetry.lock",
+        "detail": "matched=keras,tensorflow,tensorflow-datasets",
+        "weight": 7.0
+      },
+      {
+        "framework": "pytorch",
+        "type": "dependency_file",
+        "path": "poetry.lock",
+        "detail": "matched=lightning,torch,torchvision",
+        "weight": 7.0
+      },
+      {
+        "framework": "pytorch",
+        "type": "dependency_file",
+        "path": "pyproject.toml",
+        "detail": "matched=torch,torchvision",
+        "weight": 6.0
+      },
+      {
+        "framework": "pytorch",
+        "type": "dependency_file",
+        "path": "requirements.txt",
+        "detail": "matched=torch,torchvision",
+        "weight": 6.0
+      },
+      {
+        "framework": "tensorflow",
+        "type": "dependency_file",
+        "path": "requirements.txt",
+        "detail": "matched=tensorflow",
+        "weight": 5.0
+      }
+    ]
+  },
+  "signals": [
+    {
+      "id": "torch_import",
+      "framework": "pytorch",
+      "description": "Imports torch or modules under torch.*",
+      "weight": 5.0,
+      "tier": "primary"
+    },
+    {
+      "id": "dataloader_import",
+      "framework": "pytorch",
+      "description": "Imports DataLoader from torch.utils.data",
+      "weight": 7.0,
+      "tier": "primary"
+    },
+    {
+      "id": "dataloader_call",
+      "framework": "pytorch",
+      "description": "DataLoader(...) call site",
+      "weight": 10.0,
+      "tier": "primary"
+    },
+    {
+      "id": "dataset_subclass",
+      "framework": "pytorch",
+      "description": "class X(...Dataset...) definition",
+      "weight": 8.0,
+      "tier": "primary"
+    },
+    {
+      "id": "dataset_import",
+      "framework": "pytorch",
+      "description": "Dataset import from torch.utils.data",
+      "weight": 5.0,
+      "tier": "primary"
+    },
+    {
+      "id": "torch_forward_def",
+      "framework": "pytorch",
+      "description": "forward(...) method definition",
+      "weight": 4.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "torch_load",
+      "framework": "pytorch",
+      "description": "torch.load(...) call",
+      "weight": 3.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "tensorflow_import",
+      "framework": "tensorflow",
+      "description": "Imports tensorflow",
+      "weight": 6.0,
+      "tier": "primary"
+    },
+    {
+      "id": "keras_import",
+      "framework": "tensorflow",
+      "description": "Imports keras APIs",
+      "weight": 5.0,
+      "tier": "primary"
+    },
+    {
+      "id": "tf_data_dataset",
+      "framework": "tensorflow",
+      "description": "tf.data.Dataset usage",
+      "weight": 9.0,
+      "tier": "primary"
+    },
+    {
+      "id": "tf_data_constructors",
+      "framework": "tensorflow",
+      "description": "tf.data constructor usage",
+      "weight": 8.0,
+      "tier": "primary"
+    },
+    {
+      "id": "tf_record_or_text_dataset",
+      "framework": "tensorflow",
+      "description": "TFRecord/TextLine/Csv dataset reader usage",
+      "weight": 8.0,
+      "tier": "primary"
+    },
+    {
+      "id": "tf_data_pipeline_ops",
+      "framework": "tensorflow",
+      "description": "tf.data pipeline ops (map/batch/shuffle/prefetch/etc.)",
+      "weight": 6.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "keras_fit",
+      "framework": "tensorflow",
+      "description": "Keras fit(...) call",
+      "weight": 8.0,
+      "tier": "primary"
+    },
+    {
+      "id": "keras_evaluate_or_predict",
+      "framework": "tensorflow",
+      "description": "Keras evaluate/predict(...) call",
+      "weight": 6.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "keras_dataset_utils",
+      "framework": "tensorflow",
+      "description": "Keras dataset loader utility usage",
+      "weight": 7.0,
+      "tier": "primary"
+    },
+    {
+      "id": "keras_sequence_or_pydataset",
+      "framework": "tensorflow",
+      "description": "Keras Sequence/PyDataset usage",
+      "weight": 5.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "tfds_load",
+      "framework": "tensorflow",
+      "description": "tensorflow_datasets usage",
+      "weight": 6.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "train_fn",
+      "framework": "agnostic",
+      "description": "Training function definition",
+      "weight": 5.0,
+      "tier": "primary"
+    },
+    {
+      "id": "validate_fn",
+      "framework": "agnostic",
+      "description": "Validation/evaluation function definition",
+      "weight": 5.0,
+      "tier": "primary"
+    },
+    {
+      "id": "main_entry",
+      "framework": "agnostic",
+      "description": "Python __main__ entry point",
+      "weight": 3.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "batch_unpack_loop",
+      "framework": "agnostic",
+      "description": "for-loop tuple unpacking pattern",
+      "weight": 4.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "loss_call",
+      "framework": "agnostic",
+      "description": "loss(...) or criterion(...) usage",
+      "weight": 3.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "model_call",
+      "framework": "agnostic",
+      "description": "model(...) invocation",
+      "weight": 3.0,
+      "tier": "secondary"
+    }
+  ],
+  "files": [
+    {
+      "path": "utils/dataloaders.py",
+      "score": 77.0,
+      "framework_scores": {
+        "pytorch": 45.0,
+        "tensorflow": 12.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "batch_unpack_loop",
+          "framework": "agnostic",
+          "count": 10,
+          "contribution": 20.0,
+          "occurrences": [
+            {
+              "line": 329,
+              "snippet": "for i, s in enumerate(sources):  # index, source"
+            },
+            {
+              "line": 496,
+              "snippet": "for i, (label, segment) in enumerate(zip(self.labels, self.segments)):"
+            },
+            {
+              "line": 540,
+              "snippet": "for i, x in pbar:"
+            },
+            {
+              "line": 559,
+              "snippet": "for im_file, lb, shape, segments, nm_f, nf_f, ne_f, nc_f, msg in pbar:"
+            },
+            {
+              "line": 700,
+              "snippet": "for i, index in enumerate(indices):"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 3,
+          "contribution": 15.0,
+          "occurrences": [
+            {
+              "line": 23,
+              "snippet": "import torch"
+            },
+            {
+              "line": 24,
+              "snippet": "import torch.nn.functional as F"
+            },
+            {
+              "line": 28,
+              "snippet": "from torch.utils.data import DataLoader, Dataset, dataloader, distributed"
+            }
+          ]
+        },
+        {
+          "signal_id": "tf_data_pipeline_ops",
+          "framework": "tensorflow",
+          "count": 2,
+          "contribution": 12.0,
+          "occurrences": [
+            {
+              "line": 699,
+              "snippet": "random.shuffle(indices)"
+            },
+            {
+              "line": 756,
+              "snippet": "random.shuffle(indices)"
+            }
+          ]
+        },
+        {
+          "signal_id": "dataloader_call",
+          "framework": "pytorch",
+          "count": 1,
+          "contribution": 10.0,
+          "occurrences": [
+            {
+              "line": 1156,
+              "snippet": "generator=generator)  # or DataLoader(persistent_workers=True)"
+            }
+          ]
+        },
+        {
+          "signal_id": "dataset_subclass",
+          "framework": "pytorch",
+          "count": 1,
+          "contribution": 8.0,
+          "occurrences": [
+            {
+              "line": 410,
+              "snippet": "class LoadImagesAndLabels(Dataset):"
+            }
+          ]
+        },
+        {
+          "signal_id": "dataloader_import",
+          "framework": "pytorch",
+          "count": 1,
+          "contribution": 7.0,
+          "occurrences": [
+            {
+              "line": 28,
+              "snippet": "from torch.utils.data import DataLoader, Dataset, dataloader, distributed"
+            }
+          ]
+        },
+        {
+          "signal_id": "dataset_import",
+          "framework": "pytorch",
+          "count": 1,
+          "contribution": 5.0,
+          "occurrences": [
+            {
+              "line": 28,
+              "snippet": "from torch.utils.data import DataLoader, Dataset, dataloader, distributed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "export.py",
+      "score": 66.0,
+      "framework_scores": {
+        "pytorch": 10.0,
+        "tensorflow": 42.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "tensorflow_import",
+          "framework": "tensorflow",
+          "count": 6,
+          "contribution": 30.0,
+          "occurrences": [
+            {
+              "line": 300,
+              "snippet": "import tensorflow as tf"
+            },
+            {
+              "line": 301,
+              "snippet": "from tensorflow.python.framework.convert_to_constants import convert_variables_to_constants_v2"
+            },
+            {
+              "line": 341,
+              "snippet": "import tensorflow as tf"
+            },
+            {
+              "line": 342,
+              "snippet": "from tensorflow.python.framework.convert_to_constants import convert_variables_to_constants_v2"
+            },
+            {
+              "line": 362,
+              "snippet": "import tensorflow as tf"
+            }
+          ]
+        },
+        {
+          "signal_id": "keras_evaluate_or_predict",
+          "framework": "tensorflow",
+          "count": 2,
+          "contribution": 12.0,
+          "occurrences": [
+            {
+              "line": 311,
+              "snippet": "_ = tf_model.predict(im, tf_nms, agnostic_nms, topk_per_class, topk_all, iou_thres, conf_thres)"
+            },
+            {
+              "line": 313,
+              "snippet": "outputs = tf_model.predict(inputs, tf_nms, agnostic_nms, topk_per_class, topk_all, iou_thres, conf_thres)"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 2,
+          "contribution": 10.0,
+          "occurrences": [
+            {
+              "line": 56,
+              "snippet": "import torch"
+            },
+            {
+              "line": 58,
+              "snippet": "from torch.utils.mobile_optimizer import optimize_for_mobile"
+            }
+          ]
+        },
+        {
+          "signal_id": "batch_unpack_loop",
+          "framework": "agnostic",
+          "count": 2,
+          "contribution": 8.0,
+          "occurrences": [
+            {
+              "line": 147,
+              "snippet": "for k, v in d.items():"
+            },
+            {
+              "line": 511,
+              "snippet": "for k, m in model.named_modules():"
+            }
+          ]
+        },
+        {
+          "signal_id": "main_entry",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 614,
+              "snippet": "if __name__ == \"__main__\":"
+            }
+          ]
+        },
+        {
+          "signal_id": "model_call",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 518,
+              "snippet": "y = model(im)  # dry runs"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "train.py",
+      "score": 57.0,
+      "framework_scores": {
+        "pytorch": 26.0,
+        "tensorflow": 0.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "batch_unpack_loop",
+          "framework": "agnostic",
+          "count": 6,
+          "contribution": 20.0,
+          "occurrences": [
+            {
+              "line": 133,
+              "snippet": "for k, v in model.named_parameters():"
+            },
+            {
+              "line": 283,
+              "snippet": "for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------"
+            },
+            {
+              "line": 293,
+              "snippet": "for j, x in enumerate(optimizer.param_groups):"
+            },
+            {
+              "line": 599,
+              "snippet": "for i, k in enumerate(hyp.keys()):  # plt.hist(v.ravel(), 300)"
+            },
+            {
+              "line": 603,
+              "snippet": "for k, v in meta.items():"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 4,
+          "contribution": 20.0,
+          "occurrences": [
+            {
+              "line": 26,
+              "snippet": "import torch"
+            },
+            {
+              "line": 27,
+              "snippet": "import torch.distributed as dist"
+            },
+            {
+              "line": 28,
+              "snippet": "import torch.nn as nn"
+            },
+            {
+              "line": 30,
+              "snippet": "from torch.optim import lr_scheduler"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_load",
+          "framework": "pytorch",
+          "count": 2,
+          "contribution": 6.0,
+          "occurrences": [
+            {
+              "line": 120,
+              "snippet": "ckpt = torch.load(weights, map_location='cpu')  # load checkpoint to CPU to avoid CUDA memory leak"
+            },
+            {
+              "line": 496,
+              "snippet": "d = torch.load(last, map_location='cpu')['opt']"
+            }
+          ]
+        },
+        {
+          "signal_id": "train_fn",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 5.0,
+          "occurrences": [
+            {
+              "line": 64,
+              "snippet": "def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictionary"
+            }
+          ]
+        },
+        {
+          "signal_id": "main_entry",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 630,
+              "snippet": "if __name__ == \"__main__\":"
+            }
+          ]
+        },
+        {
+          "signal_id": "model_call",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 309,
+              "snippet": "pred = model(imgs)  # forward"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "classify/train.py",
+      "score": 47.0,
+      "framework_scores": {
+        "pytorch": 25.0,
+        "tensorflow": 0.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 5,
+          "contribution": 25.0,
+          "occurrences": [
+            {
+              "line": 20,
+              "snippet": "import torch"
+            },
+            {
+              "line": 21,
+              "snippet": "import torch.distributed as dist"
+            },
+            {
+              "line": 22,
+              "snippet": "import torch.hub as hub"
+            },
+            {
+              "line": 23,
+              "snippet": "import torch.optim.lr_scheduler as lr_scheduler"
+            },
+            {
+              "line": 25,
+              "snippet": "from torch.cuda import amp"
+            }
+          ]
+        },
+        {
+          "signal_id": "batch_unpack_loop",
+          "framework": "agnostic",
+          "count": 2,
+          "contribution": 8.0,
+          "occurrences": [
+            {
+              "line": 173,
+              "snippet": "for i, (images, labels) in pbar:  # progress bar"
+            },
+            {
+              "line": 317,
+              "snippet": "for k, v in kwargs.items():"
+            }
+          ]
+        },
+        {
+          "signal_id": "train_fn",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 5.0,
+          "occurrences": [
+            {
+              "line": 50,
+              "snippet": "def train(opt, device):"
+            }
+          ]
+        },
+        {
+          "signal_id": "loss_call",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 178,
+              "snippet": "loss = criterion(model(images), labels)"
+            }
+          ]
+        },
+        {
+          "signal_id": "main_entry",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 323,
+              "snippet": "if __name__ == \"__main__\":"
+            }
+          ]
+        },
+        {
+          "signal_id": "model_call",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 178,
+              "snippet": "loss = criterion(model(images), labels)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "utils/loss.py",
+      "score": 47.0,
+      "framework_scores": {
+        "pytorch": 22.0,
+        "tensorflow": 18.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "tf_data_pipeline_ops",
+          "framework": "tensorflow",
+          "count": 3,
+          "contribution": 18.0,
+          "occurrences": [
+            {
+              "line": 182,
+              "snippet": "ai = torch.arange(na, device=self.device).float().view(na, 1).repeat(1, nt)  # same as .repeat_interleave(nt)"
+            },
+            {
+              "line": 183,
+              "snippet": "targets = torch.cat((targets.repeat(na, 1, 1), ai[..., None]), 2)  # append anchor indices"
+            },
+            {
+              "line": 216,
+              "snippet": "t = t.repeat((5, 1, 1))[j]"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_forward_def",
+          "framework": "pytorch",
+          "count": 3,
+          "contribution": 12.0,
+          "occurrences": [
+            {
+              "line": 25,
+              "snippet": "def forward(self, pred, true):"
+            },
+            {
+              "line": 45,
+              "snippet": "def forward(self, pred, true):"
+            },
+            {
+              "line": 75,
+              "snippet": "def forward(self, pred, true):"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 2,
+          "contribution": 10.0,
+          "occurrences": [
+            {
+              "line": 6,
+              "snippet": "import torch"
+            },
+            {
+              "line": 7,
+              "snippet": "import torch.nn as nn"
+            }
+          ]
+        },
+        {
+          "signal_id": "batch_unpack_loop",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 4.0,
+          "occurrences": [
+            {
+              "line": 128,
+              "snippet": "for i, pi in enumerate(p):  # layer index, layer predictions"
+            }
+          ]
+        },
+        {
+          "signal_id": "loss_call",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 154,
+              "snippet": "if self.nc > 1:  # cls loss (only if multiple classes)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "utils/torch_utils.py",
+      "score": 45.0,
+      "framework_scores": {
+        "pytorch": 25.0,
+        "tensorflow": 0.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 6,
+          "contribution": 25.0,
+          "occurrences": [
+            {
+              "line": 16,
+              "snippet": "import torch"
+            },
+            {
+              "line": 17,
+              "snippet": "import torch.distributed as dist"
+            },
+            {
+              "line": 18,
+              "snippet": "import torch.nn as nn"
+            },
+            {
+              "line": 19,
+              "snippet": "import torch.nn.functional as F"
+            },
+            {
+              "line": 20,
+              "snippet": "from torch.nn.parallel import DistributedDataParallel as DDP"
+            }
+          ]
+        },
+        {
+          "signal_id": "batch_unpack_loop",
+          "framework": "agnostic",
+          "count": 5,
+          "contribution": 20.0,
+          "occurrences": [
+            {
+              "line": 127,
+              "snippet": "for i, d in enumerate(devices):"
+            },
+            {
+              "line": 241,
+              "snippet": "for name, m in model.named_modules():"
+            },
+            {
+              "line": 277,
+              "snippet": "for i, (name, p) in enumerate(model.named_parameters()):"
+            },
+            {
+              "line": 310,
+              "snippet": "for k, v in b.__dict__.items():"
+            },
+            {
+              "line": 425,
+              "snippet": "for k, v in self.ema.state_dict().items():"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "val.py",
+      "score": 37.0,
+      "framework_scores": {
+        "pytorch": 5.0,
+        "tensorflow": 6.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "batch_unpack_loop",
+          "framework": "agnostic",
+          "count": 6,
+          "contribution": 20.0,
+          "occurrences": [
+            {
+              "line": 51,
+              "snippet": "for *xyxy, conf, cls in predn.tolist():"
+            },
+            {
+              "line": 63,
+              "snippet": "for p, b in zip(predn.tolist(), box.tolist()):"
+            },
+            {
+              "line": 193,
+              "snippet": "for batch_i, (im, targets, paths, shapes) in enumerate(pbar):"
+            },
+            {
+              "line": 221,
+              "snippet": "for si, pred in enumerate(out):"
+            },
+            {
+              "line": 281,
+              "snippet": "for i, c in enumerate(ap_class):"
+            }
+          ]
+        },
+        {
+          "signal_id": "keras_evaluate_or_predict",
+          "framework": "tensorflow",
+          "count": 1,
+          "contribution": 6.0,
+          "occurrences": [
+            {
+              "line": 314,
+              "snippet": "eval.evaluate()"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 1,
+          "contribution": 5.0,
+          "occurrences": [
+            {
+              "line": 28,
+              "snippet": "import torch"
+            }
+          ]
+        },
+        {
+          "signal_id": "main_entry",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 394,
+              "snippet": "if __name__ == \"__main__\":"
+            }
+          ]
+        },
+        {
+          "signal_id": "model_call",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 206,
+              "snippet": "out, train_out = model(im) if training else model(im, augment=augment, val=True)  # inference, loss outputs"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "utils/activations.py",
+      "score": 35.0,
+      "framework_scores": {
+        "pytorch": 35.0,
+        "tensorflow": 0.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "torch_forward_def",
+          "framework": "pytorch",
+          "count": 8,
+          "contribution": 20.0,
+          "occurrences": [
+            {
+              "line": 14,
+              "snippet": "def forward(x):"
+            },
+            {
+              "line": 21,
+              "snippet": "def forward(x):"
+            },
+            {
+              "line": 29,
+              "snippet": "def forward(x):"
+            },
+            {
+              "line": 38,
+              "snippet": "def forward(ctx, x):"
+            },
+            {
+              "line": 49,
+              "snippet": "def forward(self, x):"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 3,
+          "contribution": 15.0,
+          "occurrences": [
+            {
+              "line": 6,
+              "snippet": "import torch"
+            },
+            {
+              "line": 7,
+              "snippet": "import torch.nn as nn"
+            },
+            {
+              "line": 8,
+              "snippet": "import torch.nn.functional as F"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "utils/general.py",
+      "score": 32.0,
+      "framework_scores": {
+        "pytorch": 13.0,
+        "tensorflow": 0.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "batch_unpack_loop",
+          "framework": "agnostic",
+          "count": 4,
+          "contribution": 16.0,
+          "occurrences": [
+            {
+              "line": 364,
+              "snippet": "for i, r in enumerate(requirements):"
+            },
+            {
+              "line": 772,
+              "snippet": "for i, s in enumerate(segments):"
+            },
+            {
+              "line": 841,
+              "snippet": "for xi, x in enumerate(prediction):  # image index, image inference"
+            },
+            {
+              "line": 970,
+              "snippet": "for i, d in enumerate(x):  # per image"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 2,
+          "contribution": 10.0,
+          "occurrences": [
+            {
+              "line": 33,
+              "snippet": "import torch"
+            },
+            {
+              "line": 231,
+              "snippet": "import torch.backends.cudnn as cudnn"
+            }
+          ]
+        },
+        {
+          "signal_id": "model_call",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 995,
+              "snippet": "pred_cls2 = model(torch.Tensor(ims).to(d.device)).argmax(1)  # classifier prediction"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_load",
+          "framework": "pytorch",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 912,
+              "snippet": "x = torch.load(f, map_location=torch.device('cpu'))"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "detect.py",
+      "score": 31.0,
+      "framework_scores": {
+        "pytorch": 10.0,
+        "tensorflow": 0.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "batch_unpack_loop",
+          "framework": "agnostic",
+          "count": 3,
+          "contribution": 12.0,
+          "occurrences": [
+            {
+              "line": 111,
+              "snippet": "for path, im, im0s, vid_cap, s in dataset:"
+            },
+            {
+              "line": 135,
+              "snippet": "for i, det in enumerate(pred):  # per image"
+            },
+            {
+              "line": 160,
+              "snippet": "for *xyxy, conf, cls in reversed(det):"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 2,
+          "contribution": 10.0,
+          "occurrences": [
+            {
+              "line": 33,
+              "snippet": "import torch"
+            },
+            {
+              "line": 34,
+              "snippet": "import torch.backends.cudnn as cudnn"
+            }
+          ]
+        },
+        {
+          "signal_id": "model_call",
+          "framework": "agnostic",
+          "count": 2,
+          "contribution": 6.0,
+          "occurrences": [
+            {
+              "line": 123,
+              "snippet": "pred = model(im, augment=augment, visualize=visualize)"
+            },
+            {
+              "line": 213,
+              "snippet": "strip_optimizer(weights[0])  # update model (to fix SourceChangeWarning)"
+            }
+          ]
+        },
+        {
+          "signal_id": "main_entry",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 255,
+              "snippet": "if __name__ == \"__main__\":"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "utils/loggers/__init__.py",
+      "score": 29.0,
+      "framework_scores": {
+        "pytorch": 13.0,
+        "tensorflow": 0.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "batch_unpack_loop",
+          "framework": "agnostic",
+          "count": 4,
+          "contribution": 16.0,
+          "occurrences": [
+            {
+              "line": 169,
+              "snippet": "for k, v in x.items():"
+            },
+            {
+              "line": 172,
+              "snippet": "for k, v in x.items():"
+            },
+            {
+              "line": 179,
+              "snippet": "for i, name in enumerate(self.best_keys):"
+            },
+            {
+              "line": 267,
+              "snippet": "for k, v in metrics_dict.items():"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 2,
+          "contribution": 10.0,
+          "occurrences": [
+            {
+              "line": 11,
+              "snippet": "import torch"
+            },
+            {
+              "line": 12,
+              "snippet": "from torch.utils.tensorboard import SummaryWriter"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_load",
+          "framework": "pytorch",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 93,
+              "snippet": "run_id = torch.load(self.weights).get('wandb_id') if self.opt.resume and not wandb_artifact_resume else None"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "utils/metrics.py",
+      "score": 25.0,
+      "framework_scores": {
+        "pytorch": 5.0,
+        "tensorflow": 0.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "batch_unpack_loop",
+          "framework": "agnostic",
+          "count": 6,
+          "contribution": 20.0,
+          "occurrences": [
+            {
+              "line": 54,
+              "snippet": "for ci, c in enumerate(unique_classes):"
+            },
+            {
+              "line": 144,
+              "snippet": "for i, gc in enumerate(gt_classes):"
+            },
+            {
+              "line": 166,
+              "snippet": "for i, gc in enumerate(gt_classes):"
+            },
+            {
+              "line": 174,
+              "snippet": "for i, dc in enumerate(detection_classes):"
+            },
+            {
+              "line": 329,
+              "snippet": "for i, y in enumerate(py.T):"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 1,
+          "contribution": 5.0,
+          "occurrences": [
+            {
+              "line": 12,
+              "snippet": "import torch"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "utils/plots.py",
+      "score": 25.0,
+      "framework_scores": {
+        "pytorch": 5.0,
+        "tensorflow": 0.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "batch_unpack_loop",
+          "framework": "agnostic",
+          "count": 9,
+          "contribution": 20.0,
+          "occurrences": [
+            {
+              "line": 182,
+              "snippet": "for i, o in enumerate(output):"
+            },
+            {
+              "line": 183,
+              "snippet": "for *box, conf, cls in o.cpu().numpy():"
+            },
+            {
+              "line": 203,
+              "snippet": "for i, im in enumerate(images):"
+            },
+            {
+              "line": 240,
+              "snippet": "for j, box in enumerate(boxes.T.tolist()):"
+            },
+            {
+              "line": 377,
+              "snippet": "for cls, *box in labels[:1000]:"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 1,
+          "contribution": 5.0,
+          "occurrences": [
+            {
+              "line": 18,
+              "snippet": "import torch"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "classify/val.py",
+      "score": 22.0,
+      "framework_scores": {
+        "pytorch": 5.0,
+        "tensorflow": 0.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "batch_unpack_loop",
+          "framework": "agnostic",
+          "count": 2,
+          "contribution": 8.0,
+          "occurrences": [
+            {
+              "line": 91,
+              "snippet": "for images, labels in bar:"
+            },
+            {
+              "line": 118,
+              "snippet": "for i, c in enumerate(model.names):"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 1,
+          "contribution": 5.0,
+          "occurrences": [
+            {
+              "line": 14,
+              "snippet": "import torch"
+            }
+          ]
+        },
+        {
+          "signal_id": "loss_call",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 104,
+              "snippet": "loss += criterion(y, labels)"
+            }
+          ]
+        },
+        {
+          "signal_id": "main_entry",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 156,
+              "snippet": "if __name__ == \"__main__\":"
+            }
+          ]
+        },
+        {
+          "signal_id": "model_call",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 97,
+              "snippet": "y = model(images)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "utils/loggers/wandb/wandb_utils.py",
+      "score": 20.0,
+      "framework_scores": {
+        "pytorch": 0.0,
+        "tensorflow": 0.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "batch_unpack_loop",
+          "framework": "agnostic",
+          "count": 5,
+          "contribution": 20.0,
+          "occurrences": [
+            {
+              "line": 395,
+              "snippet": "for i, data in enumerate(tqdm(self.val_table.data)):"
+            },
+            {
+              "line": 426,
+              "snippet": "for si, (img, labels, paths, shapes) in enumerate(tqdm(dataset)):"
+            },
+            {
+              "line": 428,
+              "snippet": "for cls, *xywh in labels[:, 1:].tolist():"
+            },
+            {
+              "line": 457,
+              "snippet": "for *xyxy, conf, cls in predn.tolist():"
+            },
+            {
+              "line": 523,
+              "snippet": "for key, value in log_dict.items():"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "hubconf.py",
+      "score": 19.0,
+      "framework_scores": {
+        "pytorch": 13.0,
+        "tensorflow": 0.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 2,
+          "contribution": 10.0,
+          "occurrences": [
+            {
+              "line": 6,
+              "snippet": "import torch"
+            },
+            {
+              "line": 11,
+              "snippet": "import torch"
+            }
+          ]
+        },
+        {
+          "signal_id": "main_entry",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 127,
+              "snippet": "if __name__ == '__main__':"
+            }
+          ]
+        },
+        {
+          "signal_id": "model_call",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 156,
+              "snippet": "results = model(imgs, size=320)  # batched inference"
+            }
+          ]
+        },
+        {
+          "signal_id": "torch_load",
+          "framework": "pytorch",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 56,
+              "snippet": "ckpt = torch.load(attempt_download(path), map_location=device)  # load"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "utils/benchmarks.py",
+      "score": 16.0,
+      "framework_scores": {
+        "pytorch": 0.0,
+        "tensorflow": 0.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "batch_unpack_loop",
+          "framework": "agnostic",
+          "count": 2,
+          "contribution": 8.0,
+          "occurrences": [
+            {
+              "line": 62,
+              "snippet": "for i, (name, f, suffix, cpu, gpu) in export.export_formats().iterrows():  # index, (name, file, suffix, CPU, GPU)"
+            },
+            {
+              "line": 115,
+              "snippet": "for i, (name, f, suffix, gpu) in export.export_formats().iterrows():  # index, (name, file, suffix, gpu-capable)"
+            }
+          ]
+        },
+        {
+          "signal_id": "validate_fn",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 5.0,
+          "occurrences": [
+            {
+              "line": 102,
+              "snippet": "def test("
+            }
+          ]
+        },
+        {
+          "signal_id": "main_entry",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 155,
+              "snippet": "if __name__ == \"__main__\":"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "classify/predict.py",
+      "score": 11.0,
+      "framework_scores": {
+        "pytorch": 5.0,
+        "tensorflow": 0.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 1,
+          "contribution": 5.0,
+          "occurrences": [
+            {
+              "line": 15,
+              "snippet": "import torch.nn.functional as F"
+            }
+          ]
+        },
+        {
+          "signal_id": "main_entry",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 107,
+              "snippet": "if __name__ == \"__main__\":"
+            }
+          ]
+        },
+        {
+          "signal_id": "model_call",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 67,
+              "snippet": "results = model(im)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "utils/flask_rest_api/restapi.py",
+      "score": 11.0,
+      "framework_scores": {
+        "pytorch": 5.0,
+        "tensorflow": 0.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 1,
+          "contribution": 5.0,
+          "occurrences": [
+            {
+              "line": 9,
+              "snippet": "import torch"
+            }
+          ]
+        },
+        {
+          "signal_id": "main_entry",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 39,
+              "snippet": "if __name__ == \"__main__\":"
+            }
+          ]
+        },
+        {
+          "signal_id": "model_call",
+          "framework": "agnostic",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 42,
+              "snippet": "parser.add_argument('--model', nargs='+', default=['yolov5s'], help='model(s) to run, i.e. --model yolov5n yolov5s')"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "utils/autobatch.py",
+      "score": 10.0,
+      "framework_scores": {
+        "pytorch": 10.0,
+        "tensorflow": 0.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "torch_import",
+          "framework": "pytorch",
+          "count": 2,
+          "contribution": 10.0,
+          "occurrences": [
+            {
+              "line": 9,
+              "snippet": "import torch"
+            },
+            {
+              "line": 24,
+              "snippet": "#     import torch"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "files_with_hits": 27,
+    "signal_hit_count": 177
+  }
+}

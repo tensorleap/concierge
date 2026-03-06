@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0.0",
+  "method_version": "pytorch-agent-findings-v1",
+  "experiment_id": "ultralytics__pre__framework-leads-v1__r010",
+  "repo": {
+    "path": ".fixtures/ultralytics/pre"
+  },
+  "inputs": [],
+  "ground_truths": [],
+  "proposed_mapping": [],
+  "unknowns": [
+    "OBB ground truth format: batch['obb'] key exists in collate_fn but v8OBBLoss internals were not fully traced",
+    "Exact image size (imgsz) is configurable (default 640) and may vary per model configuration",
+    "The tensorleap_folder contains a modified dataset.py with build_yolo_dataset and custom label_path logic, but no Tensorleap decorator/encoder definitions were found"
+  ],
+  "comments": "This is a PyTorch-native YOLO (Ultralytics) repository. The primary detection path: YOLODataset produces per-sample dicts with 'img', 'cls', 'bboxes', 'batch_idx' (and optionally 'masks', 'keypoints', 'obb'). These are collated by YOLODataset.collate_fn. The training loop passes the entire batch dict to model(batch), which dispatches to BaseModel.loss(). The loss method calls self.forward(batch['img']) to get predictions, then self.criterion(preds, batch) to compute loss using the ground truth keys. The tensorleap_folder contains a modified copy of dataset.py with a build_yolo_dataset function and custom label path handling, suggesting prior Tensorleap integration work, but no encoder decorators were found."
+}

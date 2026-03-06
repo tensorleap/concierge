@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0.0",
+  "method_version": "pytorch-agent-findings-v1",
+  "experiment_id": "imdb__pre__framework-leads-v1__r011",
+  "repo": {
+    "path": ".fixtures/imdb/pre"
+  },
+  "inputs": [
+    {
+      "name": "tokenized_text_bert",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "file": "imdb/utils.py",
+          "line": 1,
+          "snippet": "def prepare_input(tokenizer, input_text: str) -> np.ndarray:\n    standard_text = standardize(input_text)\n    tokanized_input = tokenizer([standard_text], padding='max_length', truncation=True, max_length=CONFIG['SEQUENCE_LENGTH'])\n    return tokanized_input"
+        },
+        {
+          "file": "imdb/data/preprocess.py",
+          "line": 1,
+          "snippet": "tokenizer = AutoTokenizer.from_pretrained(CONFIG['MODEL_NAME'], ...)  # if bert model"
+        },
+        {
+          "file": "imdb/project_config.yaml",
+          "line": 1,
+          "snippet": "SEQUENCE_LENGTH: 512\nMODEL_NAME: \"fabriceyhc/bert-base-uncased-imdb\""
+        }
+      ],
+      "semantic_hint": "BERT-tokenized text input: AutoTokenizer output with input_ids, attention_mask, token_type_ids, padded/truncated to SEQUENCE_LENGTH=512. Used when MODEL_TYPE=='bert'.",
+      "shape_hint": "dict of (1, 512) or (512,) integer arrays (input_ids, attention_mask, token_type_ids)",
+      "dtype_hint": "int32/int64"
+    },
+    {
+      "name": "tokenized_text_dense",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "file": "imdb/utils.py",
+          "line": 1,
+          "snippet": "def prepare_input_dense_model(tokenizer, input_text: str) -> np.ndarray:\n    standard_text = standardize(input_text)\n    tokanized_input = tokenizer.texts_to_sequences([standard_text])\n    padded_input = pad_sequences(tokanized_input, maxlen=CONFIG['SEQUENCE_LENGTH'])\n    return padded_input[0, ...]"
+        },
+        {
+          "file": "imdb/data/preprocess.py",
+          "line": 1,
+          "snippet": "def load_tokenizer(tokenizer_path):\n    with open(tokenizer_path, 'r') as f:\n        data = json.load(f)\n        tokenizer = tokenizer_from_json(data)\n    return tokenizer"
+        }
+      ],
+      "semantic_hint": "Dense-model tokenized text input: Keras tokenizer texts_to_sequences output, padded to SEQUENCE_LENGTH=512 via pad_sequences. Used when MODEL_TYPE=='dense'.",
+      "shape_hint": "(512,)",
+      "dtype_hint": "int32"
+    }
+  ],
+  "ground_truths": [
+    {
+      "name": "sentiment_label",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "file": "imdb/project_config.yaml",
+          "line": 1,
+          "snippet": "LABELS_NAMES:\n  - neg\n  - pos"
+        },
+        {
+          "file": "imdb/data/preprocess.py",
+          "line": 1,
+          "snippet": "def download_load_assets():\n    cloud_path = join(\"assets\", \"imdb.csv\")\n    local_path = _download(cloud_path)\n    df = pd.read_csv(local_path)"
+        }
+      ],
+      "semantic_hint": "Binary sentiment label for IMDB movie reviews: 'neg' (0) or 'pos' (1). Loaded from imdb.csv via pandas, label semantics defined in project_config.yaml LABELS_NAMES.",
+      "shape_hint": "scalar or (1,)",
+      "dtype_hint": "int or categorical"
+    }
+  ],
+  "proposed_mapping": [],
+  "unknowns": [
+    "No training loop (model.fit/model.compile) or loss function found in repository code \u2014 this is a pre-integration artifact with only data loading and preprocessing utilities.",
+    "The CSV column names for text and label are not referenced in Python code (no df['col'] access found); exact column names in imdb.csv are unknown.",
+    "gcs_utils.py (imported in preprocess.py) is not present in the repository source files \u2014 likely an external/installed utility.",
+    "MODEL_TYPE is hardcoded to CONFIG['MODEL_TYPES'][1] which is 'bert' (line 10 of preprocess.py), but the dense path also exists. Which variant is the intended integration target is ambiguous.",
+    "Model input/output tensor signatures cannot be verified without loading the .h5 files or finding model definition code."
+  ],
+  "comments": "This is a minimal pre-integration repository for IMDB binary sentiment classification. It contains two model variants (BERT and dense) stored as Keras .h5 files, but no training code. The data pipeline loads a CSV from GCS and provides two tokenization paths. The BERT path uses HuggingFace AutoTokenizer (fabriceyhc/bert-base-uncased-imdb) producing dict-style inputs; the dense path uses a Keras Tokenizer with pad_sequences producing a flat (512,) integer array. The ground truth is binary sentiment (neg/pos) as configured in project_config.yaml. Without access to the CSV or model architecture definitions, exact column names and tensor shapes at model boundaries remain inferred rather than confirmed."
+}

@@ -1,0 +1,70 @@
+{
+  "schema_version": "1.0.0",
+  "method_version": "pytorch-agent-findings-v1",
+  "experiment_id": "ultralytics__pre__framework-leads-v1__r010",
+  "repo": {
+    "path": ".fixtures/ultralytics/pre"
+  },
+  "inputs": [
+    {
+      "name": "img",
+      "semantic_hint": "Image tensor fed to model forward path via batch['img']",
+      "shape_hint": "(B, 3, H, W)",
+      "dtype_hint": "float32",
+      "confidence": "high",
+      "evidence": [
+        {
+          "file": "ultralytics/nn/tasks.py",
+          "line": 291,
+          "snippet": "preds = self.forward(batch[\"img\"]) if preds is None else preds"
+        },
+        {
+          "file": "ultralytics/models/yolo/detect/train.py",
+          "line": 59,
+          "snippet": "batch[\"img\"] = batch[\"img\"].to(self.device, non_blocking=True).float() / 255"
+        }
+      ]
+    }
+  ],
+  "ground_truths": [
+    {
+      "name": "cls",
+      "semantic_hint": "Class labels consumed by detection/classification losses",
+      "shape_hint": "(N_total,) for detection",
+      "dtype_hint": "long/int",
+      "confidence": "high",
+      "evidence": [
+        {
+          "file": "ultralytics/utils/loss.py",
+          "line": 223,
+          "snippet": "targets = torch.cat((batch[\"batch_idx\"].view(-1, 1), batch[\"cls\"].view(-1, 1), batch[\"bboxes\"]), 1)"
+        },
+        {
+          "file": "ultralytics/utils/loss.py",
+          "line": 607,
+          "snippet": "loss = F.cross_entropy(preds, batch[\"cls\"], reduction=\"mean\")"
+        }
+      ]
+    }
+  ],
+  "proposed_mapping": [
+    {
+      "encoder_type": "input",
+      "name": "image",
+      "source_candidate": "img",
+      "confidence": "high",
+      "notes": "Use img tensor as input encoder source."
+    },
+    {
+      "encoder_type": "ground_truth",
+      "name": "classes",
+      "source_candidate": "cls",
+      "confidence": "high",
+      "notes": "Use cls tensor as class ground truth source."
+    }
+  ],
+  "unknowns": [
+    "Additional task-specific GTs exist (bboxes/masks/keypoints/obb) depending on training task"
+  ],
+  "comments": "Manual normalization from Claude final JSON because model returned non-schema keys (model_input_candidates / ground_truth_candidates)."
+}

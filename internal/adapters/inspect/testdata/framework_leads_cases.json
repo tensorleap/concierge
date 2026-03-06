@@ -1,0 +1,34 @@
+[
+  {
+    "name": "pytorch",
+    "expect_framework": "pytorch",
+    "files": {
+      "train.py": "import torch\nfrom torch.utils.data import DataLoader, Dataset\n\nclass DemoDataset(Dataset):\n    pass\n\ndef train(model, ds):\n    loader = DataLoader(ds)\n    for images, labels in loader:\n        pred = model(images)\n        loss(pred, labels)\n",
+      "requirements.txt": "torch\ntorchvision\n"
+    }
+  },
+  {
+    "name": "tensorflow",
+    "expect_framework": "tensorflow",
+    "files": {
+      "train_tf.py": "import tensorflow as tf\n\ndef train(model, x, y):\n    dataset = tf.data.Dataset.from_tensor_slices((x, y)).batch(8)\n    model.fit(dataset)\n",
+      "requirements.txt": "tensorflow\nkeras\n"
+    }
+  },
+  {
+    "name": "mixed",
+    "expect_framework": "mixed",
+    "files": {
+      "torch_side.py": "import torch\nfrom torch.utils.data import DataLoader\n\ndef train(model, ds):\n    loader = DataLoader(ds)\n    for x, y in loader:\n        model(x)\n",
+      "tf_side.py": "import tensorflow as tf\n\ndef train_tf(model, x, y):\n    data = tf.data.Dataset.from_tensor_slices((x, y)).batch(4)\n    model.fit(data)\n",
+      "requirements.txt": "torch\ntensorflow\n"
+    }
+  },
+  {
+    "name": "unknown",
+    "expect_framework": "unknown",
+    "files": {
+      "helpers.py": "def normalize(x):\n    return x\n\ndef validate(data):\n    return len(data)\n"
+    }
+  }
+]

@@ -1,0 +1,302 @@
+{
+  "schema_version": "1.0.0",
+  "method_version": "framework-leads-v1",
+  "generated_at": "2026-03-05T11:46:32+00:00",
+  "experiment": {
+    "id": "imdb__pre__framework-leads-v1__r012",
+    "repo_id": "imdb",
+    "repo_variant": "pre",
+    "run_id": "r012"
+  },
+  "repo": {
+    "path": "/Users/assaf/Dropbox/tensorleap/worktrees/concierge/research/inputs/.fixtures/imdb/pre",
+    "python_files_scanned": 5
+  },
+  "framework_detection": {
+    "candidate": "tensorflow",
+    "confidence": "high",
+    "scores": {
+      "pytorch": 7.0,
+      "tensorflow": 55.0
+    },
+    "components": {
+      "signal_scores": {
+        "pytorch": 0.0,
+        "tensorflow": 16.0
+      },
+      "artifact_scores": {
+        "pytorch": 7.0,
+        "tensorflow": 39.0
+      }
+    },
+    "evidence": [
+      {
+        "framework": "tensorflow",
+        "type": "model_artifact",
+        "path": "model/fabriceyhc-bert-imdb.h5",
+        "detail": "suffix=.h5",
+        "weight": 14.0
+      },
+      {
+        "framework": "tensorflow",
+        "type": "model_artifact",
+        "path": "model/imdb-dense.h5",
+        "detail": "suffix=.h5",
+        "weight": 14.0
+      },
+      {
+        "framework": "pytorch",
+        "type": "dependency_file",
+        "path": "poetry.lock",
+        "detail": "matched=torch,torchaudio,torchvision",
+        "weight": 7.0
+      },
+      {
+        "framework": "tensorflow",
+        "type": "dependency_file",
+        "path": "poetry.lock",
+        "detail": "matched=keras,tensorflow",
+        "weight": 6.0
+      },
+      {
+        "framework": "tensorflow",
+        "type": "dependency_file",
+        "path": "requirements.txt",
+        "detail": "matched=tensorflow",
+        "weight": 5.0
+      }
+    ]
+  },
+  "signals": [
+    {
+      "id": "torch_import",
+      "framework": "pytorch",
+      "description": "Imports torch or modules under torch.*",
+      "weight": 5.0,
+      "tier": "primary"
+    },
+    {
+      "id": "dataloader_import",
+      "framework": "pytorch",
+      "description": "Imports DataLoader from torch.utils.data",
+      "weight": 7.0,
+      "tier": "primary"
+    },
+    {
+      "id": "dataloader_call",
+      "framework": "pytorch",
+      "description": "DataLoader(...) call site",
+      "weight": 10.0,
+      "tier": "primary"
+    },
+    {
+      "id": "dataset_subclass",
+      "framework": "pytorch",
+      "description": "class X(...Dataset...) definition",
+      "weight": 8.0,
+      "tier": "primary"
+    },
+    {
+      "id": "dataset_import",
+      "framework": "pytorch",
+      "description": "Dataset import from torch.utils.data",
+      "weight": 5.0,
+      "tier": "primary"
+    },
+    {
+      "id": "torch_forward_def",
+      "framework": "pytorch",
+      "description": "forward(...) method definition",
+      "weight": 4.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "torch_load",
+      "framework": "pytorch",
+      "description": "torch.load(...) call",
+      "weight": 3.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "tensorflow_import",
+      "framework": "tensorflow",
+      "description": "Imports tensorflow",
+      "weight": 6.0,
+      "tier": "primary"
+    },
+    {
+      "id": "keras_import",
+      "framework": "tensorflow",
+      "description": "Imports keras APIs",
+      "weight": 5.0,
+      "tier": "primary"
+    },
+    {
+      "id": "tf_data_dataset",
+      "framework": "tensorflow",
+      "description": "tf.data.Dataset usage",
+      "weight": 9.0,
+      "tier": "primary"
+    },
+    {
+      "id": "tf_data_constructors",
+      "framework": "tensorflow",
+      "description": "tf.data constructor usage",
+      "weight": 8.0,
+      "tier": "primary"
+    },
+    {
+      "id": "tf_record_or_text_dataset",
+      "framework": "tensorflow",
+      "description": "TFRecord/TextLine/Csv dataset reader usage",
+      "weight": 8.0,
+      "tier": "primary"
+    },
+    {
+      "id": "tf_data_pipeline_ops",
+      "framework": "tensorflow",
+      "description": "tf.data pipeline ops (map/batch/shuffle/prefetch/etc.)",
+      "weight": 6.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "keras_fit",
+      "framework": "tensorflow",
+      "description": "Keras fit(...) call",
+      "weight": 8.0,
+      "tier": "primary"
+    },
+    {
+      "id": "keras_evaluate_or_predict",
+      "framework": "tensorflow",
+      "description": "Keras evaluate/predict(...) call",
+      "weight": 6.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "keras_dataset_utils",
+      "framework": "tensorflow",
+      "description": "Keras dataset loader utility usage",
+      "weight": 7.0,
+      "tier": "primary"
+    },
+    {
+      "id": "keras_sequence_or_pydataset",
+      "framework": "tensorflow",
+      "description": "Keras Sequence/PyDataset usage",
+      "weight": 5.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "tfds_load",
+      "framework": "tensorflow",
+      "description": "tensorflow_datasets usage",
+      "weight": 6.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "train_fn",
+      "framework": "agnostic",
+      "description": "Training function definition",
+      "weight": 5.0,
+      "tier": "primary"
+    },
+    {
+      "id": "validate_fn",
+      "framework": "agnostic",
+      "description": "Validation/evaluation function definition",
+      "weight": 5.0,
+      "tier": "primary"
+    },
+    {
+      "id": "main_entry",
+      "framework": "agnostic",
+      "description": "Python __main__ entry point",
+      "weight": 3.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "batch_unpack_loop",
+      "framework": "agnostic",
+      "description": "for-loop tuple unpacking pattern",
+      "weight": 4.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "loss_call",
+      "framework": "agnostic",
+      "description": "loss(...) or criterion(...) usage",
+      "weight": 3.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "model_call",
+      "framework": "agnostic",
+      "description": "model(...) invocation",
+      "weight": 3.0,
+      "tier": "secondary"
+    }
+  ],
+  "files": [
+    {
+      "path": "imdb/utils.py",
+      "score": 11.0,
+      "framework_scores": {
+        "pytorch": 0.0,
+        "tensorflow": 11.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "tensorflow_import",
+          "framework": "tensorflow",
+          "count": 1,
+          "contribution": 6.0,
+          "occurrences": [
+            {
+              "line": 3,
+              "snippet": "from tensorflow.keras.preprocessing.sequence import pad_sequences"
+            }
+          ]
+        },
+        {
+          "signal_id": "keras_import",
+          "framework": "tensorflow",
+          "count": 1,
+          "contribution": 5.0,
+          "occurrences": [
+            {
+              "line": 3,
+              "snippet": "from tensorflow.keras.preprocessing.sequence import pad_sequences"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "imdb/data/preprocess.py",
+      "score": 5.0,
+      "framework_scores": {
+        "pytorch": 0.0,
+        "tensorflow": 5.0
+      },
+      "signal_hits": [
+        {
+          "signal_id": "keras_import",
+          "framework": "tensorflow",
+          "count": 1,
+          "contribution": 5.0,
+          "occurrences": [
+            {
+              "line": 2,
+              "snippet": "from keras.preprocessing.text import tokenizer_from_json"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "files_with_hits": 2,
+    "signal_hit_count": 3
+  }
+}

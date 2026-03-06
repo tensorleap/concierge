@@ -1,0 +1,16 @@
+Experiment: imdb__pre__framework-leads-v1__r011
+Repo: /Users/assaf/Dropbox/tensorleap/worktrees/concierge/research/inputs/.fixtures/imdb/pre
+Method: framework-leads-v1
+Python files scanned: 5
+Files with hits: 2
+Total signal hits: 3
+Framework detection: tensorflow (high)
+Framework scores: pytorch=7.0, tensorflow=55.0
+
+Top lead files:
+1. imdb/utils.py (score=11.0)
+   - tensorflow_import[tensorflow]: count=1, contribution=6.0
+   - keras_import[tensorflow]: count=1, contribution=5.0
+
+2. imdb/data/preprocess.py (score=5.0)
+   - keras_import[tensorflow]: count=1, contribution=5.0

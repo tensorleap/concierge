@@ -1,0 +1,36 @@
+{
+  "oracle": {
+    "inputs": [
+      "image"
+    ],
+    "ground_truths": [
+      "bbs"
+    ]
+  },
+  "agent": {
+    "inputs": [
+      "image"
+    ],
+    "ground_truths": [
+      "bounding_boxes"
+    ]
+  },
+  "comparison": {
+    "inputs": {
+      "matched": [
+        "image"
+      ],
+      "missing": [],
+      "extra": []
+    },
+    "ground_truths": {
+      "matched": [],
+      "missing": [
+        "bbs"
+      ],
+      "extra": [
+        "bounding_boxes"
+      ]
+    }
+  }
+}

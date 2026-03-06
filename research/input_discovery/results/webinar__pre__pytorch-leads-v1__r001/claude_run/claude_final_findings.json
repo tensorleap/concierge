@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0.0",
+  "method_version": "pytorch-agent-findings-v1",
+  "experiment_id": "webinar__pre__pytorch-leads-v1__r001",
+  "repo": {
+    "path": ".fixtures/webinar/pre"
+  },
+  "inputs": [
+    {
+      "name": "image",
+      "confidence": "high",
+      "evidence": [
+        {
+          "file": "leap_integration.py",
+          "line": 20,
+          "snippet": "img = input_image(idx, subset)\ny_pred = model([img])"
+        }
+      ],
+      "semantic_hint": "Preprocessed RGB image fed as a single-element list into the YOLOv7 model forward call.",
+      "shape_hint": "[448, 640, 3]",
+      "dtype_hint": "float32"
+    }
+  ],
+  "ground_truths": [
+    {
+      "name": "bounding_boxes",
+      "confidence": "high",
+      "evidence": [
+        {
+          "file": "leap_integration.py",
+          "line": 26,
+          "snippet": "gt = get_bb(idx, subset)"
+        }
+      ],
+      "semantic_hint": "Per-image ground-truth bounding box tensor encoding spatial coordinates (x, y, w, h) and class label, padded to MAX_BB_PER_IMAGE entries.",
+      "shape_hint": "[150, 5]",
+      "dtype_hint": "float32"
+    }
+  ],
+  "proposed_mapping": [
+    {
+      "encoder_type": "input",
+      "name": "input_image",
+      "source_candidate": "image",
+      "confidence": "high",
+      "notes": "signature=input_image(idx: int, subset) -> np.ndarray; output_shape=[448, 640, 3]"
+    },
+    {
+      "encoder_type": "ground_truth",
+      "name": "get_bb",
+      "source_candidate": "bounding_boxes",
+      "confidence": "high",
+      "notes": "signature=get_bb(idx: int, subset) -> np.ndarray; output_shape=[150, 5]; coordinate_format=xywh"
+    }
+  ],
+  "unknowns": [
+    "leap_binder.py source file is absent from repository; only compiled .pyc exists at __pycache__/leap_binder.cpython-39.pyc. Functions input_image, get_bb, subset_images_list, bbs_metadata, image_path, origin_path, image_metadata, gt_decoder, bb_decoder, od_loss (re-export), regression_metric, classification_metric, object_metric are all defined there. Their exact preprocessing logic (normalization, padding strategy, coordinate conversion) cannot be verified without source.",
+    "Raw bounding box coordinate format in annotation file is ambiguous: preprocess.py parses as integer tuples but does not clarify if they are (x1,y1,x2,y2) xyxy or (x,y,w,h) xywh. The xywh inference comes from downstream metrics.py usage of xywh_to_xyxy_format on gt_loc extracted from y_true.",
+    "subset_images_list() (from leap_binder) controls which dataset splits are used. Without source, the exact split strategy (train/valid as per config TRAINING_CATEGORIES) and whether an unlabeled split is returned cannot be confirmed."
+  ]
+}

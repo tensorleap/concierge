@@ -1,0 +1,90 @@
+{
+  "schema_version": "1.0.0",
+  "method_version": "pytorch-agent-findings-v1",
+  "experiment_id": "webinar__pre__framework-leads-v1__r008",
+  "repo": {
+    "path": ".fixtures/webinar/pre"
+  },
+  "inputs": [
+    {
+      "name": "image",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "file": "webinar/config.yml",
+          "line": 13,
+          "snippet": "IMAGE_SIZE:\n  - 448\n  - 640"
+        },
+        {
+          "file": "webinar/data/preprocess.py",
+          "line": 18,
+          "snippet": "image_paths.append(str(images_base_path / splitted_line[0]))"
+        },
+        {
+          "file": "model/yolov7-webinar.h5",
+          "line": 1,
+          "snippet": "Keras H5 model file"
+        }
+      ],
+      "semantic_hint": "RGB image resized to [448, 640] as expected by YOLOv7 model",
+      "shape_hint": "[448, 640, 3]",
+      "dtype_hint": "float32"
+    }
+  ],
+  "ground_truths": [
+    {
+      "name": "bounding_boxes",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "file": "webinar/data/preprocess.py",
+          "line": 19,
+          "snippet": "list_of_bounding_boxes = [word.split(',') for word in splitted_line[1:]]"
+        },
+        {
+          "file": "webinar/data/preprocess.py",
+          "line": 22,
+          "snippet": "list_of_bounding_boxes_int.append([int(x) for x in qq])"
+        },
+        {
+          "file": "webinar/config.yml",
+          "line": 9,
+          "snippet": "CATEGORIES: [\"car\", \"truck\", \"pedestrian\"]"
+        },
+        {
+          "file": "webinar/config.yml",
+          "line": 10,
+          "snippet": "MAX_BB_PER_IMAGE: 150"
+        }
+      ],
+      "semantic_hint": "Per-image list of bounding boxes, each box is a list of integers (likely [x1, y1, x2, y2, class_id]) for object detection with 3 categories (car, truck, pedestrian), padded/capped to MAX_BB_PER_IMAGE=150",
+      "shape_hint": "[150, 5]",
+      "dtype_hint": "float32"
+    }
+  ],
+  "proposed_mapping": [
+    {
+      "encoder_type": "input",
+      "name": "input_image",
+      "source_candidate": "input_image",
+      "confidence": "medium",
+      "notes": "Load image from path, resize to (448, 640), normalize to float32, feed as model input tensor"
+    },
+    {
+      "encoder_type": "ground_truth",
+      "name": "gt_bounding_boxes",
+      "source_candidate": "gt_bounding_boxes",
+      "confidence": "medium",
+      "notes": "Parse annotation file for bounding boxes per image, encode as [MAX_BB_PER_IMAGE, 5] tensor (x1, y1, x2, y2, class_id) with zero-padding"
+    }
+  ],
+  "unknowns": [
+    "Only 2 Python files exist in the repository; no training loop, model loading, or loss function code is present to confirm exact input/output tensor shapes",
+    "The import 'webinar.utils.gcs_utils' in preprocess.py references a module not present in the repository",
+    "Exact bounding box format (number of fields per box) cannot be confirmed without sample annotation data; assumed [x1, y1, x2, y2, class_id] based on 5 common fields for OD",
+    "No explicit tf.data pipeline, Keras fit/evaluate calls, or data augmentation code found to trace full data flow",
+    "YOLO-style ground truth encoding (grid-based with anchor matching) may be applied but no such code is present in this pre-integration repo",
+    "Model input normalization (PIXEL_MEAN: [0,0,0], OFFSET: 0 in config) suggests minimal preprocessing but exact pipeline is unknown"
+  ],
+  "comments": "This is a 'pre' (pre-Tensorleap-integration) variant of a YOLOv7 object detection project. The repository is minimal: only config loading and an annotation parser exist. The .h5 model and requirements.txt strongly indicate TensorFlow/Keras. The config.yml provides rich metadata about the detection task (3 classes, image size, anchor boxes, feature maps at 3 scales, NMS thresholds). The generate_subset function in preprocess.py demonstrates the data format: text annotation files where each line has an image path followed by comma-separated bounding box coordinates. Confidence on input/GT candidates is medium because the actual model call and loss code are absent."
+}

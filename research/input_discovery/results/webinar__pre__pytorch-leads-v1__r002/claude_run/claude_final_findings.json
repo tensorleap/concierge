@@ -1,0 +1,90 @@
+{
+  "schema_version": "1.0.0",
+  "method_version": "pytorch-agent-findings-v1",
+  "experiment_id": "webinar__pre__pytorch-leads-v1__r002",
+  "repo": {
+    "path": ".fixtures/webinar/pre"
+  },
+  "inputs": [
+    {
+      "name": "image",
+      "confidence": "high",
+      "evidence": [
+        {
+          "file": "webinar/data/preprocess.py",
+          "line": 1,
+          "snippet": "image_paths.append(str(images_base_path / splitted_line[0]))"
+        },
+        {
+          "file": "webinar/config.yml",
+          "line": 1,
+          "snippet": "IMAGE_SIZE:\n  - 448\n  - 640"
+        },
+        {
+          "file": "webinar/config.yml",
+          "line": 1,
+          "snippet": "PIXEL_MEAN: [0, 0, 0]"
+        }
+      ],
+      "semantic_hint": "RGB image tensor resized to IMAGE_SIZE [448, 640] (H x W x C = 448 x 640 x 3). Images are sourced from S3 paths constructed in generate_subset(); PIXEL_MEAN=[0,0,0] indicates no mean subtraction (normalization scheme partially unresolved).",
+      "shape_hint": "[448, 640, 3]",
+      "dtype_hint": "float32"
+    }
+  ],
+  "ground_truths": [
+    {
+      "name": "bounding_boxes",
+      "confidence": "high",
+      "evidence": [
+        {
+          "file": "webinar/data/preprocess.py",
+          "line": 1,
+          "snippet": "list_of_bounding_boxes = [word.split(',') for word in splitted_line[1:]]\n... label_data.append(list_of_bounding_boxes_int)"
+        },
+        {
+          "file": "webinar/utils/metrics.py",
+          "line": 1,
+          "snippet": "def compute_losses(y_true: tf.Tensor, y_pred: tf.Tensor):\n    ... LOSS_FN(y_true=y_true, y_pred=(loc_list_reshaped, class_list_reshaped))"
+        },
+        {
+          "file": "webinar/utils/metrics.py",
+          "line": 1,
+          "snippet": "gt_loc, gt_class = true_coords_labels(batch_i, y_true, BACKGROUND_LABEL)"
+        },
+        {
+          "file": "webinar/utils/metrics.py",
+          "line": 1,
+          "snippet": "ious = jaccard(outputs[batch_i][:, 1:5], xywh_to_xyxy_format(tf.cast(gt_loc, tf.double)))"
+        },
+        {
+          "file": "webinar/config.yml",
+          "line": 1,
+          "snippet": "CATEGORIES: [\"car\", \"truck\", \"pedestrian\"]\nMAX_BB_PER_IMAGE: 150"
+        }
+      ],
+      "semantic_hint": "Padded bounding-box annotation tensor, one entry per image. Raw annotations parsed from annotation file as lists of [x1, y1, x2, y2, class_id] (int). Used as y_true in all loss/metric functions. true_coords_labels() decomposes y_true into gt_loc (xywh coords) and gt_class (integer class index). MAX_BB_PER_IMAGE=150 is the pad ceiling. Classes: [car=0, truck=1, pedestrian=2], BACKGROUND_LABEL=4.",
+      "shape_hint": "[150, 5]",
+      "dtype_hint": "float32"
+    }
+  ],
+  "proposed_mapping": [
+    {
+      "encoder_type": "input",
+      "name": "image_encoder",
+      "source_candidate": "image",
+      "confidence": "high"
+    },
+    {
+      "encoder_type": "ground_truth",
+      "name": "bounding_boxes_encoder",
+      "source_candidate": "bounding_boxes",
+      "confidence": "high"
+    }
+  ],
+  "unknowns": [
+    "leap_binder.py is absent from the 'pre' snapshot (only a .pyc artifact at repo root exists). The actual Tensorleap encoder bindings, metadata functions, and subset_partition logic have not yet been written. All proposals are inferred from data/preprocess.py and metrics.py only.",
+    "Image normalization scale factor is unconfirmed. PIXEL_MEAN=[0,0,0] rules out mean subtraction, but whether values are scaled to [0,1] or left as [0,255] uint8 is not determinable from existing code.",
+    "Exact wire format of y_true tensor expected by code_loader's true_coords_labels() and YoloLoss is not directly readable from this repo (it lives in the code_loader library dependency). The (150, 5) shape and xywh field ordering are inferred from config MAX_BB_PER_IMAGE and the xywh_to_xyxy_format call, but the precise column layout could differ.",
+    "No PyTorch DataLoader, Dataset, or model.forward() call present anywhere in the repository. The model is a Keras .h5 file (yolov7-webinar.h5). The pytorch-leads-v1 method found no PyTorch signal; the two loop hits in metrics.py are plain Python for-loops over decoded outputs, not DataLoader batch-unpack loops."
+  ]
+}

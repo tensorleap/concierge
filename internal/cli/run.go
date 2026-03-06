@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/tensorleap/concierge/internal/adapters/execute"
@@ -104,6 +105,18 @@ func newRunCommand() *cobra.Command {
 				selectedModelPath = normalizeModelPathValue(path)
 				selectedModelPathMu.Unlock()
 			}
+			selectedEncoderMapping := cloneEncoderMappingContract(loadedState.ConfirmedEncoderMapping)
+			var selectedEncoderMappingMu sync.RWMutex
+			getSelectedEncoderMapping := func() *core.EncoderMappingContract {
+				selectedEncoderMappingMu.RLock()
+				defer selectedEncoderMappingMu.RUnlock()
+				return cloneEncoderMappingContract(selectedEncoderMapping)
+			}
+			setSelectedEncoderMapping := func(mapping *core.EncoderMappingContract) {
+				selectedEncoderMappingMu.Lock()
+				selectedEncoderMapping = cloneEncoderMappingContract(mapping)
+				selectedEncoderMappingMu.Unlock()
+			}
 
 			var iterationReporter ports.Reporter = report.NewStdoutReporterWithOptions(
 				writer,
@@ -142,6 +155,21 @@ func newRunCommand() *cobra.Command {
 					setSelectedModelPath,
 					repoRoot,
 					nonInteractive || yes,
+					promptInput,
+					cmd.OutOrStdout(),
+				); err != nil {
+					return false, err
+				}
+				if err := ensureEncoderMappingForStep(
+					step,
+					snapshotValue,
+					hasSnapshot,
+					status,
+					hasStatus,
+					getSelectedEncoderMapping,
+					setSelectedEncoderMapping,
+					nonInteractive,
+					yes,
 					promptInput,
 					cmd.OutOrStdout(),
 				); err != nil {
@@ -191,8 +219,9 @@ func newRunCommand() *cobra.Command {
 
 			engine, err := orchestrator.NewEngine(orchestrator.Dependencies{
 				Snapshotter: modelPathHintSnapshotter{
-					base:            snapshot.NewGitSnapshotter(),
-					selectedModelFn: getSelectedModelPath,
+					base:              snapshot.NewGitSnapshotter(),
+					selectedModelFn:   getSelectedModelPath,
+					selectedMappingFn: getSelectedEncoderMapping,
 				},
 				Inspector: inspect.NewBaselineInspector(),
 				Planner:   plannerAdapter,
@@ -248,6 +277,7 @@ func newRunCommand() *cobra.Command {
 							*report,
 							repoRoot,
 							getSelectedModelPath(),
+							getSelectedEncoderMapping(),
 							invalidationReasons,
 						)
 						if err := state.SaveState(repoRoot, nextState); err != nil {
@@ -420,6 +450,9 @@ func (p *planCapturePlanner) LastStatus() (core.IntegrationStatus, bool) {
 
 func cloneWorkspaceSnapshot(snapshot core.WorkspaceSnapshot) core.WorkspaceSnapshot {
 	cloned := snapshot
+	if snapshot.ConfirmedEncoderMapping != nil {
+		cloned.ConfirmedEncoderMapping = cloneEncoderMappingContract(snapshot.ConfirmedEncoderMapping)
+	}
 	if len(snapshot.FileHashes) > 0 {
 		cloned.FileHashes = make(map[string]string, len(snapshot.FileHashes))
 		for key, value := range snapshot.FileHashes {
@@ -430,6 +463,23 @@ func cloneWorkspaceSnapshot(snapshot core.WorkspaceSnapshot) core.WorkspaceSnaps
 		cloned.Runtime.RequirementsFiles = append([]string(nil), snapshot.Runtime.RequirementsFiles...)
 	}
 	return cloned
+}
+
+func cloneEncoderMappingContract(mapping *core.EncoderMappingContract) *core.EncoderMappingContract {
+	if mapping == nil {
+		return nil
+	}
+	cloned := *mapping
+	if len(mapping.InputSymbols) > 0 {
+		cloned.InputSymbols = append([]string(nil), mapping.InputSymbols...)
+	}
+	if len(mapping.GroundTruthSymbols) > 0 {
+		cloned.GroundTruthSymbols = append([]string(nil), mapping.GroundTruthSymbols...)
+	}
+	if len(mapping.Notes) > 0 {
+		cloned.Notes = append([]string(nil), mapping.Notes...)
+	}
+	return &cloned
 }
 
 func cloneIntegrationStatus(status core.IntegrationStatus) core.IntegrationStatus {
@@ -462,6 +512,104 @@ func cloneIntegrationStatus(status core.IntegrationStatus) core.IntegrationStatu
 		}
 		if len(status.Contracts.ModelCandidates) > 0 {
 			contracts.ModelCandidates = append([]core.ModelCandidate(nil), status.Contracts.ModelCandidates...)
+		}
+		if len(status.Contracts.DiscoveredInputSymbols) > 0 {
+			contracts.DiscoveredInputSymbols = append([]string(nil), status.Contracts.DiscoveredInputSymbols...)
+		}
+		if len(status.Contracts.DiscoveredGroundTruthSymbols) > 0 {
+			contracts.DiscoveredGroundTruthSymbols = append([]string(nil), status.Contracts.DiscoveredGroundTruthSymbols...)
+		}
+		if status.Contracts.ConfirmedMapping != nil {
+			confirmed := *status.Contracts.ConfirmedMapping
+			if len(status.Contracts.ConfirmedMapping.InputSymbols) > 0 {
+				confirmed.InputSymbols = append([]string(nil), status.Contracts.ConfirmedMapping.InputSymbols...)
+			}
+			if len(status.Contracts.ConfirmedMapping.GroundTruthSymbols) > 0 {
+				confirmed.GroundTruthSymbols = append([]string(nil), status.Contracts.ConfirmedMapping.GroundTruthSymbols...)
+			}
+			if len(status.Contracts.ConfirmedMapping.Notes) > 0 {
+				confirmed.Notes = append([]string(nil), status.Contracts.ConfirmedMapping.Notes...)
+			}
+			contracts.ConfirmedMapping = &confirmed
+		}
+		if status.Contracts.InputGTDiscovery != nil {
+			discovery := *status.Contracts.InputGTDiscovery
+			if status.Contracts.InputGTDiscovery.FixtureState != nil {
+				fixtureState := *status.Contracts.InputGTDiscovery.FixtureState
+				discovery.FixtureState = &fixtureState
+			}
+			if status.Contracts.InputGTDiscovery.LeadPack != nil {
+				leadPack := *status.Contracts.InputGTDiscovery.LeadPack
+				if len(status.Contracts.InputGTDiscovery.LeadPack.Signals) > 0 {
+					leadPack.Signals = append([]core.InputGTLeadSignal(nil), status.Contracts.InputGTDiscovery.LeadPack.Signals...)
+				}
+				if len(status.Contracts.InputGTDiscovery.LeadPack.Files) > 0 {
+					leadPack.Files = append([]core.InputGTLeadFile(nil), status.Contracts.InputGTDiscovery.LeadPack.Files...)
+				}
+				if len(status.Contracts.InputGTDiscovery.LeadPack.FrameworkDetection.Evidence) > 0 {
+					leadPack.FrameworkDetection.Evidence = append([]core.InputGTFrameworkEvidence(nil), status.Contracts.InputGTDiscovery.LeadPack.FrameworkDetection.Evidence...)
+				}
+				discovery.LeadPack = &leadPack
+			}
+			if status.Contracts.InputGTDiscovery.AgentPromptBundle != nil {
+				promptBundle := *status.Contracts.InputGTDiscovery.AgentPromptBundle
+				discovery.AgentPromptBundle = &promptBundle
+			}
+			if status.Contracts.InputGTDiscovery.AgentRawOutput != nil {
+				rawOutput := *status.Contracts.InputGTDiscovery.AgentRawOutput
+				if len(status.Contracts.InputGTDiscovery.AgentRawOutput.Metadata) > 0 {
+					rawOutput.Metadata = make(map[string]string, len(status.Contracts.InputGTDiscovery.AgentRawOutput.Metadata))
+					for key, value := range status.Contracts.InputGTDiscovery.AgentRawOutput.Metadata {
+						rawOutput.Metadata[key] = value
+					}
+				}
+				discovery.AgentRawOutput = &rawOutput
+			}
+			if status.Contracts.InputGTDiscovery.NormalizedFindings != nil {
+				findings := *status.Contracts.InputGTDiscovery.NormalizedFindings
+				if len(status.Contracts.InputGTDiscovery.NormalizedFindings.Inputs) > 0 {
+					findings.Inputs = append([]core.InputGTCandidate(nil), status.Contracts.InputGTDiscovery.NormalizedFindings.Inputs...)
+				}
+				if len(status.Contracts.InputGTDiscovery.NormalizedFindings.GroundTruths) > 0 {
+					findings.GroundTruths = append([]core.InputGTCandidate(nil), status.Contracts.InputGTDiscovery.NormalizedFindings.GroundTruths...)
+				}
+				if len(status.Contracts.InputGTDiscovery.NormalizedFindings.ProposedMapping) > 0 {
+					findings.ProposedMapping = append([]core.InputGTProposedMapping(nil), status.Contracts.InputGTDiscovery.NormalizedFindings.ProposedMapping...)
+				}
+				if len(status.Contracts.InputGTDiscovery.NormalizedFindings.Unknowns) > 0 {
+					findings.Unknowns = append([]string(nil), status.Contracts.InputGTDiscovery.NormalizedFindings.Unknowns...)
+				}
+				discovery.NormalizedFindings = &findings
+			}
+			if status.Contracts.InputGTDiscovery.ComparisonReport != nil {
+				comparison := *status.Contracts.InputGTDiscovery.ComparisonReport
+				if len(status.Contracts.InputGTDiscovery.ComparisonReport.PrimaryInputSymbols) > 0 {
+					comparison.PrimaryInputSymbols = append([]string(nil), status.Contracts.InputGTDiscovery.ComparisonReport.PrimaryInputSymbols...)
+				}
+				if len(status.Contracts.InputGTDiscovery.ComparisonReport.PrimaryGroundTruthSymbols) > 0 {
+					comparison.PrimaryGroundTruthSymbols = append([]string(nil), status.Contracts.InputGTDiscovery.ComparisonReport.PrimaryGroundTruthSymbols...)
+				}
+				if len(status.Contracts.InputGTDiscovery.ComparisonReport.ConditionalInputSymbols) > 0 {
+					comparison.ConditionalInputSymbols = append([]string(nil), status.Contracts.InputGTDiscovery.ComparisonReport.ConditionalInputSymbols...)
+				}
+				if len(status.Contracts.InputGTDiscovery.ComparisonReport.ConditionalGroundTruthSymbols) > 0 {
+					comparison.ConditionalGroundTruthSymbols = append([]string(nil), status.Contracts.InputGTDiscovery.ComparisonReport.ConditionalGroundTruthSymbols...)
+				}
+				if len(status.Contracts.InputGTDiscovery.ComparisonReport.RuntimeInputSymbols) > 0 {
+					comparison.RuntimeInputSymbols = append([]string(nil), status.Contracts.InputGTDiscovery.ComparisonReport.RuntimeInputSymbols...)
+				}
+				if len(status.Contracts.InputGTDiscovery.ComparisonReport.RuntimeOnlyInputSymbols) > 0 {
+					comparison.RuntimeOnlyInputSymbols = append([]string(nil), status.Contracts.InputGTDiscovery.ComparisonReport.RuntimeOnlyInputSymbols...)
+				}
+				if len(status.Contracts.InputGTDiscovery.ComparisonReport.DiscoveryOnlyInputSymbols) > 0 {
+					comparison.DiscoveryOnlyInputSymbols = append([]string(nil), status.Contracts.InputGTDiscovery.ComparisonReport.DiscoveryOnlyInputSymbols...)
+				}
+				if len(status.Contracts.InputGTDiscovery.ComparisonReport.Notes) > 0 {
+					comparison.Notes = append([]string(nil), status.Contracts.InputGTDiscovery.ComparisonReport.Notes...)
+				}
+				discovery.ComparisonReport = &comparison
+			}
+			contracts.InputGTDiscovery = &discovery
 		}
 		cloned.Contracts = &contracts
 	}
@@ -643,8 +791,9 @@ func blockingIssuesForStep(issues []core.Issue, stepID core.EnsureStepID) []core
 }
 
 type modelPathHintSnapshotter struct {
-	base            ports.Snapshotter
-	selectedModelFn func() string
+	base              ports.Snapshotter
+	selectedModelFn   func() string
+	selectedMappingFn func() *core.EncoderMappingContract
 }
 
 func (s modelPathHintSnapshotter) Snapshot(ctx context.Context, request core.SnapshotRequest) (core.WorkspaceSnapshot, error) {
@@ -657,6 +806,9 @@ func (s modelPathHintSnapshotter) Snapshot(ctx context.Context, request core.Sna
 	}
 	if s.selectedModelFn != nil {
 		snapshotValue.SelectedModelPath = normalizeModelPathValue(s.selectedModelFn())
+	}
+	if s.selectedMappingFn != nil {
+		snapshotValue.ConfirmedEncoderMapping = cloneEncoderMappingContract(s.selectedMappingFn())
 	}
 	return snapshotValue, nil
 }
@@ -736,6 +888,226 @@ func ensureModelPathSelectionForStep(
 		setSelected(normalized)
 	}
 	return nil
+}
+
+func ensureEncoderMappingForStep(
+	step core.EnsureStep,
+	snapshotValue core.WorkspaceSnapshot,
+	hasSnapshot bool,
+	status core.IntegrationStatus,
+	hasStatus bool,
+	getSelected func() *core.EncoderMappingContract,
+	setSelected func(*core.EncoderMappingContract),
+	nonInteractive bool,
+	yes bool,
+	input *bufio.Reader,
+	out io.Writer,
+) error {
+	switch step.ID {
+	case core.EnsureStepInputEncoders, core.EnsureStepGroundTruthEncoders, core.EnsureStepIntegrationTestContract:
+	default:
+		return nil
+	}
+	if !hasStatus || status.Contracts == nil {
+		return nil
+	}
+
+	proposed, ok := proposedEncoderMappingFromContracts(status.Contracts)
+	if !ok {
+		return nil
+	}
+
+	current := (*core.EncoderMappingContract)(nil)
+	if getSelected != nil {
+		current = getSelected()
+	}
+	if mappingIsValidForSnapshot(current, snapshotValue, hasSnapshot) {
+		return nil
+	}
+
+	if nonInteractive || yes {
+		accepted := finalizeEncoderMappingProposal(proposed, snapshotValue, hasSnapshot, []string{"auto_accepted"})
+		if setSelected != nil {
+			setSelected(accepted)
+		}
+		return nil
+	}
+
+	if out == nil {
+		out = io.Discard
+	}
+	if _, err := fmt.Fprintln(out, "Encoder Mapping Confirmation"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out, "Review required input and ground-truth names before encoder authoring continues:"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "  inputs: %s\n", renderSymbolList(proposed.InputSymbols)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "  ground truths: %s\n", renderSymbolList(proposed.GroundTruthSymbols)); err != nil {
+		return err
+	}
+
+	approve, err := promptYesNo(input, out, "Accept this mapping? [Y/n]:", true)
+	if err != nil {
+		return err
+	}
+	if approve {
+		accepted := finalizeEncoderMappingProposal(proposed, snapshotValue, hasSnapshot, []string{"user_accepted"})
+		if setSelected != nil {
+			setSelected(accepted)
+		}
+		return nil
+	}
+
+	if _, err := fmt.Fprintln(out, "Enter adjusted symbols as comma-separated lists. Leave blank to keep the suggestion."); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprint(out, "Input symbols: "); err != nil {
+		return err
+	}
+	inputLine, err := readPromptLine(input)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprint(out, "Ground-truth symbols: "); err != nil {
+		return err
+	}
+	gtLine, err := readPromptLine(input)
+	if err != nil {
+		return err
+	}
+
+	adjustedInputs := proposed.InputSymbols
+	if strings.TrimSpace(inputLine) != "" {
+		adjustedInputs = parseSymbolCSV(inputLine)
+	}
+	adjustedGroundTruths := proposed.GroundTruthSymbols
+	if strings.TrimSpace(gtLine) != "" {
+		adjustedGroundTruths = parseSymbolCSV(gtLine)
+	}
+	if len(adjustedInputs) == 0 && len(adjustedGroundTruths) == 0 {
+		return core.NewError(
+			core.KindUnknown,
+			"cli.run.encoder_mapping.empty",
+			"encoder mapping must include at least one input or one ground-truth symbol",
+		)
+	}
+
+	accepted := finalizeEncoderMappingProposal(&core.EncoderMappingContract{
+		InputSymbols:       adjustedInputs,
+		GroundTruthSymbols: adjustedGroundTruths,
+	}, snapshotValue, hasSnapshot, []string{"user_adjusted"})
+	if setSelected != nil {
+		setSelected(accepted)
+	}
+	return nil
+}
+
+func proposedEncoderMappingFromContracts(contracts *core.IntegrationContracts) (*core.EncoderMappingContract, bool) {
+	if contracts == nil {
+		return nil, false
+	}
+	if contracts.ConfirmedMapping != nil && mappingHasSymbols(contracts.ConfirmedMapping) {
+		return cloneEncoderMappingContract(contracts.ConfirmedMapping), true
+	}
+
+	inputSymbols := uniqueSortedLowerSymbols(contracts.DiscoveredInputSymbols)
+	groundTruthSymbols := uniqueSortedLowerSymbols(contracts.DiscoveredGroundTruthSymbols)
+	if contracts.InputGTDiscovery != nil && contracts.InputGTDiscovery.ComparisonReport != nil {
+		if len(contracts.InputGTDiscovery.ComparisonReport.PrimaryInputSymbols) > 0 {
+			inputSymbols = uniqueSortedLowerSymbols(contracts.InputGTDiscovery.ComparisonReport.PrimaryInputSymbols)
+		}
+		if len(contracts.InputGTDiscovery.ComparisonReport.PrimaryGroundTruthSymbols) > 0 {
+			groundTruthSymbols = uniqueSortedLowerSymbols(contracts.InputGTDiscovery.ComparisonReport.PrimaryGroundTruthSymbols)
+		}
+	}
+	if len(inputSymbols) == 0 && len(groundTruthSymbols) == 0 {
+		return nil, false
+	}
+	return &core.EncoderMappingContract{
+		InputSymbols:       inputSymbols,
+		GroundTruthSymbols: groundTruthSymbols,
+	}, true
+}
+
+func mappingHasSymbols(mapping *core.EncoderMappingContract) bool {
+	if mapping == nil {
+		return false
+	}
+	return len(mapping.InputSymbols) > 0 || len(mapping.GroundTruthSymbols) > 0
+}
+
+func mappingIsValidForSnapshot(mapping *core.EncoderMappingContract, snapshotValue core.WorkspaceSnapshot, hasSnapshot bool) bool {
+	if !mappingHasSymbols(mapping) {
+		return false
+	}
+	if !hasSnapshot {
+		return true
+	}
+	fingerprint := strings.TrimSpace(snapshotValue.WorktreeFingerprint)
+	if fingerprint == "" {
+		return true
+	}
+	return strings.TrimSpace(mapping.SourceFingerprint) == fingerprint
+}
+
+func finalizeEncoderMappingProposal(
+	mapping *core.EncoderMappingContract,
+	snapshotValue core.WorkspaceSnapshot,
+	hasSnapshot bool,
+	notes []string,
+) *core.EncoderMappingContract {
+	if mapping == nil {
+		return nil
+	}
+	final := cloneEncoderMappingContract(mapping)
+	final.InputSymbols = uniqueSortedLowerSymbols(final.InputSymbols)
+	final.GroundTruthSymbols = uniqueSortedLowerSymbols(final.GroundTruthSymbols)
+	if hasSnapshot {
+		final.SourceFingerprint = strings.TrimSpace(snapshotValue.WorktreeFingerprint)
+	}
+	final.AcceptedAt = time.Now().UTC()
+	if len(notes) > 0 {
+		final.Notes = append(final.Notes, notes...)
+	}
+	final.Notes = uniqueSortedLowerSymbols(final.Notes)
+	return final
+}
+
+func uniqueSortedLowerSymbols(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.ToLower(strings.TrimSpace(value))
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	sort.Strings(normalized)
+	return normalized
+}
+
+func parseSymbolCSV(raw string) []string {
+	parts := strings.Split(raw, ",")
+	return uniqueSortedLowerSymbols(parts)
+}
+
+func renderSymbolList(values []string) string {
+	symbols := uniqueSortedLowerSymbols(values)
+	if len(symbols) == 0 {
+		return "(none)"
+	}
+	return strings.Join(symbols, ", ")
 }
 
 func selectableModelCandidates(candidates []core.ModelCandidate) []string {

@@ -172,6 +172,17 @@ Concierge assumes the repo can change at any time (user edits). Therefore:
 * cached decisions are invalidated if their dependencies change (files, git HEAD, requirements)
 * Concierge tolerates partial progress
 
+### 4.4 User-facing language (mandatory)
+
+Any text shown to end users (terminal printouts, prompts, errors, confirmations) must use user-language, not internal implementation jargon.
+
+Rules:
+
+* avoid internal terms like “contract,” “ensure-step,” “issue code,” or “planner policy” unless they are immediately explained in plain words
+* describe what Concierge observed and what the user should do next in direct language
+* when a technical term is unavoidable, add a short explanation in the same message
+* prefer “required input names” over “required input encoder symbols” in user-facing copy
+
 ---
 
 ## 5) High-level architecture

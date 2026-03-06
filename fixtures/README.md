@@ -11,6 +11,8 @@ Each fixture creates:
 
 - `.fixtures/<id>/post`: checkout at the pinned `post_ref`
 - `.fixtures/<id>/pre`: a derived local commit that strips `strip_for_pre` files
+- Invariant: `.fixtures/<id>/pre` must not contain root-level `leap*` files.
+- Invariant: `.fixtures/<id>/pre` must not contain files with `tensorleap` in their contents.
 
 `pre` is committed locally so both `post` and `pre` remain clean git trees.
 

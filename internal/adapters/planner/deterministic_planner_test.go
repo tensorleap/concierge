@@ -95,3 +95,31 @@ func TestPlannerDeterministicAcrossRepeatedCalls(t *testing.T) {
 		t.Fatalf("expected deterministic output, got first=%+v second=%+v", first, second)
 	}
 }
+
+func TestPlannerDefersIntegrationTestUntilEncoderMappingConfirmed(t *testing.T) {
+	adapter := NewDeterministicPlanner()
+	status := core.IntegrationStatus{
+		Issues: []core.Issue{
+			{Code: core.IssueCodeIntegrationTestMissing, Severity: core.SeverityError},
+		},
+		Contracts: &core.IntegrationContracts{
+			InputGTDiscovery: &core.InputGTDiscoveryArtifacts{
+				ComparisonReport: &core.InputGTComparisonReport{
+					PrimaryInputSymbols:       []string{"image"},
+					PrimaryGroundTruthSymbols: []string{"classes"},
+				},
+			},
+		},
+	}
+
+	plan, err := adapter.Plan(context.Background(), core.WorkspaceSnapshot{}, status)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	if plan.Primary.ID != core.EnsureStepInputEncoders {
+		t.Fatalf("expected primary step %q, got %q", core.EnsureStepInputEncoders, plan.Primary.ID)
+	}
+	if len(plan.Additional) == 0 || plan.Additional[0].ID != core.EnsureStepIntegrationTestContract {
+		t.Fatalf("expected integration-test step to remain queued after input-encoder gating, got %+v", plan.Additional)
+	}
+}

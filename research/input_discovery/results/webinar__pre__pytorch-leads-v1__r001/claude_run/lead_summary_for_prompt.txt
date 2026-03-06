@@ -1,0 +1,16 @@
+Method: pytorch-leads-v1
+Python files scanned: 5
+Files with hits: 2
+Total signal hits: 4
+
+Top lead files:
+1. webinar/utils/metrics.py (score=10.0)
+   - batch_unpack_loop: count=2, contribution=10.0
+     line 121: for i, prediction in enumerate(prediction_detected):
+     line 140: for k, gt_detection in enumerate(gt_detected):
+
+2. leap_integration.py (score=6.0)
+   - main_entry: count=1, contribution=3.0
+     line 51: if __name__ == '__main__':
+   - model_call: count=1, contribution=3.0
+     line 22: y_pred = model([img])

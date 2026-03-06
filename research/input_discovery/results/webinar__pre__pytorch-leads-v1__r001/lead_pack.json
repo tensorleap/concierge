@@ -1,0 +1,144 @@
+{
+  "schema_version": "1.0.0",
+  "method_version": "pytorch-leads-v1",
+  "generated_at": "2026-03-05T09:11:04+00:00",
+  "experiment": {
+    "id": "webinar__pre__pytorch-leads-v1__r001",
+    "repo_id": "webinar",
+    "repo_variant": "pre",
+    "run_id": "r001"
+  },
+  "repo": {
+    "path": "/Users/assaf/Dropbox/tensorleap/worktrees/concierge/research/inputs/.fixtures/webinar/pre",
+    "python_files_scanned": 5
+  },
+  "signals": [
+    {
+      "id": "dataloader_import",
+      "description": "Imports from torch.utils.data related to DataLoader",
+      "weight": 6.0,
+      "tier": "primary"
+    },
+    {
+      "id": "dataloader_call",
+      "description": "DataLoader(...) call site",
+      "weight": 10.0,
+      "tier": "primary"
+    },
+    {
+      "id": "dataset_subclass",
+      "description": "class X(...Dataset...) definition",
+      "weight": 8.0,
+      "tier": "primary"
+    },
+    {
+      "id": "dataset_import",
+      "description": "Dataset import from torch.utils.data",
+      "weight": 5.0,
+      "tier": "primary"
+    },
+    {
+      "id": "train_fn",
+      "description": "Training function definition",
+      "weight": 6.0,
+      "tier": "primary"
+    },
+    {
+      "id": "validate_fn",
+      "description": "Validation/evaluation function definition",
+      "weight": 6.0,
+      "tier": "primary"
+    },
+    {
+      "id": "main_entry",
+      "description": "Python __main__ entry point",
+      "weight": 3.0,
+      "tier": "primary"
+    },
+    {
+      "id": "collate_fn",
+      "description": "collate_fn mention",
+      "weight": 5.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "batch_unpack_loop",
+      "description": "for-loop tuple unpacking pattern",
+      "weight": 5.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "transform_chain",
+      "description": "transform/torchvision transform usage",
+      "weight": 4.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "model_call",
+      "description": "model(...) invocation",
+      "weight": 3.0,
+      "tier": "secondary"
+    },
+    {
+      "id": "criterion_call",
+      "description": "criterion(...) invocation",
+      "weight": 2.0,
+      "tier": "secondary"
+    }
+  ],
+  "files": [
+    {
+      "path": "webinar/utils/metrics.py",
+      "score": 10.0,
+      "signal_hits": [
+        {
+          "signal_id": "batch_unpack_loop",
+          "count": 2,
+          "contribution": 10.0,
+          "occurrences": [
+            {
+              "line": 121,
+              "snippet": "for i, prediction in enumerate(prediction_detected):"
+            },
+            {
+              "line": 140,
+              "snippet": "for k, gt_detection in enumerate(gt_detected):"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "leap_integration.py",
+      "score": 6.0,
+      "signal_hits": [
+        {
+          "signal_id": "main_entry",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 51,
+              "snippet": "if __name__ == '__main__':"
+            }
+          ]
+        },
+        {
+          "signal_id": "model_call",
+          "count": 1,
+          "contribution": 3.0,
+          "occurrences": [
+            {
+              "line": 22,
+              "snippet": "y_pred = model([img])"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "files_with_hits": 2,
+    "signal_hit_count": 4
+  }
+}

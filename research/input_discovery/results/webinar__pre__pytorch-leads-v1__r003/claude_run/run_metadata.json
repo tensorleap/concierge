@@ -1,0 +1,13 @@
+{
+  "started_at": "2026-03-05T10:05:23+00:00",
+  "experiment_id": "webinar__pre__pytorch-leads-v1__r003",
+  "repo": "/Users/assaf/Dropbox/tensorleap/worktrees/concierge/research/inputs/.fixtures/webinar/pre",
+  "lead_pack": "/Users/assaf/Dropbox/tensorleap/worktrees/concierge/research/inputs/research/input_discovery/results/webinar__pre__pytorch-leads-v1__r003/lead_pack.json",
+  "system_prompt": "/Users/assaf/Dropbox/tensorleap/worktrees/concierge/research/inputs/research/input_discovery/prompts/pytorch_semantic_investigator.system.md",
+  "user_template": "/Users/assaf/Dropbox/tensorleap/worktrees/concierge/research/inputs/research/input_discovery/prompts/pytorch_semantic_investigator.user_template.md",
+  "schema": "/Users/assaf/Dropbox/tensorleap/worktrees/concierge/research/inputs/research/input_discovery/schemas/agent_findings.schema.json",
+  "tools": "Read,Grep,Glob,LS",
+  "allow_tool_errors": false,
+  "allow_missing_lead_pack_read": false,
+  "allow_auth_failure": false
+}

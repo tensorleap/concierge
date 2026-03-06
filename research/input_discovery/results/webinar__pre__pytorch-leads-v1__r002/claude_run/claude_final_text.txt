@@ -1,0 +1,125 @@
+Now I have enough evidence from all four Python files plus the config. Let me compile the full analysis into the required JSON.
+
+```json
+{
+  "experiment": "webinar__pre__pytorch-leads-v1__r002",
+  "repository": ".fixtures/webinar/pre",
+  "framework_note": "Repository uses TensorFlow/Keras (model: yolov7-webinar.h5, metrics use tf.Tensor). No PyTorch training loop present. Analysis performed on Tensorleap integration semantics.",
+  "inputs": [
+    {
+      "name": "image",
+      "description": "RGB image tensor resized to IMAGE_SIZE [448, 640] (H x W x C = 448 x 640 x 3). Images are sourced from S3 paths constructed in generate_subset(); PIXEL_MEAN=[0,0,0] indicates no mean subtraction (normalization scheme partially unresolved).",
+      "shape": [448, 640, 3],
+      "dtype": "float32",
+      "confidence": "high",
+      "evidence": [
+        {
+          "file": "webinar/data/preprocess.py",
+          "lines": [17, 18],
+          "snippet": "image_paths.append(str(images_base_path / splitted_line[0]))"
+        },
+        {
+          "file": "webinar/config.yml",
+          "lines": [13, 15, 16],
+          "snippet": "IMAGE_SIZE:\n  - 448\n  - 640"
+        },
+        {
+          "file": "webinar/config.yml",
+          "lines": [50],
+          "snippet": "PIXEL_MEAN: [0, 0, 0]"
+        }
+      ]
+    }
+  ],
+  "ground_truths": [
+    {
+      "name": "bounding_boxes",
+      "description": "Padded bounding-box annotation tensor, one entry per image. Raw annotations parsed from annotation file as lists of [x1, y1, x2, y2, class_id] (int). Used as y_true in all loss/metric functions. true_coords_labels() decomposes y_true into gt_loc (xywh coords) and gt_class (integer class index). MAX_BB_PER_IMAGE=150 is the pad ceiling. Classes: [car=0, truck=1, pedestrian=2], BACKGROUND_LABEL=4.",
+      "shape": [150, 5],
+      "dtype": "float32",
+      "confidence": "high",
+      "evidence": [
+        {
+          "file": "webinar/data/preprocess.py",
+          "lines": [18, 23],
+          "snippet": "list_of_bounding_boxes = [word.split(',') for word in splitted_line[1:]]\n... label_data.append(list_of_bounding_boxes_int)"
+        },
+        {
+          "file": "webinar/utils/metrics.py",
+          "lines": [46, 54],
+          "snippet": "def compute_losses(y_true: tf.Tensor, y_pred: tf.Tensor):\n    ... LOSS_FN(y_true=y_true, y_pred=(loc_list_reshaped, class_list_reshaped))"
+        },
+        {
+          "file": "webinar/utils/metrics.py",
+          "lines": [108],
+          "snippet": "gt_loc, gt_class = true_coords_labels(batch_i, y_true, BACKGROUND_LABEL)"
+        },
+        {
+          "file": "webinar/utils/metrics.py",
+          "lines": [113],
+          "snippet": "ious = jaccard(outputs[batch_i][:, 1:5], xywh_to_xyxy_format(tf.cast(gt_loc, tf.double)))"
+        },
+        {
+          "file": "webinar/config.yml",
+          "lines": [9, 10],
+          "snippet": "CATEGORIES: [\"car\", \"truck\", \"pedestrian\"]\nMAX_BB_PER_IMAGE: 150"
+        }
+      ]
+    }
+  ],
+  "encoder_mapping": [
+    {
+      "encoder_name": "image_encoder",
+      "maps_to": "image",
+      "role": "input",
+      "description": "Load image from GCS path via _download(), decode to RGB, resize to (448, 640), normalize to float32. PIXEL_MEAN=[0,0,0] so no mean subtraction; scaling to [0,1] likely required (to be confirmed from leap_binder).",
+      "source_functions": [
+        "webinar/utils/gcs_utils.py::_download",
+        "webinar/data/preprocess.py::generate_subset (image_paths output)"
+      ],
+      "confidence": "high"
+    },
+    {
+      "encoder_name": "bounding_boxes_encoder",
+      "maps_to": "bounding_boxes",
+      "role": "ground_truth",
+      "description": "For a given sample index, retrieve label_data[idx] (list of [x1,y1,x2,y2,class_id]), normalize coordinates by IMAGE_SIZE, convert to xywh format, and pad/truncate to MAX_BB_PER_IMAGE=150 rows. Produces float32 tensor shape (150, 5).",
+      "source_functions": [
+        "webinar/data/preprocess.py::generate_subset (label_data output)",
+        "webinar/utils/metrics.py::compute_losses (y_true consumer)",
+        "webinar/utils/metrics.py::confusion_matrix_metric (true_coords_labels call)"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "description": "leap_binder.py is absent from the 'pre' snapshot (only a .pyc artifact at repo root exists). The actual Tensorleap encoder bindings, metadata functions, and subset_partition logic have not yet been written. All proposals are inferred from data/preprocess.py and metrics.py only.",
+      "impact": "high"
+    },
+    {
+      "id": "U2",
+      "description": "Image normalization scale factor is unconfirmed. PIXEL_MEAN=[0,0,0] rules out mean subtraction, but whether values are scaled to [0,1] or left as [0,255] uint8 is not determinable from existing code.",
+      "impact": "medium"
+    },
+    {
+      "id": "U3",
+      "description": "Exact wire format of y_true tensor expected by code_loader's true_coords_labels() and YoloLoss is not directly readable from this repo (it lives in the code_loader library dependency). The (150, 5) shape and xywh field ordering are inferred from config MAX_BB_PER_IMAGE and the xywh_to_xyxy_format call, but the precise column layout could differ.",
+      "impact": "medium"
+    },
+    {
+      "id": "U4",
+      "description": "No PyTorch DataLoader, Dataset, or model.forward() call present anywhere in the repository. The model is a Keras .h5 file (yolov7-webinar.h5). The pytorch-leads-v1 method found no PyTorch signal; the two loop hits in metrics.py are plain Python for-loops over decoded outputs, not DataLoader batch-unpack loops.",
+      "impact": "low"
+    }
+  ],
+  "lead_validation": {
+    "lead_file": "webinar/utils/metrics.py",
+    "lead_signal": "batch_unpack_loop",
+    "lead_lines": [121, 140],
+    "validation_result": "CONFIRMED_PARTIAL",
+    "notes": "Lines 121 and 140 are indeed iteration over per-sample detection outputs (prediction_detected and gt_detected arrays), functioning as the innermost evaluation loop. They confirm the structure of y_true (gt_loc/gt_class) and y_pred (decoded YOLO outputs with columns [conf, x1, y1, x2, y2, class_id]). However these are plain Python for-loops, not PyTorch DataLoader unpack patterns. The ground-truth and prediction tensor contracts are clearly readable from this context."
+  }
+}
+```

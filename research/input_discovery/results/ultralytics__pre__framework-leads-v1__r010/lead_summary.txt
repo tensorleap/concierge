@@ -1,0 +1,109 @@
+Experiment: ultralytics__pre__framework-leads-v1__r010
+Repo: /Users/assaf/Dropbox/tensorleap/worktrees/concierge/research/inputs/.fixtures/ultralytics/pre
+Method: framework-leads-v1
+Python files scanned: 166
+Files with hits: 118
+Total signal hits: 702
+Framework detection: pytorch (high)
+Framework scores: pytorch=1035.0, tensorflow=462.0
+
+Top lead files:
+1. ultralytics/engine/exporter.py (score=87.0)
+   - tensorflow_import[tensorflow]: count=6, contribution=30.0
+   - model_call[agnostic]: count=6, contribution=15.0
+   - keras_evaluate_or_predict[tensorflow]: count=2, contribution=12.0
+
+2. ultralytics/nn/tasks.py (score=87.0)
+   - batch_unpack_loop[agnostic]: count=5, contribution=20.0
+   - keras_evaluate_or_predict[tensorflow]: count=3, contribution=18.0
+   - loss_call[agnostic]: count=7, contribution=15.0
+
+3. ultralytics/nn/modules/head.py (score=79.0)
+   - tf_data_pipeline_ops[tensorflow]: count=4, contribution=24.0
+   - batch_unpack_loop[agnostic]: count=5, contribution=20.0
+   - torch_forward_def[pytorch]: count=7, contribution=20.0
+
+4. ultralytics/data/dataset.py (score=66.0)
+   - dataset_subclass[pytorch]: count=5, contribution=40.0
+   - batch_unpack_loop[agnostic]: count=4, contribution=16.0
+   - torch_import[pytorch]: count=2, contribution=10.0
+
+5. ultralytics/models/sam/modules/tiny_encoder.py (score=66.0)
+   - torch_import[pytorch]: count=7, contribution=25.0
+   - torch_forward_def[pytorch]: count=9, contribution=20.0
+   - batch_unpack_loop[agnostic]: count=2, contribution=8.0
+
+6. ultralytics/tensorleap_folder/dataset.py (score=66.0)
+   - dataset_subclass[pytorch]: count=5, contribution=40.0
+   - batch_unpack_loop[agnostic]: count=4, contribution=16.0
+   - torch_import[pytorch]: count=2, contribution=10.0
+
+7. ultralytics/engine/model.py (score=65.0)
+   - keras_evaluate_or_predict[tensorflow]: count=6, contribution=30.0
+   - model_call[agnostic]: count=6, contribution=15.0
+   - validate_fn[agnostic]: count=2, contribution=10.0
+
+8. ultralytics/models/sam/modules/blocks.py (score=63.0)
+   - torch_import[pytorch]: count=7, contribution=25.0
+   - torch_forward_def[pytorch]: count=12, contribution=20.0
+   - tf_data_pipeline_ops[tensorflow]: count=3, contribution=18.0
+
+9. ultralytics/engine/trainer.py (score=62.0)
+   - batch_unpack_loop[agnostic]: count=5, contribution=20.0
+   - torch_import[pytorch]: count=4, contribution=20.0
+   - model_call[agnostic]: count=3, contribution=9.0
+
+10. ultralytics/engine/results.py (score=60.0)
+   - torch_import[pytorch]: count=11, contribution=25.0
+   - batch_unpack_loop[agnostic]: count=5, contribution=20.0
+   - model_call[agnostic]: count=34, contribution=15.0
+
+11. ultralytics/nn/modules/block.py (score=60.0)
+   - torch_import[pytorch]: count=5, contribution=25.0
+   - torch_forward_def[pytorch]: count=39, contribution=20.0
+   - model_call[agnostic]: count=3, contribution=9.0
+
+12. ultralytics/utils/torch_utils.py (score=59.0)
+   - batch_unpack_loop[agnostic]: count=6, contribution=20.0
+   - torch_import[pytorch]: count=4, contribution=20.0
+   - model_call[agnostic]: count=4, contribution=12.0
+
+13. tests/test_python.py (score=54.0)
+   - keras_evaluate_or_predict[tensorflow]: count=5, contribution=30.0
+   - model_call[agnostic]: count=13, contribution=15.0
+   - torch_import[pytorch]: count=1, contribution=5.0
+
+14. ultralytics/nn/autobackend.py (score=54.0)
+   - tensorflow_import[tensorflow]: count=3, contribution=18.0
+   - model_call[agnostic]: count=4, contribution=12.0
+   - torch_import[pytorch]: count=2, contribution=10.0
+
+15. ultralytics/nn/modules/transformer.py (score=54.0)
+   - torch_forward_def[pytorch]: count=10, contribution=20.0
+   - torch_import[pytorch]: count=4, contribution=20.0
+   - batch_unpack_loop[agnostic]: count=2, contribution=8.0
+
+16. ultralytics/models/sam/modules/encoders.py (score=52.0)
+   - torch_import[pytorch]: count=5, contribution=25.0
+   - torch_forward_def[pytorch]: count=6, contribution=20.0
+   - batch_unpack_loop[agnostic]: count=1, contribution=4.0
+
+17. ultralytics/utils/loss.py (score=51.0)
+   - torch_forward_def[pytorch]: count=5, contribution=20.0
+   - torch_import[pytorch]: count=3, contribution=15.0
+   - loss_call[agnostic]: count=4, contribution=12.0
+
+18. ultralytics/models/utils/ops.py (score=49.0)
+   - tf_data_pipeline_ops[tensorflow]: count=5, contribution=30.0
+   - torch_import[pytorch]: count=3, contribution=15.0
+   - torch_forward_def[pytorch]: count=1, contribution=4.0
+
+19. ultralytics/models/yolo/segment/val.py (score=40.0)
+   - batch_unpack_loop[agnostic]: count=3, contribution=12.0
+   - tf_data_pipeline_ops[tensorflow]: count=2, contribution=12.0
+   - torch_import[pytorch]: count=2, contribution=10.0
+
+20. ultralytics/models/sam/predict.py (score=39.0)
+   - batch_unpack_loop[agnostic]: count=7, contribution=20.0
+   - torch_import[pytorch]: count=2, contribution=10.0
+   - model_call[agnostic]: count=3, contribution=9.0

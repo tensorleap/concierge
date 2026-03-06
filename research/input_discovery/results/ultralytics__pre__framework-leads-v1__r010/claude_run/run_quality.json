@@ -1,0 +1,9 @@
+{
+  "lead_pack_read_attempted": false,
+  "lead_pack_read_success": false,
+  "tool_errors": [
+    "tool#2 Read: 1\u2192# Ultralytics \ud83d\ude80 AGPL-3.0 License - https://ultralytics.com/license 2\u2192 3\u2192import contextlib 4\u2192import pickle 5\u2192import re 6\u2192import types 7\u2192from copy import deepcopy 8\u2192from pathlib..."
+  ],
+  "permission_errors": [],
+  "result_event_is_error": false
+}

@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0.0",
+  "method_version": "pytorch-agent-findings-v1",
+  "experiment_id": "webinar__pre__pytorch-leads-v1__r004",
+  "repo": {
+    "path": ".fixtures/webinar/pre"
+  },
+  "inputs": [
+    {
+      "name": "image",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "file": "webinar/data/preprocess.py",
+          "line": 6,
+          "snippet": "images_base_path = Path(\"s3_data/From-Algo/OD_partial2\") ... image_paths.append(str(images_base_path / splitted_line[0]))"
+        },
+        {
+          "file": "webinar/config.yml",
+          "line": 13,
+          "snippet": "IMAGE_SIZE: [448, 640]"
+        }
+      ],
+      "semantic_hint": "RGB image resized to IMAGE_SIZE [448, 640]. Image paths loaded from annotation files via preprocess.generate_subset().",
+      "shape_hint": "[448, 640, 3]",
+      "dtype_hint": "float32"
+    }
+  ],
+  "ground_truths": [
+    {
+      "name": "y_true_od",
+      "confidence": "high",
+      "evidence": [
+        {
+          "file": "webinar/utils/metrics.py",
+          "line": 46,
+          "snippet": "def compute_losses(y_true: tf.Tensor, y_pred: tf.Tensor) -> Tuple[Any, Any, Any]: ... loss_l, loss_c, loss_o = LOSS_FN(y_true=y_true, y_pred=(loc_list_reshaped, class_list_reshaped))"
+        },
+        {
+          "file": "webinar/utils/metrics.py",
+          "line": 57,
+          "snippet": "@tensorleap_custom_loss('od_loss')\ndef od_loss(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:"
+        },
+        {
+          "file": "webinar/utils/metrics.py",
+          "line": 108,
+          "snippet": "gt_loc, gt_class = true_coords_labels(batch_i, y_true, BACKGROUND_LABEL)"
+        },
+        {
+          "file": "webinar/data/preprocess.py",
+          "line": 19,
+          "snippet": "list_of_bounding_boxes = [word.split(',') for word in splitted_line[1:]] ... label_data.append(list_of_bounding_boxes_int)"
+        },
+        {
+          "file": "webinar/config.yml",
+          "line": 9,
+          "snippet": "CATEGORIES: [\"car\", \"truck\", \"pedestrian\"]\nMAX_BB_PER_IMAGE: 150"
+        }
+      ],
+      "semantic_hint": "Object detection ground-truth tensor encoding bounding box coordinates and class labels per image. Used as y_true in YoloLoss and all custom metrics/losses. Parsed from annotation text files where each line has bounding boxes as comma-separated [x1,y1,x2,y2,class] groups.",
+      "shape_hint": "['batch', 'MAX_BB_PER_IMAGE', '5+']",
+      "dtype_hint": "float32"
+    }
+  ],
+  "proposed_mapping": [
+    {
+      "encoder_type": "input",
+      "name": "image_encoder",
+      "source_candidate": "image",
+      "confidence": "medium",
+      "notes": "preprocess.py provides image_paths; config.yml defines IMAGE_SIZE=[448,640]; no in-repo loader code found so encoder must be authored.; Loads an image from GCS path, resizes to [448, 640], normalizes, and returns float32 tensor of shape (448, 640, 3)."
+    },
+    {
+      "encoder_type": "ground_truth",
+      "name": "gt_encoder",
+      "source_candidate": "y_true_od",
+      "confidence": "medium",
+      "notes": "preprocess.py parses bbox annotations as lists of [x1,y1,x2,y2,class]; metrics.py passes y_true to true_coords_labels and YoloLoss expecting a specific tensor layout.; Encodes per-image bounding box annotations (from label_data parsed in preprocess.py) into a padded tensor of shape (MAX_BB_PER_IMAGE, 5+) compatible with code_loader's YoloLoss y_true format."
+    }
+  ],
+  "unknowns": [
+    "This repository contains NO PyTorch code. It is a TensorFlow/Tensorleap integration project. The lead pack signals (batch_unpack_loop) were false positives from enumerate loops in a confusion-matrix metric.",
+    "The leap_binder entry point (typically defining input/gt/prediction encoders and dataset subset callbacks) is not present in this 4-file repo subset.",
+    "Model architecture definition is absent; only inference/loss evaluation code is present.",
+    "Image loading, resizing, and normalization logic is not in-repo \u2014 likely in an absent leap_binder or data pipeline file."
+  ]
+}

@@ -37,10 +37,14 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
       - name: Verify fixture script prerequisites
         run: |
           git --version
           jq --version
+          rg --version
 
       - name: Prepare fixtures (retry once for transient network failures)
         run: |

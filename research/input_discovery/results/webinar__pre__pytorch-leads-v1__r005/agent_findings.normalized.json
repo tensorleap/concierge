@@ -1,0 +1,77 @@
+{
+  "schema_version": "1.0.0",
+  "method_version": "pytorch-agent-findings-v1",
+  "experiment_id": "webinar__pre__pytorch-leads-v1__r005",
+  "repo": {
+    "path": ".fixtures/webinar/pre"
+  },
+  "inputs": [
+    {
+      "name": "image",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "file": "webinar/config.yml",
+          "line": 14,
+          "snippet": "IMAGE_SIZE:\n  - 448\n  - 640"
+        },
+        {
+          "file": "webinar/data/preprocess.py",
+          "line": 1,
+          "snippet": "image_paths.append(str(images_base_path / splitted_line[0]))"
+        }
+      ],
+      "semantic_hint": "RGB image resized to [448, 640], loaded from cloud storage paths parsed in preprocess.py",
+      "shape_hint": "[448, 640, 3]",
+      "dtype_hint": "float32"
+    }
+  ],
+  "ground_truths": [
+    {
+      "name": "y_true_od",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "file": "webinar/utils/metrics.py",
+          "line": 46,
+          "snippet": "def compute_losses(y_true: tf.Tensor, y_pred: tf.Tensor) -> Tuple[Any, Any, Any]:"
+        },
+        {
+          "file": "webinar/utils/metrics.py",
+          "line": 108,
+          "snippet": "gt_loc, gt_class = true_coords_labels(batch_i, y_true, BACKGROUND_LABEL)"
+        },
+        {
+          "file": "webinar/utils/metrics.py",
+          "line": 113,
+          "snippet": "xywh_to_xyxy_format(tf.cast(gt_loc, tf.double))"
+        },
+        {
+          "file": "webinar/data/preprocess.py",
+          "line": 1,
+          "snippet": "list_of_bounding_boxes = [word.split(',') for word in splitted_line[1:]]"
+        },
+        {
+          "file": "webinar/config.yml",
+          "line": 9,
+          "snippet": "CATEGORIES: [\"car\", \"truck\", \"pedestrian\"]"
+        },
+        {
+          "file": "webinar/config.yml",
+          "line": 10,
+          "snippet": "MAX_BB_PER_IMAGE: 150"
+        }
+      ],
+      "semantic_hint": "Object detection ground truth tensor containing bounding box coordinates and class labels, formatted for YOLO loss. Encodes up to MAX_BB_PER_IMAGE=150 bounding boxes across 3 classes (car, truck, pedestrian). Used as y_true in all loss/metric functions.",
+      "shape_hint": "[max_bb, 5+]",
+      "dtype_hint": "float32"
+    }
+  ],
+  "proposed_mapping": [],
+  "unknowns": [
+    "This repository contains NO PyTorch code. All DL operations use TensorFlow/Keras. The lead pack scanner (pytorch-leads-v1) produced false positives.",
+    "The Tensorleap leap_binder entry point (defining input/GT encoders, model loader, etc.) is missing from the repo snapshot \u2014 only utility modules (config, preprocess, gcs_utils, metrics) are present.",
+    "The model forward-call and actual DataLoader/Dataset are not visible; the .h5 model is loaded externally by the Tensorleap platform.",
+    "Exact y_true tensor layout depends on code_loader.helpers.detection.utils.true_coords_labels which is an external dependency."
+  ]
+}

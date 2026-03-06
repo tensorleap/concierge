@@ -46,14 +46,15 @@ type RepositoryState struct {
 
 // WorkspaceSnapshot is an immutable iteration input.
 type WorkspaceSnapshot struct {
-	ID                  string            `json:"id"`
-	CapturedAt          time.Time         `json:"capturedAt"`
-	WorktreeFingerprint string            `json:"worktreeFingerprint"`
-	SelectedModelPath   string            `json:"selectedModelPath,omitempty"`
-	Repository          RepositoryState   `json:"repository"`
-	FileHashes          map[string]string `json:"fileHashes,omitempty"`
-	Runtime             RuntimeState      `json:"runtime,omitempty"`
-	LeapCLI             LeapCLIState      `json:"leapCli,omitempty"`
+	ID                      string                  `json:"id"`
+	CapturedAt              time.Time               `json:"capturedAt"`
+	WorktreeFingerprint     string                  `json:"worktreeFingerprint"`
+	SelectedModelPath       string                  `json:"selectedModelPath,omitempty"`
+	ConfirmedEncoderMapping *EncoderMappingContract `json:"confirmedEncoderMapping,omitempty"`
+	Repository              RepositoryState         `json:"repository"`
+	FileHashes              map[string]string       `json:"fileHashes,omitempty"`
+	Runtime                 RuntimeState            `json:"runtime,omitempty"`
+	LeapCLI                 LeapCLIState            `json:"leapCli,omitempty"`
 }
 
 // RuntimeState captures lightweight runtime/tooling fingerprints.
@@ -108,17 +109,192 @@ type ModelCandidate struct {
 	Source string `json:"source,omitempty"`
 }
 
+// InputGTEvidence is one evidence snippet supporting a discovered input/ground-truth candidate.
+type InputGTEvidence struct {
+	File    string `json:"file"`
+	Line    int    `json:"line"`
+	Snippet string `json:"snippet,omitempty"`
+}
+
+// InputGTCandidate is one discovered input/ground-truth candidate.
+type InputGTCandidate struct {
+	Name         string            `json:"name"`
+	SemanticHint string            `json:"semanticHint,omitempty"`
+	ShapeHint    string            `json:"shapeHint,omitempty"`
+	DTypeHint    string            `json:"dtypeHint,omitempty"`
+	Confidence   string            `json:"confidence,omitempty"`
+	Evidence     []InputGTEvidence `json:"evidence,omitempty"`
+	Condition    string            `json:"condition,omitempty"`
+}
+
+// InputGTProposedMapping is one proposed encoder mapping from discovery findings.
+type InputGTProposedMapping struct {
+	EncoderType     string `json:"encoderType"`
+	Name            string `json:"name"`
+	SourceCandidate string `json:"sourceCandidate"`
+	Confidence      string `json:"confidence,omitempty"`
+	Notes           string `json:"notes,omitempty"`
+	Condition       string `json:"condition,omitempty"`
+}
+
+// InputGTNormalizedFindings is the normalized candidate payload consumed by inspector/planner/authoring.
+type InputGTNormalizedFindings struct {
+	SchemaVersion   string                   `json:"schemaVersion,omitempty"`
+	MethodVersion   string                   `json:"methodVersion,omitempty"`
+	Inputs          []InputGTCandidate       `json:"inputs,omitempty"`
+	GroundTruths    []InputGTCandidate       `json:"groundTruths,omitempty"`
+	ProposedMapping []InputGTProposedMapping `json:"proposedMapping,omitempty"`
+	Unknowns        []string                 `json:"unknowns,omitempty"`
+	Comments        string                   `json:"comments,omitempty"`
+}
+
+// InputGTFrameworkScore captures framework score pairs used by framework detection.
+type InputGTFrameworkScore struct {
+	PyTorch    float64 `json:"pytorch,omitempty"`
+	TensorFlow float64 `json:"tensorflow,omitempty"`
+}
+
+// InputGTFrameworkComponents captures signal-vs-artifact score components.
+type InputGTFrameworkComponents struct {
+	SignalScores   InputGTFrameworkScore `json:"signalScores,omitempty"`
+	ArtifactScores InputGTFrameworkScore `json:"artifactScores,omitempty"`
+}
+
+// InputGTFrameworkEvidence captures one evidence item used in framework detection.
+type InputGTFrameworkEvidence struct {
+	Framework string  `json:"framework,omitempty"`
+	Type      string  `json:"type,omitempty"`
+	Path      string  `json:"path,omitempty"`
+	Detail    string  `json:"detail,omitempty"`
+	Weight    float64 `json:"weight,omitempty"`
+}
+
+// InputGTFrameworkDetection summarizes framework classification from repository signals.
+type InputGTFrameworkDetection struct {
+	Candidate  string                     `json:"candidate,omitempty"`
+	Confidence string                     `json:"confidence,omitempty"`
+	Scores     InputGTFrameworkScore      `json:"scores,omitempty"`
+	Components InputGTFrameworkComponents `json:"components,omitempty"`
+	Evidence   []InputGTFrameworkEvidence `json:"evidence,omitempty"`
+}
+
+// InputGTLeadSignal captures one weighted signal definition used by framework lead extraction.
+type InputGTLeadSignal struct {
+	ID          string  `json:"id"`
+	Framework   string  `json:"framework,omitempty"`
+	Description string  `json:"description,omitempty"`
+	Weight      float64 `json:"weight,omitempty"`
+	Tier        string  `json:"tier,omitempty"`
+}
+
+// InputGTLeadSignalOccurrence captures one source-code occurrence for a signal hit.
+type InputGTLeadSignalOccurrence struct {
+	Line    int    `json:"line"`
+	Snippet string `json:"snippet,omitempty"`
+}
+
+// InputGTLeadSignalHit captures one scored signal hit for a lead file.
+type InputGTLeadSignalHit struct {
+	SignalID     string                        `json:"signalId"`
+	Framework    string                        `json:"framework,omitempty"`
+	Count        int                           `json:"count,omitempty"`
+	Contribution float64                       `json:"contribution,omitempty"`
+	Occurrences  []InputGTLeadSignalOccurrence `json:"occurrences,omitempty"`
+}
+
+// InputGTLeadFile captures scored lead details for one repository file.
+type InputGTLeadFile struct {
+	Path            string                 `json:"path"`
+	Score           float64                `json:"score,omitempty"`
+	FrameworkScores InputGTFrameworkScore  `json:"frameworkScores,omitempty"`
+	SignalHits      []InputGTLeadSignalHit `json:"signalHits,omitempty"`
+}
+
+// InputGTLeadPack is the machine artifact for framework-agnostic lead extraction.
+type InputGTLeadPack struct {
+	SchemaVersion      string                    `json:"schemaVersion,omitempty"`
+	MethodVersion      string                    `json:"methodVersion,omitempty"`
+	GeneratedAt        string                    `json:"generatedAt,omitempty"`
+	RepoPath           string                    `json:"repoPath,omitempty"`
+	PythonFilesScanned int                       `json:"pythonFilesScanned,omitempty"`
+	FrameworkDetection InputGTFrameworkDetection `json:"frameworkDetection,omitempty"`
+	Signals            []InputGTLeadSignal       `json:"signals,omitempty"`
+	Files              []InputGTLeadFile         `json:"files,omitempty"`
+	FilesWithHits      int                       `json:"filesWithHits,omitempty"`
+	SignalHitCount     int                       `json:"signalHitCount,omitempty"`
+}
+
+// InputGTFixtureState captures deterministic discovery stage context for one snapshot.
+type InputGTFixtureState struct {
+	RepoRoot            string `json:"repoRoot,omitempty"`
+	SnapshotID          string `json:"snapshotId,omitempty"`
+	WorktreeFingerprint string `json:"worktreeFingerprint,omitempty"`
+}
+
+// InputGTAgentPromptBundle captures prompt material used for semantic discovery investigation.
+type InputGTAgentPromptBundle struct {
+	SystemPrompt              string `json:"systemPrompt,omitempty"`
+	UserPrompt                string `json:"userPrompt,omitempty"`
+	ReadOnly                  bool   `json:"readOnly,omitempty"`
+	LeadPackReadSuccess       bool   `json:"leadPackReadSuccess,omitempty"`
+	LeadPackReadInformational bool   `json:"leadPackReadInformational,omitempty"`
+}
+
+// InputGTAgentRawOutput captures investigator raw payload + metadata before normalization.
+type InputGTAgentRawOutput struct {
+	Provider string            `json:"provider,omitempty"`
+	Model    string            `json:"model,omitempty"`
+	Payload  string            `json:"payload,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+// InputGTComparisonReport captures semantic-first comparison details for discovery outputs.
+type InputGTComparisonReport struct {
+	PrimaryInputSymbols           []string `json:"primaryInputSymbols,omitempty"`
+	PrimaryGroundTruthSymbols     []string `json:"primaryGroundTruthSymbols,omitempty"`
+	ConditionalInputSymbols       []string `json:"conditionalInputSymbols,omitempty"`
+	ConditionalGroundTruthSymbols []string `json:"conditionalGroundTruthSymbols,omitempty"`
+	RuntimeInputSymbols           []string `json:"runtimeInputSymbols,omitempty"`
+	RuntimeOnlyInputSymbols       []string `json:"runtimeOnlyInputSymbols,omitempty"`
+	DiscoveryOnlyInputSymbols     []string `json:"discoveryOnlyInputSymbols,omitempty"`
+	Notes                         []string `json:"notes,omitempty"`
+}
+
+// InputGTDiscoveryArtifacts captures staged discovery artifacts persisted across the pipeline.
+type InputGTDiscoveryArtifacts struct {
+	FixtureState       *InputGTFixtureState       `json:"fixtureState,omitempty"`
+	LeadPack           *InputGTLeadPack           `json:"leadPack,omitempty"`
+	LeadSummary        string                     `json:"leadSummary,omitempty"`
+	AgentPromptBundle  *InputGTAgentPromptBundle  `json:"agentPromptBundle,omitempty"`
+	AgentRawOutput     *InputGTAgentRawOutput     `json:"agentRawOutput,omitempty"`
+	NormalizedFindings *InputGTNormalizedFindings `json:"normalizedFindings,omitempty"`
+	ComparisonReport   *InputGTComparisonReport   `json:"comparisonReport,omitempty"`
+}
+
+// EncoderMappingContract captures user-confirmed input/GT mapping contract persisted in state.
+type EncoderMappingContract struct {
+	SourceFingerprint  string    `json:"sourceFingerprint,omitempty"`
+	InputSymbols       []string  `json:"inputSymbols,omitempty"`
+	GroundTruthSymbols []string  `json:"groundTruthSymbols,omitempty"`
+	AcceptedAt         time.Time `json:"acceptedAt,omitempty"`
+	Notes              []string  `json:"notes,omitempty"`
+}
+
 // IntegrationContracts captures discovered interface symbols from the integration entry file.
 type IntegrationContracts struct {
-	EntryFile                string           `json:"entryFile"`
-	LoadModelFunctions       []string         `json:"loadModelFunctions,omitempty"`
-	PreprocessFunctions      []string         `json:"preprocessFunctions,omitempty"`
-	InputEncoders            []string         `json:"inputEncoders,omitempty"`
-	GroundTruthEncoders      []string         `json:"groundTruthEncoders,omitempty"`
-	IntegrationTestFunctions []string         `json:"integrationTestFunctions,omitempty"`
-	IntegrationTestCalls     []string         `json:"integrationTestCalls,omitempty"`
-	ModelCandidates          []ModelCandidate `json:"modelCandidates,omitempty"`
-	ResolvedModelPath        string           `json:"resolvedModelPath,omitempty"`
+	EntryFile                    string                     `json:"entryFile"`
+	LoadModelFunctions           []string                   `json:"loadModelFunctions,omitempty"`
+	PreprocessFunctions          []string                   `json:"preprocessFunctions,omitempty"`
+	InputEncoders                []string                   `json:"inputEncoders,omitempty"`
+	GroundTruthEncoders          []string                   `json:"groundTruthEncoders,omitempty"`
+	IntegrationTestFunctions     []string                   `json:"integrationTestFunctions,omitempty"`
+	IntegrationTestCalls         []string                   `json:"integrationTestCalls,omitempty"`
+	ModelCandidates              []ModelCandidate           `json:"modelCandidates,omitempty"`
+	ResolvedModelPath            string                     `json:"resolvedModelPath,omitempty"`
+	DiscoveredInputSymbols       []string                   `json:"discoveredInputSymbols,omitempty"`
+	DiscoveredGroundTruthSymbols []string                   `json:"discoveredGroundTruthSymbols,omitempty"`
+	ConfirmedMapping             *EncoderMappingContract    `json:"confirmedMapping,omitempty"`
+	InputGTDiscovery             *InputGTDiscoveryArtifacts `json:"inputGtDiscovery,omitempty"`
 }
 
 // IntegrationStatus summarizes what is currently missing or invalid.

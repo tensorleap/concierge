@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,50 +27,38 @@ func TestRunnerCheckAvailabilityReturnsMissingDependencyWhenClaudeMissing(t *tes
 
 func TestRunnerInvokesClaudeWithSystemPrompt(t *testing.T) {
 	repoRoot := t.TempDir()
+	binDir := t.TempDir()
 	transcriptPath := filepath.Join(repoRoot, ".concierge", "evidence", "snapshot-system", "agent.transcript.log")
 	task := validAgentTask(repoRoot, transcriptPath)
 
+	installMockClaude(t, binDir, "#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1-}\" == \"--help\" ]]; then\ncat <<'EOF'\n--output-format stream-json\n--include-partial-messages\nEOF\nexit 0\nfi\necho '{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}'\necho '{\"type\":\"result\",\"result\":\"done\"}'\n")
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
 	runner := NewRunner()
-	runner.lookPath = func(file string) (string, error) {
-		return "/usr/local/bin/claude", nil
-	}
-
-	var capturedArgs []string
-	runner.runCommand = func(ctx context.Context, dir, command string, args []string) ([]byte, []byte, error) {
-		_ = ctx
-		if dir != repoRoot {
-			t.Fatalf("expected command dir %q, got %q", repoRoot, dir)
-		}
-		if command != "/usr/local/bin/claude" {
-			t.Fatalf("expected command path %q, got %q", "/usr/local/bin/claude", command)
-		}
-		capturedArgs = append([]string(nil), args...)
-		return []byte("ok"), nil, nil
-	}
-
 	_, err := runner.Run(context.Background(), task)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
 
-	index := -1
-	for i, arg := range capturedArgs {
-		if arg == "--system-prompt" {
-			index = i
-			break
-		}
+	raw, err := os.ReadFile(transcriptPath)
+	if err != nil {
+		t.Fatalf("ReadFile failed for transcript: %v", err)
 	}
-	if index < 0 {
-		t.Fatalf("expected --system-prompt flag in args, got: %+v", capturedArgs)
+	contents := string(raw)
+	if !strings.Contains(contents, "--output-format stream-json") {
+		t.Fatalf("expected stream-json invocation in transcript, got: %q", contents)
 	}
-	if len(capturedArgs) <= index+1 {
-		t.Fatalf("expected system prompt value after --system-prompt, got: %+v", capturedArgs)
+	if !strings.Contains(contents, "--include-partial-messages") {
+		t.Fatalf("expected partial-message flag in transcript, got: %q", contents)
 	}
-	if capturedArgs[index+1] != BuildClaudeSystemPrompt() {
-		t.Fatalf("unexpected system prompt value: %q", capturedArgs[index+1])
+	if !strings.Contains(contents, "--verbose") {
+		t.Fatalf("expected verbose flag in transcript, got: %q", contents)
 	}
-	if gotPrompt := capturedArgs[len(capturedArgs)-1]; gotPrompt != BuildClaudeTaskPrompt(task) {
-		t.Fatalf("expected final arg to be task prompt, got: %q", gotPrompt)
+	if !strings.Contains(contents, BuildClaudeSystemPrompt()) {
+		t.Fatalf("expected system prompt in transcript, got: %q", contents)
+	}
+	if !strings.Contains(contents, BuildClaudeTaskPrompt(task)) {
+		t.Fatalf("expected task prompt in transcript, got: %q", contents)
 	}
 }
 
@@ -109,16 +96,8 @@ func TestRunnerFailsFastWhenRequiredContextPayloadIsMissing(t *testing.T) {
 func TestRunnerRunWritesTranscript(t *testing.T) {
 	repoRoot := t.TempDir()
 	binDir := t.TempDir()
-	scriptPath := filepath.Join(binDir, "claude")
-	script := "#!/usr/bin/env bash\n" +
-		"set -euo pipefail\n" +
-		"echo \"argv: $*\"\n" +
-		"echo \"prompt: ${@: -1}\"\n" +
-		"echo \"stderr line\" >&2\n"
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
-		t.Fatalf("WriteFile failed for script: %v", err)
-	}
-	t.Setenv("PATH", fmt.Sprintf("%s%c%s", binDir, os.PathListSeparator, os.Getenv("PATH")))
+	installMockClaude(t, binDir, "#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1-}\" == \"--help\" ]]; then\ncat <<'EOF'\n--output-format stream-json\n--include-partial-messages\nEOF\nexit 0\nfi\necho '{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"content_block\":{\"type\":\"tool_use\",\"name\":\"Read\",\"input\":{\"file_path\":\"leap_binder.py\"}}}}'\necho '{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"planning fix\"}}}'\necho '{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"final answer\"}]}}'\necho '{\"type\":\"result\",\"result\":\"done\"}'\necho 'stderr line' >&2\n")
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	transcriptPath := filepath.Join(repoRoot, ".concierge", "evidence", "snapshot-1", "agent.transcript.log")
 	runner := NewRunner()
@@ -148,14 +127,41 @@ func TestRunnerRunWritesTranscript(t *testing.T) {
 	if !strings.Contains(contents, "Task prompt:\nObjective:\nImplement preprocess contract") {
 		t.Fatalf("expected structured task prompt in transcript, got: %q", contents)
 	}
-	if !strings.Contains(contents, "argv: --print --output-format text --permission-mode bypassPermissions --system-prompt") {
-		t.Fatalf("expected claude arguments in transcript, got: %q", contents)
+	if !strings.Contains(contents, "--output-format stream-json") {
+		t.Fatalf("expected stream-json command in transcript, got: %q", contents)
 	}
-	if !strings.Contains(contents, "prompt: Objective:") {
-		t.Fatalf("expected stdout in transcript, got: %q", contents)
+	if !strings.Contains(contents, "--verbose") {
+		t.Fatalf("expected verbose flag in transcript, got: %q", contents)
+	}
+	if !strings.Contains(contents, "[tool] Scanning repository code: leap_binder.py") {
+		t.Fatalf("expected tool transcript line, got: %q", contents)
+	}
+	if !strings.Contains(contents, "planning fix") {
+		t.Fatalf("expected message text in transcript, got: %q", contents)
+	}
+	if !strings.Contains(contents, "final answer") {
+		t.Fatalf("expected assistant text in transcript, got: %q", contents)
 	}
 	if !strings.Contains(contents, "stderr line") {
 		t.Fatalf("expected stderr in transcript, got: %q", contents)
+	}
+	if result.RawStreamPath == "" {
+		t.Fatal("expected raw stream path on successful streaming run")
+	}
+	rawStream, err := os.ReadFile(result.RawStreamPath)
+	if err != nil {
+		t.Fatalf("ReadFile failed for raw stream: %v", err)
+	}
+	if !strings.Contains(string(rawStream), "\"type\":\"assistant\"") {
+		t.Fatalf("expected assistant event in raw stream, got: %q", string(rawStream))
+	}
+}
+
+func installMockClaude(t *testing.T, binDir, body string) {
+	t.Helper()
+	scriptPath := filepath.Join(binDir, "claude")
+	if err := os.WriteFile(scriptPath, []byte(body), 0o755); err != nil {
+		t.Fatalf("WriteFile failed for mock claude command: %v", err)
 	}
 }
 

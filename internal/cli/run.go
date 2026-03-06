@@ -24,6 +24,7 @@ import (
 	"github.com/tensorleap/concierge/internal/core"
 	"github.com/tensorleap/concierge/internal/core/ports"
 	"github.com/tensorleap/concierge/internal/gitmanager"
+	"github.com/tensorleap/concierge/internal/observe"
 	"github.com/tensorleap/concierge/internal/orchestrator"
 	"github.com/tensorleap/concierge/internal/state"
 )
@@ -81,6 +82,16 @@ func newRunCommand() *cobra.Command {
 			if err := renderRunSessionStart(writer, repoRoot, persist, nonInteractive, debugOutput, renderOptions); err != nil {
 				return err
 			}
+
+			recorder, err := observe.NewRecorder(repoRoot)
+			if err != nil {
+				return err
+			}
+			liveRenderer := observe.NewHighlightsRenderer(
+				writer,
+				observe.RenderOptions{NoColor: noColor},
+			)
+			liveEvents := observe.NewSafeSink(observe.NewMultiSink(recorder, liveRenderer))
 
 			loadedState, err := state.LoadState(repoRoot)
 			if err != nil {
@@ -141,7 +152,10 @@ func newRunCommand() *cobra.Command {
 
 			plannerAdapter := newPlanCapturePlanner(planner.NewDeterministicPlanner())
 			agentRunner := agent.NewRunner()
-			baseExecutor := execute.NewDispatcherExecutorWithAgent(execute.NewAgentExecutor(agentRunner))
+			agentRunner.SetObserver(liveEvents)
+			agentExecutor := execute.NewAgentExecutor(agentRunner)
+			agentExecutor.SetObserver(liveEvents)
+			baseExecutor := execute.NewDispatcherExecutorWithAgent(agentExecutor)
 
 			stepApproval := func(step core.EnsureStep) (bool, error) {
 				snapshotValue, hasSnapshot := plannerAdapter.LastSnapshot()
@@ -189,6 +203,11 @@ func newRunCommand() *cobra.Command {
 						"this run requires approval before I apply and commit changes; rerun with --yes to auto-approve in non-interactive mode",
 					)
 				}
+				liveEvents.Emit(observe.Event{
+					Kind:    observe.EventWaitingApproval,
+					StepID:  step.ID,
+					Message: "Waiting for your approval before making changes",
+				})
 				return promptApproval(
 					promptInput,
 					cmd.OutOrStdout(),
@@ -208,6 +227,11 @@ func newRunCommand() *cobra.Command {
 						"this run requires approval to commit changes; rerun with --yes to auto-approve in non-interactive mode",
 					)
 				}
+				liveEvents.Emit(observe.Event{
+					Kind:    observe.EventGitReviewStarted,
+					StepID:  step.ID,
+					Message: "Waiting for your approval to review and commit changes",
+				})
 				return promptChangeReviewApproval(
 					promptInput,
 					cmd.OutOrStdout(),
@@ -235,6 +259,7 @@ func newRunCommand() *cobra.Command {
 				GitManager: gitmanager.NewManager(gitApproval, gitmanager.ManagerOptions{ColorDiff: renderOptions.EnableColor}),
 				Validator:  validate.NewBaselineValidator(),
 				Reporter:   iterationReporter,
+				Observer:   liveEvents,
 			})
 			if err != nil {
 				return err
@@ -295,6 +320,8 @@ func newRunCommand() *cobra.Command {
 			switch runResult.StopReason {
 			case orchestrator.RunStopReasonSuccess:
 				return nil
+			case orchestrator.RunStopReasonInterrupted:
+				return fmt.Errorf("the current Claude step was interrupted. review the latest output and rerun `concierge run` when you're ready to continue")
 			case orchestrator.RunStopReasonMaxIterations:
 				return fmt.Errorf("integration still has pending requirements. run `concierge run` again to continue guided checks.\ntip: use `--max-iterations 3` to run multiple guided rounds in one command")
 			case orchestrator.RunStopReasonCancelled:

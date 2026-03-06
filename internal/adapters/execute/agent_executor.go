@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/tensorleap/concierge/internal/agent"
 	agentcontext "github.com/tensorleap/concierge/internal/agent/context"
 	"github.com/tensorleap/concierge/internal/core"
+	"github.com/tensorleap/concierge/internal/observe"
 	"github.com/tensorleap/concierge/internal/persistence"
 )
 
@@ -21,6 +23,7 @@ type agentTaskRunner interface {
 type AgentExecutor struct {
 	runner            agentTaskRunner
 	loadKnowledgePack func() (agent.DomainKnowledgePack, error)
+	observer          observe.Sink
 }
 
 // NewAgentExecutor creates an agent-backed executor.
@@ -32,6 +35,11 @@ func NewAgentExecutor(runner agentTaskRunner) *AgentExecutor {
 		runner:            runner,
 		loadKnowledgePack: agentcontext.LoadDomainKnowledgePack,
 	}
+}
+
+// SetObserver configures the live event sink used for agent task preparation events.
+func (e *AgentExecutor) SetObserver(sink observe.Sink) {
+	e.observer = sink
 }
 
 // Execute delegates supported ensure-steps to the configured agent runner.
@@ -110,6 +118,13 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 	if err != nil {
 		return core.ExecutionResult{}, err
 	}
+	e.emit(observe.Event{
+		SnapshotID: snapshot.ID,
+		StepID:     canonicalStep.ID,
+		Kind:       observe.EventAgentTaskPrepared,
+		Message:    "Preparing Claude task",
+		Detail:     task.Objective,
+	})
 
 	runnerResult, err := e.runner.Run(ctx, task)
 	if err != nil {
@@ -130,9 +145,16 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		{Name: "executor.mode", Value: "agent"},
 		{Name: "agent.objective", Value: task.Objective},
 		{Name: "agent.transcript_path", Value: transcriptPath},
+		{Name: "agent.stream_path", Value: strings.TrimSpace(runnerResult.RawStreamPath)},
 		{Name: "agent.knowledge_pack.version", Value: knowledgePack.Version},
 		{Name: "agent.knowledge_pack.section_ids", Value: strings.Join(knowledgeSectionIDs(knowledgePack), ",")},
 		{Name: "agent.repo_context.path", Value: repoContextPath},
+	}
+	if runnerResult.Interrupted {
+		evidence = append(evidence, core.EvidenceItem{Name: "agent.interrupted", Value: "true"})
+	}
+	if !runnerResult.LastActivityAt.IsZero() {
+		evidence = append(evidence, core.EvidenceItem{Name: "agent.last_activity_at", Value: runnerResult.LastActivityAt.UTC().Format(time.RFC3339)})
 	}
 	evidence = append(evidence, scopePolicyEvidence(scopePolicy)...)
 	evidence = append(evidence, repoContextEvidence(repoContext)...)
@@ -146,6 +168,13 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		Evidence:        evidence,
 		Recommendations: append([]core.AuthoringRecommendation(nil), recommendations...),
 	}, nil
+}
+
+func (e *AgentExecutor) emit(event observe.Event) {
+	if e == nil || e.observer == nil {
+		return
+	}
+	e.observer.Emit(event)
 }
 
 func recommendationCandidatesAsModelCandidates(values []string) []core.ModelCandidate {

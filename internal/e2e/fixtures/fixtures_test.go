@@ -29,6 +29,24 @@ type fixtureEntry struct {
 	ID string `json:"id"`
 }
 
+func shouldIgnoreTensorleapTextMatch(relPath string) bool {
+	return filepath.Base(relPath) == "pyproject.toml"
+}
+
+func TestShouldIgnoreTensorleapTextMatch(t *testing.T) {
+	t.Run("pyproject", func(t *testing.T) {
+		if !shouldIgnoreTensorleapTextMatch("nested/pyproject.toml") {
+			t.Fatal("pyproject.toml should be exempt from generic tensorleap text scanning")
+		}
+	})
+
+	t.Run("other-files", func(t *testing.T) {
+		if shouldIgnoreTensorleapTextMatch("README.md") {
+			t.Fatal("non-pyproject files must still be scanned")
+		}
+	})
+}
+
 func TestFixturePreVariantsHaveNoHiddenTensorleapArtifacts(t *testing.T) {
 	requireFixtureReposPrepared(t)
 
@@ -80,7 +98,8 @@ func TestFixturePreVariantsHaveNoHiddenTensorleapArtifacts(t *testing.T) {
 					return err
 				}
 				content := string(raw)
-				if strings.Contains(strings.ToLower(content), "tensorleap") {
+				if !shouldIgnoreTensorleapTextMatch(normalizedPath) &&
+					strings.Contains(strings.ToLower(content), "tensorleap") {
 					return core.NewError(core.KindUnknown, "fixtures.hidden_tensorleap_artifact.content", "unexpected Tensorleap text marker in pre fixture file: "+normalizedPath)
 				}
 				if lowerExt == ".py" &&

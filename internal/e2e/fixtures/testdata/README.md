@@ -16,4 +16,4 @@ bash scripts/fixtures_verify.sh
 go test ./internal/e2e/fixtures -v
 ```
 
-The prep/verify scripts and Go fixture suite both enforce that `pre` variants do not retain Tensorleap-only directories or Python `code_loader` scaffolding.
+The prep/verify scripts and Go fixture suite both enforce that `pre` variants do not retain Tensorleap-only directories or Python `code_loader` scaffolding. Generic `tensorleap` text matches are still rejected in `pre` variants, except for preserved `pyproject.toml` files.

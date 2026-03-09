@@ -117,6 +117,21 @@ collect_tensorleap_mapping_files() {
   done < <(find "${repo_dir}" -type f \( -name 'leap_mapping*.yaml' -o -name 'leap_mapping*.yml' \) | sort)
 }
 
+should_ignore_tensorleap_text_match() {
+  local rel_path="$1"
+  [[ "$(basename "${rel_path}")" == "pyproject.toml" ]]
+}
+
+collect_tensorleap_text_files() {
+  local repo_dir="$1"
+  while IFS= read -r abs_path; do
+    [[ -n "${abs_path}" ]] || continue
+    local rel_path="${abs_path#"${repo_dir}/"}"
+    should_ignore_tensorleap_text_match "${rel_path}" && continue
+    echo "${rel_path}"
+  done < <(rg -n --ignore-case --files-with-matches "tensorleap" "${repo_dir}" || true)
+}
+
 assert_clean_git_tree() {
   local dir="$1"
   local label="$2"
@@ -178,10 +193,10 @@ while IFS= read -r fixture_json; do
   done
 
   post_tensorleap_files=()
-  while IFS= read -r abs_path; do
-    [[ -n "${abs_path}" ]] || continue
-    post_tensorleap_files+=("${abs_path#"${post_dir}/"}")
-  done < <(rg -n --ignore-case --files-with-matches "tensorleap" "${post_dir}" || true)
+  while IFS= read -r rel_path; do
+    [[ -n "${rel_path}" ]] || continue
+    post_tensorleap_files+=("${rel_path}")
+  done < <(collect_tensorleap_text_files "${post_dir}")
   for rel_path in "${post_tensorleap_files[@]}"; do
     strip_entry_covers_path "${rel_path}" "${strip_files[@]}" \
       || fail "fixture '${id}': post file '${rel_path}' contains 'tensorleap' but is missing from strip_for_pre"
@@ -267,10 +282,10 @@ while IFS= read -r fixture_json; do
     || fail "fixture '${id}': pre variant contains Tensorleap mapping files: ${pre_tensorleap_mapping_files[*]}"
 
   pre_tensorleap_files=()
-  while IFS= read -r abs_path; do
-    [[ -n "${abs_path}" ]] || continue
-    pre_tensorleap_files+=("${abs_path#"${pre_dir}/"}")
-  done < <(rg -n --ignore-case --files-with-matches "tensorleap" "${pre_dir}" || true)
+  while IFS= read -r rel_path; do
+    [[ -n "${rel_path}" ]] || continue
+    pre_tensorleap_files+=("${rel_path}")
+  done < <(collect_tensorleap_text_files "${pre_dir}")
   ((${#pre_tensorleap_files[@]} == 0)) \
     || fail "fixture '${id}': pre variant contains files with 'tensorleap': ${pre_tensorleap_files[*]}"
 

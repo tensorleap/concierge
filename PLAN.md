@@ -25,6 +25,7 @@ This ExecPlan is a living document. Keep `Progress`, `Gap Analysis`, `Surprises 
 - 2026-03-05: Implemented the research-parity input/GT discovery pipeline in Go (lead extraction, staged artifacts, normalizer, post-processing, contract-source switch, mapping persistence hooks, and planner order gating) and validated locally with inspect/planner/cli/state suites plus fixture E2E (`go test ./internal/adapters/inspect`, `go test ./internal/adapters/planner`, `go test ./internal/cli`, `go test ./internal/state`, `go test ./internal/e2e/fixtures`, `go test ./...`, `bash scripts/fixtures_run_checks.sh`, `make test`); step statuses remain `PENDING` until commit/push/PR/branch CI per workflow rules.
 - 2026-03-05: Completed Step `10M1G` by adding research-target fixture parity coverage (`yolov5_visdrone`, `ultralytics`, `imdb`) and optional runtime signature corroboration (ONNX/Keras best-effort) integrated into discovery comparison reports.
 - 2026-03-06: Fixture contamination audit found hidden Tensorleap artifacts surviving in generated `pre` repos (`ultralytics/tensorleap_folder`, `cifar10_resnet/utils.py` with `code_loader` imports). The fixture prep/verify invariant must now cover path-based artifacts and Python `code_loader` imports, not only literal `tensorleap` text.
+- 2026-03-09: Integrated the local-runtime design augmentation into README/PLAN. Added blocking Poetry-runtime workstream `10M2A-10M2E` ahead of the remaining Python-dependent authoring/validation steps, plus explicit fixture-bootstrap separation step `12A0`.
 
 ## Purpose / Exit Target
 
@@ -32,9 +33,10 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 
 1. Executes real ensure-steps (not stub-only).
 2. Supports user-approved repo mutations and audited commits on feature branches.
-3. Runs Tensorleap readiness checks, harness validation, and guarded upload flow.
-4. Produces persistent state/evidence artifacts under `.concierge/`.
-5. Is validated end-to-end against fixture repos in CI.
+3. Resolves and persists an explicit Poetry-based local runtime profile before any Python-dependent authoring or validation.
+4. Runs Tensorleap readiness checks, harness validation, and guarded upload flow through that auditable runtime context.
+5. Produces persistent state/evidence artifacts under `.concierge/`.
+6. Is validated end-to-end against fixture repos in CI.
 
 ## Gap Analysis (README vs PLAN vs Current Code)
 
@@ -60,6 +62,11 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | G18 | README §10 + user requirement: agent tasks need Tensorleap domain context plus strict scoped edits | Agent context pipeline is implemented and merged (knowledge pack, scoped policy, repo context pack, structured prompt wiring) | Closed for context injection baseline; fixture-level context-quality assertions remain pending | 10C-10F (`ACCEPTED`), 12H |
 | G19 | User requirement (2026-03-04 + 2026-03-05): enforce mandatory contract order `preprocess -> input encoders -> GT encoders -> integration test` and stop deriving encoder requirements from integration-test calls | Inspector/planner now gate integration-test authoring behind encoder mapping confirmation and no longer derive encoder requirements from integration-test call graphs | Closed for ordering+requirement-source behavior; keep regression coverage | 10M1F (`DONE`) |
 | G20 | `RESEARCH.md` conclusions (2026-03-05): replicate Python input/GT discovery success in Go with staged artifacts and semantic-first evaluation | Go runtime now persists staged discovery artifacts (`lead_pack`, `agent_prompt_bundle`, `agent_raw_output`, `normalized_findings`, `comparison_report`) with framework-agnostic extraction + normalizer/post-processing plus optional runtime-signature corroboration notes/diffs | Closed for current research-parity scope; keep regression coverage | 10M1A-10M1G (`DONE`) |
+| G21 | README §5.2/§6 + augmentation: Local Runtime Profile must be explicit, Poetry-only in v1, and persisted with invalidation | Current runtime probing is partial and not persisted as a first-class Poetry runtime profile with drift tracking | Local validation can target the wrong interpreter or a stale environment | 10M2A, 10M2B |
+| G22 | README §8 + augmentation: unresolved runtime must block remaining Python-dependent authoring/validation | Planner/ensure-step taxonomy do not yet prioritize `ensure.local_poetry_runtime` ahead of remaining authoring and validation work | Concierge can generate or validate code before runtime context is trustworthy | 10M2C |
+| G23 | README §8/§10 + augmentation: runtime readiness includes project dependencies and Tensorleap-local dependency state | No explicit Poetry dependency-readiness step or repo-visible dependency-edit path for Tensorleap-local package | Success can depend on hidden env mutation, missing installs, or non-reviewable local overlays | 10M2D |
+| G24 | README §9/§15 + augmentation: local Python execution and evidence must be bound to the resolved Poetry runtime | Validators/harness execution are not yet required to run through `poetry run` with recorded runtime provenance | Failures remain hard to distinguish between code bugs and runtime drift | 10M2E, 11A, 11B |
+| G25 | README §13 + augmentation: fixture bootstrap must stay separate from production runtime policy | Fixture plan does not yet encode explicit `pyenv` + Poetry bootstrap as dev/test-only behavior | Test harness conveniences can leak into product assumptions | 12A0, 14A |
 
 ## Progress
 
@@ -114,10 +121,16 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 10M1E: Branch-aware input/GT post-processing rules | `DONE` | 2026-03-05 | Add deterministic tokenizer-dict splitting and resolvable branch-priority heuristics while retaining conditional alternatives. |
 | Step 10M1F: User mapping confirmation + strict contract-order planner gating | `DONE` | 2026-03-05 | Require user confirmation/adjustment of proposed input/GT mappings, persist accepted contracts, enforce `preprocess -> input -> GT -> integration-test` ordering, and remove integration-test call graph as encoder requirement source. |
 | Step 10M1G: Fixture parity + optional runtime signature corroboration | `DONE` | 2026-03-05 | Validate Go discovery pipeline against research-success fixtures (`yolov5_visdrone`, `ultralytics`) with `imdb` edge-case coverage and optional ONNX/Keras signature corroboration. |
+| Step 10M2A: Poetry project detection + runtime snapshot expansion | `PENDING` | — | Expand snapshot/inspection coverage for `pyproject.toml`, `poetry.lock`, Poetry presence, ambient env diagnostics, and unsupported-project detection. |
+| Step 10M2B: Local Runtime Profile resolution + persistence | `PENDING` | — | Resolve interpreter path/version via Poetry, persist runtime profile state, and invalidate it deterministically on drift. |
+| Step 10M2C: Runtime ensure-step + planner ordering | `PENDING` | — | Add `ensure.local_poetry_runtime` and make unresolved runtime the highest-priority blocker before remaining Python-dependent authoring/validation. |
+| Step 10M2D: Poetry dependency readiness + repo-managed Tensorleap local dependency flow | `PENDING` | — | Verify project dependencies/Tensorleap-local dependency readiness and route dependency changes through reviewable Poetry files. |
+| Step 10M2E: Poetry execution boundary for local Python actions | `PENDING` | — | Route local Python execution through `poetry run`/resolved interpreter and attach runtime provenance to downstream validation. |
 | Step 10N: Integration-test wiring need detection | `PENDING` | — | Add AST-based required-call detection for `@tensorleap_integration_test` paths. |
 | Step 10O: Integration-test wiring authoring flow | `PENDING` | — | Add targeted authoring objective to wire missing integration-test calls deterministically. |
-| Step 11A: Real runtime harness core (Layer 2) | `PENDING` | — | Replace stub harness with runtime script, schema-v1 events, and default-on validation. |
-| Step 11B: Harness semantic coverage mapping | `PENDING` | — | Map runtime harness failures to preprocess/encoder/validation issues with per-symbol evidence. |
+| Step 11A: Real runtime harness core (Layer 2) | `PENDING` | — | Replace stub harness with runtime script, schema-v1 events, default-on validation, and resolved-Poetry-runtime execution. |
+| Step 11B: Harness semantic coverage mapping | `PENDING` | — | Map runtime harness failures to preprocess/encoder/validation issues with per-symbol evidence and runtime provenance. |
+| Step 12A0: Fixture Poetry bootstrap separation | `PENDING` | — | Keep production runtime behavior separate from dev/test fixture bootstrap, using explicit `pyenv` + Poetry setup only in fixture workflows. |
 | Step 12A: Fixture mutation framework for capability-isolated cases | `PENDING` | — | Generate fixture variants with exactly one broken capability per case. |
 | Step 12B: Capability E2E (model) | `PENDING` | — | Prove missing-model detection and authoring convergence on fixture cases. |
 | Step 12C: Capability E2E (preprocess) | `PENDING` | — | Prove missing-preprocess detection and authoring convergence on fixture cases. |
@@ -135,10 +148,11 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 
 In scope:
 
-1. End-to-end operational run loop from detect->fix->validate->report->commit->optional push.
-2. Deterministic non-agent fixes plus agent-assisted complex fixes.
-3. Fixture-backed semantic validation and CI automation.
-4. Documentation required for maintainers and operators.
+1. End-to-end operational run loop from detect->resolve runtime->fix->validate->report->commit->optional push.
+2. Explicit Poetry-only local runtime profile for v1, including dependency readiness, planner gating, and runtime provenance.
+3. Deterministic non-agent fixes plus agent-assisted complex fixes.
+4. Fixture-backed semantic validation and CI automation, with fixture bootstrap kept separate from production runtime behavior.
+5. Documentation required for maintainers and operators.
 
 Out of scope for this release train:
 
@@ -147,6 +161,8 @@ Out of scope for this release train:
 3. Automatic Tensorleap server installation/provisioning.
 4. Optional integration asset assistance (metadata/visualizers/metrics/loss/custom layers), which is deferred to v2.
 5. Automated Tensorleap-doc auto-refresh tooling; knowledge-pack updates are manual/code-agent assisted PRs when needed.
+6. Support for non-Poetry Python environment managers in production v1 (`requirements.txt`-only, pip-tools, Conda, Hatch, `uv`, etc.).
+7. Production-time Python interpreter installation or brand-new Poetry environment creation.
 
 ## Detailed Step Specifications
 
@@ -480,6 +496,262 @@ Rollback boundary:
 
 ---
 
+### Step 10M2A: Poetry project detection + runtime snapshot expansion (`PENDING`)
+
+Objective:
+
+Expand snapshot/inspection so local runtime facts are first-class snapshot data and Poetry support is classified deterministically.
+
+Files to add:
+
+1. `internal/adapters/snapshot/runtime_snapshot.go`
+2. `internal/adapters/snapshot/runtime_snapshot_test.go`
+3. `internal/adapters/inspect/testdata/poetry_project_cases.json`
+
+Files to modify:
+
+1. `internal/adapters/snapshot/git_snapshotter.go`
+2. `internal/adapters/inspect/runtime_contract.go`
+3. `internal/adapters/inspect/baseline_inspector.go`
+4. `internal/adapters/inspect/baseline_inspector_test.go`
+
+Locked behavior:
+
+1. Snapshot fingerprints `pyproject.toml` and `poetry.lock` separately when present.
+2. Inspector recognizes Poetry-managed projects from repo-local metadata and tolerates both modern and legacy Poetry dependency layouts.
+3. Snapshot records Poetry presence/version plus ambient `VIRTUAL_ENV` / `CONDA_PREFIX` as diagnostic evidence only.
+4. Unsupported non-Poetry repos emit a deterministic blocking runtime issue with plain-language messaging.
+5. Snapshot output is stable for identical repo/runtime inputs.
+
+Tests:
+
+1. `TestRuntimeSnapshotCapturesPyprojectAndPoetryLockFingerprints`
+2. `TestInspectorDetectsSupportedPoetryProjectLayouts`
+3. `TestInspectorFlagsUnsupportedNonPoetryProject`
+4. `TestRuntimeSnapshotRecordsAmbientEnvAsDiagnosticOnly`
+
+Validation commands:
+
+1. `go test ./internal/adapters/snapshot ./internal/adapters/inspect -run 'RuntimeSnapshot|PoetryProject' -v`
+2. `go test ./internal/adapters/snapshot ./internal/adapters/inspect`
+3. `go test ./...`
+
+Acceptance criteria:
+
+1. Concierge can tell whether a selected repo root is supported for v1 local execution.
+2. Runtime-relevant repo facts are part of the immutable snapshot, not ad-hoc process state.
+
+Rollback boundary:
+
+- Revert runtime snapshot and Poetry-project detection changes only.
+
+---
+
+### Step 10M2B: Local Runtime Profile resolution + persistence (`PENDING`)
+
+Objective:
+
+Resolve the repo’s Poetry runtime, persist it as a first-class Local Runtime Profile, and invalidate it deterministically on drift.
+
+Files to add:
+
+1. `internal/adapters/inspect/poetry_runtime_profile.go`
+2. `internal/adapters/inspect/poetry_runtime_profile_test.go`
+3. `internal/cli/runtime_prompt.go`
+4. `internal/cli/runtime_prompt_test.go`
+
+Files to modify:
+
+1. `internal/adapters/inspect/runtime_contract.go`
+2. `internal/adapters/inspect/baseline_inspector.go`
+3. `internal/state/types.go`
+4. `internal/state/store.go`
+5. `internal/cli/run.go`
+
+Locked behavior:
+
+1. Resolve the interpreter via Poetry (`poetry env info --executable`) and record interpreter path, Python version, and Poetry executable/version.
+2. Concierge does not install Python interpreters and does not create a brand-new Poetry environment when runtime resolution fails.
+3. Runtime profile persists under `.concierge/state/state.json` with invalidation keyed to selected root, `pyproject.toml`, `poetry.lock`, interpreter path, and Python version.
+4. User confirmation is required only when runtime resolution is ambiguous or suspicious.
+5. A missing or stale runtime profile is a blocking state, not a warning.
+
+Tests:
+
+1. `TestPoetryRuntimeProfileResolvesInterpreterPathAndVersion`
+2. `TestPoetryRuntimeProfileBlocksWhenNoUsableEnvironmentExists`
+3. `TestRuntimeProfileInvalidatesOnPyprojectPoetryLockOrInterpreterChange`
+4. `TestRunPromptsOnlyWhenRuntimeResolutionIsAmbiguous`
+
+Validation commands:
+
+1. `go test ./internal/adapters/inspect ./internal/state ./internal/cli -run 'PoetryRuntimeProfile|RuntimePrompt' -v`
+2. `go test ./internal/adapters/inspect ./internal/state ./internal/cli`
+3. `go test ./...`
+
+Acceptance criteria:
+
+1. Concierge has a persisted, inspectable source of truth for local Python execution.
+2. Runtime drift becomes explicit and deterministic.
+
+Rollback boundary:
+
+- Revert Local Runtime Profile resolution, persistence, and prompt handling only.
+
+---
+
+### Step 10M2C: Runtime ensure-step + planner ordering (`PENDING`)
+
+Objective:
+
+Add an explicit runtime ensure-step and make unresolved runtime the highest-priority blocker before remaining Python-dependent authoring or validation.
+
+Files to modify:
+
+1. `internal/core/issues.go`
+2. `internal/core/issue_step_map.go`
+3. `internal/core/checklist.go`
+4. `internal/adapters/planner/policy.go`
+5. `internal/adapters/planner/deterministic_planner.go`
+6. `internal/adapters/planner/policy_test.go`
+7. `internal/cli/run.go`
+8. `internal/adapters/report/stdout_reporter.go`
+
+Locked behavior:
+
+1. Add `ensure.local_poetry_runtime` (or equivalent runtime issue family mapped to a dedicated ensure-step) immediately after project-root selection.
+2. Planner must not select preprocess, input-encoder, GT-encoder, integration-test, harness, or upload steps while runtime issues remain unresolved.
+3. Runtime becomes stale when the selected root, `pyproject.toml`, `poetry.lock`, runtime profile, or user-confirmed runtime choice changes.
+4. User-facing copy describes the repo’s Python environment and interpreter in plain language.
+5. Dry-run output and checklist state include runtime readiness explicitly.
+
+Tests:
+
+1. `TestPlannerPrioritizesLocalPoetryRuntimeBeforeRemainingPythonWork`
+2. `TestPlannerDefersIntegrationTestHarnessAndUploadUntilRuntimeReady`
+3. `TestChecklistIncludesLocalPoetryRuntimeGate`
+4. `TestReporterExplainsRuntimeBlockerInPlainLanguage`
+
+Validation commands:
+
+1. `go test ./internal/adapters/planner ./internal/core ./internal/adapters/report -run 'LocalPoetryRuntime|RuntimeBlocker|Checklist' -v`
+2. `go test ./internal/adapters/planner ./internal/core ./internal/adapters/report ./internal/cli`
+3. `go test ./...`
+
+Acceptance criteria:
+
+1. Concierge cannot continue to remaining Python-dependent work until runtime readiness is resolved.
+2. Runtime readiness is visible as a first-class ensure-step in planning and UX.
+
+Rollback boundary:
+
+- Revert runtime-step planner/checklist/reporting changes only.
+
+---
+
+### Step 10M2D: Poetry dependency readiness + repo-managed Tensorleap local dependency flow (`PENDING`)
+
+Objective:
+
+Model runtime readiness as both environment readiness and dependency readiness, including reviewable Poetry-managed repo changes for the Tensorleap-local package.
+
+Files to add:
+
+1. `internal/adapters/execute/poetry_dependency_executor.go`
+2. `internal/adapters/execute/poetry_dependency_executor_test.go`
+
+Files to modify:
+
+1. `internal/adapters/inspect/runtime_contract.go`
+2. `internal/adapters/execute/approval_executor.go`
+3. `internal/adapters/execute/stub_executor.go`
+4. `internal/adapters/report/file_reporter.go`
+5. `internal/cli/run_review_render.go`
+
+Locked behavior:
+
+1. Runtime readiness distinguishes:
+   1. resolvable Poetry environment
+   2. project dependency readiness
+   3. Tensorleap-local dependency readiness
+2. `poetry check` is used to validate `pyproject.toml` / `poetry.lock` consistency before claiming dependency readiness.
+3. Concierge may run dependency-install/repair actions only against an already resolved existing Poetry environment and only with approval.
+4. If the Tensorleap-local package is missing, Concierge must route dependency changes through reviewable repo state (`pyproject.toml`, `poetry.lock`) rather than hidden local overlays.
+5. Any dependency-state change triggers runtime-profile revalidation before downstream validation continues.
+
+Tests:
+
+1. `TestPoetryDependencyReadinessSeparatesEnvironmentProjectAndTensorleapStates`
+2. `TestPoetryDependencyExecutorRejectsHiddenLocalOverlaySuccess`
+3. `TestPoetryDependencyExecutorRequiresReviewableRepoDiffForTensorleapPackage`
+4. `TestRuntimeRevalidationRunsAfterDependencyStateChange`
+
+Validation commands:
+
+1. `go test ./internal/adapters/execute ./internal/adapters/inspect ./internal/adapters/report -run 'PoetryDependency|TensorleapPackage|RuntimeRevalidation' -v`
+2. `go test ./internal/adapters/execute ./internal/adapters/inspect ./internal/adapters/report ./internal/cli`
+3. `go test ./...`
+
+Acceptance criteria:
+
+1. Runtime readiness no longer collapses dependency state into an implicit assumption.
+2. Tensorleap-local dependency changes are visible, reviewable repo changes.
+
+Rollback boundary:
+
+- Revert dependency-readiness executor/reporting changes only.
+
+---
+
+### Step 10M2E: Poetry execution boundary for local Python actions (`PENDING`)
+
+Objective:
+
+Make Poetry the execution boundary for all local Python-based Concierge actions and attach runtime provenance to those actions.
+
+Files to add:
+
+1. `internal/adapters/validate/python_runtime_runner.go`
+2. `internal/adapters/validate/python_runtime_runner_test.go`
+
+Files to modify:
+
+1. `internal/adapters/validate/harness_runner.go`
+2. `internal/adapters/validate/baseline_validator.go`
+3. `internal/adapters/report/file_reporter.go`
+4. `internal/cli/run.go`
+
+Locked behavior:
+
+1. Local Python commands execute via `poetry run ...` or the resolved interpreter from the stored runtime profile; bare `python`, `pip`, or shell activation do not count as the source of truth.
+2. Ambient external environment state is logged as diagnostic evidence only.
+3. Command evidence records runtime provenance (Poetry executable/version, interpreter path, Python version, runtime fingerprint).
+4. Downstream steps (`11A`, `11B`, and later local validation flows) consume this shared execution boundary rather than inventing separate Python command paths.
+
+Tests:
+
+1. `TestPythonRuntimeRunnerUsesPoetryRunOrResolvedInterpreter`
+2. `TestPythonRuntimeRunnerDoesNotTrustAmbientVirtualEnvAsSourceOfTruth`
+3. `TestPythonRuntimeRunnerAttachesRuntimeProvenanceToEvidence`
+4. `TestValidatorConsumesSharedPythonRuntimeRunner`
+
+Validation commands:
+
+1. `go test ./internal/adapters/validate ./internal/adapters/report -run 'PythonRuntimeRunner|RuntimeProvenance' -v`
+2. `go test ./internal/adapters/validate ./internal/adapters/report ./internal/cli`
+3. `go test ./...`
+
+Acceptance criteria:
+
+1. Local Python execution no longer depends on ambient shell activation.
+2. Runtime provenance is available for all later validator evidence.
+
+Rollback boundary:
+
+- Revert Poetry execution-boundary wiring only.
+
+---
+
 ### Step 10N: Integration-test wiring need detection (`PENDING`)
 
 Objective:
@@ -498,7 +770,7 @@ Files to modify:
 
 Locked behavior:
 
-1. Precondition: Steps `10M1A-10M1G` are complete and encoder mapping contracts are available from the discovery pipeline/user confirmation flow.
+1. Precondition: Steps `10M1A-10M1G` and `10M2A-10M2E` are complete, encoder mapping contracts are available from the discovery pipeline/user confirmation flow, and unresolved runtime blockers are handled before this step is planned in live runs.
 2. Detect decorators defined but not called in integration-test call path.
 3. Detect calls to unknown/non-discovered interfaces.
 4. Emit precise issue locations when AST traversal can resolve line/column.
@@ -545,7 +817,7 @@ Files to modify:
 
 Locked behavior:
 
-1. Precondition: Steps `10C-10F` are complete; integration-test wiring authoring does not run without injected knowledge pack, scope policy, repo context pack, and structured prompt wiring.
+1. Precondition: Steps `10C-10F` and `10M2A-10M2E` are complete; integration-test wiring authoring does not run without injected knowledge pack, scope policy, repo context pack, structured prompt wiring, and a resolved runtime profile.
 2. Suggestion text lists missing required calls and unknown calls separately.
 3. Agent objective includes strict scope: repair call wiring only.
 4. Evidence captures required-call set before and after authoring.
@@ -595,10 +867,12 @@ Files to modify:
 
 Locked behavior:
 
-1. Default timeout remains 120 seconds.
-2. Harness event schema includes `schemaVersion: 1`.
-3. Harness runs by default for non-dry-run unless explicitly disabled.
-4. Parser rejects unsupported schema versions with actionable errors.
+1. Precondition: Steps `10M2A-10M2E` are complete and harness execution has access to a resolved Local Runtime Profile.
+2. Default timeout remains 120 seconds.
+3. Harness event schema includes `schemaVersion: 1`.
+4. Harness runs by default for non-dry-run unless explicitly disabled.
+5. Harness executes through the shared Poetry runtime runner rather than ad-hoc shell Python commands.
+6. Parser rejects unsupported schema versions with actionable errors.
 
 Tests:
 
@@ -646,12 +920,14 @@ Files to modify:
 
 Locked behavior:
 
-1. Map runtime failures to existing issue families:
+1. Precondition: Steps `10M2A-10M2E` and `11A` are complete.
+2. Map runtime failures to existing issue families:
    1. preprocess
    2. encoder coverage
    3. validation failure
-2. Preserve anti-stub heuristics and add prediction-variation checks when prediction events are available.
-3. Include symbol/subset context in issue messages.
+3. Preserve anti-stub heuristics and add prediction-variation checks when prediction events are available.
+4. Include symbol/subset context in issue messages.
+5. Propagate runtime provenance into mapped issues/evidence so runtime drift and code failures remain distinguishable.
 
 Tests:
 
@@ -677,6 +953,51 @@ Rollback boundary:
 
 ---
 
+### Step 12A0: Fixture Poetry bootstrap separation (`PENDING`)
+
+Objective:
+
+Keep production runtime behavior separate from dev/test fixture bootstrap by making any `pyenv` + Poetry setup explicit and fixture-only.
+
+Files to add:
+
+1. `scripts/fixtures_bootstrap_poetry.sh`
+
+Files to modify:
+
+1. `scripts/fixtures_prepare.sh`
+2. `scripts/fixtures_run_checks.sh`
+3. `Makefile`
+
+Locked behavior:
+
+1. Fixture bootstrap may install/select Python via `pyenv` and create Poetry environments for clean dev/test runs.
+2. Concierge product runtime paths must not call fixture bootstrap helpers.
+3. Fixture bootstrap records selected Python and Poetry versions in logs/evidence for reproducibility.
+4. CI/local fixture commands opt into bootstrap explicitly rather than relying on shell activation.
+
+Tests:
+
+1. Shell-level assertions that bootstrap is explicit and idempotent.
+2. Optional Go wrapper coverage under `internal/e2e/fixtures` if a helper API is introduced.
+
+Validation commands:
+
+1. `bash scripts/fixtures_bootstrap_poetry.sh --help`
+2. `bash scripts/fixtures_prepare.sh`
+3. `bash scripts/fixtures_run_checks.sh`
+
+Acceptance criteria:
+
+1. Dev/test fixture setup is explicit and reproducible.
+2. Production runtime policy remains distinct from fixture bootstrap behavior.
+
+Rollback boundary:
+
+- Revert fixture bootstrap separation tooling only.
+
+---
+
 ### Step 12A: Fixture mutation framework for capability-isolated cases (`PENDING`)
 
 Objective:
@@ -697,14 +1018,15 @@ Files to modify:
 
 Locked behavior:
 
-1. Generate case variants from post fixture commits for:
+1. Precondition: Step `12A0` is complete.
+2. Generate case variants from post fixture commits for:
    1. missing model
    2. missing preprocess
    3. missing input encoder
    4. missing GT encoder
    5. missing integration-test required calls
-2. Each case mutates only one capability.
-3. Generated case repos remain clean git trees after mutation commit.
+3. Each case mutates only one capability.
+4. Generated case repos remain clean git trees after mutation commit.
 
 Tests:
 
@@ -1151,8 +1473,10 @@ Locked documentation requirements:
    4. GT encoders
    5. integration-test wiring
 2. Document detection -> suggestion -> authoring -> validation loop with examples.
-3. Document harness default behavior and disable/timeout flags.
-4. Document trust boundary, command approvals, and evidence artifacts.
+3. Document Poetry-only v1 runtime model, Local Runtime Profile state, dependency-readiness rules, and the rule that local Python execution goes through Poetry rather than shell activation.
+4. Document production-vs-fixture runtime separation, including explicit `pyenv` + Poetry bootstrap for dev/test fixtures only.
+5. Document harness default behavior and disable/timeout flags.
+6. Document trust boundary, command approvals, and evidence artifacts.
 
 Validation commands:
 
@@ -1224,9 +1548,9 @@ Status semantics:
 
 Phase acceptance condition:
 
-1. Steps `1` through `14B` (including `10A0`, `10A`, `10B`, `10B1`, `10C-10O`, `10M1A-10M1G`, `11A-11B`, `12A-12H`, `13A-13B`, `14A-14B`) are `ACCEPTED`.
+1. Steps `1` through `14B` (including `10A0`, `10A`, `10B`, `10B1`, `10C-10O`, `10M1A-10M1G`, `10M2A-10M2E`, `11A-11B`, `12A0-12H`, `13A-13B`, `14A-14B`) are `ACCEPTED`.
 2. Capability-level fixture E2E jobs are part of required CI and green.
-3. Concierge can perform user-approved detection->suggest->author->validate loops for model/preprocess/input-encoder/GT-encoder/integration-test wiring and complete guarded upload workflow end-to-end.
+3. Concierge can perform user-approved detection->resolve runtime->author->validate loops for model/preprocess/input-encoder/GT-encoder/integration-test wiring and complete guarded upload workflow end-to-end.
 
 ## Idempotence and Recovery
 
@@ -1242,6 +1566,7 @@ Phase acceptance condition:
 - The plan now requires a staged discovery port (`10M1A-10M1G`) with explicit tests at each stage before integration-test wiring work continues.
 - Existing fixture E2E covers artifact deltas and persistence, but it does not yet prove capability-isolated authoring convergence (model/preprocess/input/GT/wiring) one-by-one.
 - Runtime harness integration exists only as a stub baseline; it must become default runtime evidence before capability E2E can assert semantic behavior robustly.
+- The design now fixes Poetry-only local runtime handling as a product-level rule for v1, so remaining execution work must stop treating Python environment choice as ambient shell setup.
 
 ## Decision Log
 
@@ -1281,22 +1606,28 @@ Phase acceptance condition:
 - Decision: Replace the single blocking `10M1` step with a research-parity sequence (`10M1A-10M1G`) that ports Python lead extraction, semantic investigation, normalization, branch heuristics, and confirmation flow into Go with per-step tests.
   Rationale: The previous strategy failed; reproducing proven research behavior requires explicit stage parity and deterministic test gates.
   Date/Author: 2026-03-05 / user + assistant.
+- Decision: Add a blocking Poetry-runtime workstream (`10M2A-10M2E`) before remaining Python-dependent authoring and validation steps.
+  Rationale: Local validation is not trustworthy unless Concierge resolves, persists, and executes through the repo’s intended Poetry runtime instead of ambient shell state.
+  Date/Author: 2026-03-09 / user + assistant.
+- Decision: Keep production runtime behavior separate from fixture bootstrap behavior, with explicit `pyenv` + Poetry setup only in dev/test fixture workflows.
+  Rationale: Fixture convenience must not leak into product requirements that govern user machines.
+  Date/Author: 2026-03-09 / user + assistant.
 
 ## Outcomes & Retrospective
 
-Current state: baseline architecture through Step `10M` is accepted and merged; the original `10M1` strategy failed and has been replaced by blocking sequence `10M1A-10M1G` to port Python-proven input/GT discovery into Go before continuing to integration-test wiring (`10N-10O`), runtime harness deepening (`11A-11B`), capability E2E/CI hardening (`12A-13B`), and release documentation/hardening (`14A-14B`).
+Current state: baseline architecture through Step `10M` is accepted and merged; the original `10M1` strategy failed and has been replaced by blocking sequence `10M1A-10M1G` to port Python-proven input/GT discovery into Go. The next priority is now the explicit Poetry-runtime sequence (`10M2A-10M2E`) before continuing to integration-test wiring (`10N-10O`), runtime harness deepening (`11A-11B`), fixture bootstrap/capability E2E/CI hardening (`12A0-13B`), and release documentation/hardening (`14A-14B`).
 
 Primary residual risks:
 
-1. Input/GT discovery quality is currently below research parity until `10M1A-10M1G` lands, which can still mis-prioritize integration-test checks and break encoder authoring flow.
-2. Agent discovery output normalization can regress if schema variance and branch heuristics are not tested independently.
-3. Capability E2E may become flaky unless fixture mutation tooling and discovery parity cases are strictly deterministic.
+1. Local validation can still execute against the wrong interpreter or a stale environment until `10M2A-10M2E` lands.
+2. Dependency readiness for the repo and Tensorleap-local package is not yet modeled as an auditable, reviewable runtime gate.
+3. Capability E2E may become flaky unless fixture mutation tooling and discovery parity cases are strictly deterministic and fixture bootstrap is explicit.
 
 Mitigations:
 
-1. Complete `10M1A-10M1G` first (staged discovery parity + strict preprocess->input->GT->integration-test ordering + confirmed mapping contracts), then proceed with `10N-10O`.
-2. Keep existing context-injection pipeline (`10C-10F`) under regression coverage while discovery prompt/normalization/post-processing paths are introduced.
-3. Introduce deterministic fixture case generation before capability E2E tests (`12A` before `12B-12H`) and require discovery parity fixtures in `10M1G`.
+1. Complete `10M2A-10M2E` next so runtime identity, dependency readiness, planner gating, and Python execution boundary are explicit before remaining authoring/validation work.
+2. Keep existing discovery/context-injection pipeline (`10C-10F`, `10M1A-10M1G`) under regression coverage while the runtime subsystem is introduced.
+3. Introduce explicit fixture bootstrap separation (`12A0`) before capability E2E case generation (`12A` before `12B-12H`).
 
 ## Interfaces and Dependencies
 
@@ -1305,9 +1636,11 @@ Mitigations:
 3. Core contracts: `internal/core`, `internal/core/ports`.
 4. Runtime dependencies for operational steps:
    1. `git`
-   2. `python3`
-   3. `jq`
-   4. `leap` CLI (for readiness/upload steps)
+   2. compatible `python3` already installed locally
+   3. `poetry`
+   4. `jq`
+   5. `leap` CLI (for readiness/upload steps)
+   6. optional dev/test-only `pyenv` for fixture bootstrap
 5. Planned package additions:
    1. `internal/state`
    2. `internal/gitmanager`

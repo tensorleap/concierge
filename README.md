@@ -20,11 +20,14 @@ Tensorleap integrations are powerful but often require a pre-sales/solutions eng
 This work is hard to “one-shot” with an LLM prompt because the required context spans:
 
 * the customer repository (often large, multi-project, inconsistent)
+* the repository’s Python runtime (interpreter, Poetry environment, dependency state)
 * Tensorleap’s integration contracts and rules
 * step ordering and prerequisites (server mounts, `leap.yaml` include/exclude, CLI auth)
 * iterative debugging when real code and data paths don’t match assumptions
 
 **Goal:** build a deterministic, cross-platform terminal tool called **Concierge** that drives the integration loop, delegates *small, focused* editing tasks to a coding agent (starting with **Claude Code**), and provides a guided user experience with explicit confirmations and auditable git commits.
+
+As Concierge moves from planning to authoring and local execution, runtime selection becomes part of correctness. Local validation is only meaningful if Concierge knows which project Python interpreter and environment it is using, whether that environment belongs to the selected repo, and whether the required dependencies are actually present there.
 
 ---
 
@@ -130,7 +133,7 @@ Implement in Go for portability and easy installation (single binary).
 Concierge operates on a new git branch and commits after each accepted step, producing an audit trail.
 
 **G6 — High-resolution validation without “LLM equivalence oracle”**
-Correctness is primarily established via runtime behavior and contract validation, not semantic branch comparison by another LLM.
+Correctness is primarily established via runtime behavior and contract validation, not semantic branch comparison by another LLM. Those checks must run in an explicit project runtime, not whatever interpreter happens to be active in the shell.
 
 **G7 — Test-driven development friendliness**
 Architecture supports deterministic tests for the orchestrator independent of LLM variability.
@@ -192,7 +195,15 @@ Rules:
 **1) Snapshotter**
 Captures a **Workspace Snapshot** (see §6) including git state, file hashes for relevant files, and key config fingerprints.
 
-**2) Inspector**
+**2) RuntimeResolver**
+Resolves the selected repo’s **Local Runtime Profile**:
+
+* determines whether the repo is a supported Poetry project in v1
+* discovers the Poetry-managed interpreter and Python version
+* verifies runtime readiness (environment present, dependencies installed, Tensorleap-local dependency ready)
+* treats ambient virtual-environment state as diagnostic evidence, not as the source of truth
+
+**3) Inspector**
 Reads the snapshot and produces an **Integration Status Report**:
 
 * what artifacts exist (`leap.yaml`, entry file, integration test, binder, requirements)
@@ -200,17 +211,17 @@ Reads the snapshot and produces an **Integration Status Report**:
 * where failures occurred (CLI, server, validation)
 * what evidence exists (logs, error traces)
 
-**3) Planner (deterministic)**
+**4) Planner (deterministic)**
 Selects the next action as an ordered set of **Ensure Steps**. Planner chooses *one primary next action* at a time to preserve reliability.
 
-**4) Executor**
+**5) Executor**
 Performs the chosen ensure-step via:
 
 * deterministic action (write templates, run CLI commands)
 * agent-assisted action (Claude Code session)
 * collects evidence and returns a structured result
 
-**5) AgentRunner (agent host / collaboration session)**
+**6) AgentRunner (agent host / collaboration session)**
 Runs Claude Code as a subprocess in a *collaborative* mode:
 
 * the agent is allowed to **explore the repository** (read/search/navigate) to complete tasks reliably
@@ -220,18 +231,32 @@ Runs Claude Code as a subprocess in a *collaborative* mode:
 
 > Design intent: leverage Claude Code’s strengths (repo investigation + tooling), while keeping Concierge as the deterministic driver and keeping the user in control of impactful actions.
 
-**6) GitManager**
+**7) GitManager**
 Ensures clean working tree, creates branch, captures diffs, supports revert-on-reject, and commits approved changes with structured messages.
 
-**7) Validator**
+**8) Validator**
 Runs local validation:
 
 * Tensorleap integration test checks (mandatory)
 * Concierge runtime harness (coverage + semantic checks) (§9)
 * optional CLI-level checks where appropriate
 
-**8) Reporter**
+**9) Reporter**
 Presents status/diffs/validation results and writes machine-readable artifacts for debugging and tests.
+
+### 5.2 Local Runtime Profile (Poetry-only v1)
+
+The runtime subsystem is a first-class correctness boundary.
+
+For v1:
+
+* Concierge supports **Poetry-managed Python projects only** for local developer-machine execution.
+* Production Concierge does **not** install Python interpreters and does **not** create brand-new project environments as part of normal behavior.
+* Concierge must resolve and persist an explicit **Local Runtime Profile** for the selected project root.
+* All local Python execution must proceed through Poetry (`poetry run ...`) and the resolved interpreter path, not shell activation.
+* Runtime readiness includes both **project dependency readiness** and **Tensorleap-local dependency readiness**.
+* If Concierge changes repo dependency state to add the Tensorleap-local package, those changes belong in normal diff/approval/commit flow via repo-managed files such as `pyproject.toml` and `poetry.lock`.
+* Dev-time fixture bootstrap is a separate concern: the test harness may use tools such as `pyenv` + Poetry, but that must not silently become production product behavior.
 
 ---
 
@@ -252,11 +277,16 @@ Snapshot should include:
 
   * `leap.yaml` (if present): hash + parsed structure
   * entry file referenced by `leap.yaml.entryFile` (if resolvable)
-  * requirements files (present + hash): `requirements.txt`, `pyproject.toml`, etc.
+  * dependency/runtime files (present + hash): `pyproject.toml`, `poetry.lock`, `requirements.txt`, etc.
 * **Environment**
 
   * OS/arch
-  * python executable(s) + versions (discoverable)
+  * Poetry presence + version (discoverable)
+  * whether the selected root is a supported Poetry project
+  * Poetry-reported interpreter path via `poetry env info --executable` (when resolvable)
+  * effective Python version for the resolved project runtime
+  * ambient virtual-environment indicators such as `VIRTUAL_ENV` / `CONDA_PREFIX` (diagnostic only)
+  * other discoverable python executable(s) + versions (diagnostic only)
   * leap CLI presence + version (discoverable)
 * **Tensorleap connectivity**
 
@@ -269,6 +299,16 @@ Store in e.g. `.concierge/state.json`:
 
 * selected project root (for monorepos)
 * chosen integration layout
+* resolved local runtime profile:
+
+  * runtime kind (v1: `poetry`)
+  * Poetry executable/version
+  * resolved interpreter path
+  * Python version
+  * whether the runtime choice required user confirmation
+  * whether project dependencies are known-ready
+  * whether Tensorleap-local dependency is known-ready
+  * runtime fingerprint / invalidation token
 * “integration plan” expectations:
 
   * expected dataset subsets and their semantics
@@ -277,14 +317,16 @@ Store in e.g. `.concierge/state.json`:
 * last successful ensure-step
 * last known good validation outputs
 
-State must be invalidated if relevant files change.
+State must be invalidated if relevant files change, including project-root changes, `pyproject.toml`, `poetry.lock`, or resolved-interpreter drift.
 
 ### 6.3 Evidence bundle
 
 Each iteration should produce:
 
 * command outputs (stdout/stderr) for executed CLI commands
+* runtime resolution evidence (Poetry detection, interpreter resolution, dependency-readiness checks)
 * validation logs
+* runtime provenance for each local Python validation action
 * diff summaries and commit hashes
 * agent session transcript (optional but recommended for debuggability)
 
@@ -320,7 +362,7 @@ Concierge implements the iterative loop:
 
 * capture snapshot
 * inspect integration state
-* ensure prerequisites and required artifacts
+* ensure repository prerequisites and the local Poetry runtime
 * detect inputs/targets, ensure encoders
 * ensure integration test coverage and local validation
 * confirm upload and perform `leap push`
@@ -344,31 +386,41 @@ Every ensure-step:
 * ensure clean working tree (or user decision)
 * ensure integration branch
 
-**B) Tensorleap CLI and server**
+**B) Local Python runtime (Poetry-only v1)**
+
+* ensure the selected root is a supported Poetry project
+* ensure Poetry is installed and usable
+* ensure a Local Runtime Profile is resolved and recorded
+* ensure project dependencies are installed in the resolved Poetry environment
+* ensure the required Tensorleap-local Python dependency is ready
+* treat shell activation as diagnostic state only; execute local Python through Poetry
+* ask the user only when automatic runtime resolution is ambiguous or suspicious
+
+**C) Tensorleap CLI and server**
 
 * ensure CLI installed and authenticated
 * ensure server reachable; `leap server info` yields mounted dataset volumes
 * ensure secrets context (if needed) is correctly configured
 
-**C) `leap.yaml` correctness**
+**D) `leap.yaml` correctness**
 
 * exists, parseable, has valid `entryFile`
 * include/exclude covers required uploaded files
 * initial integration nuance: don’t force populated IDs prematurely
 
-**D) Integration script correctness**
+**E) Integration script correctness**
 
 * preprocess returns at least train+validation `PreprocessResponse`
 * input encoders exist and execute reliably across multiple indices
 * GT encoders exist and execute on labeled subsets
 * optional hooks where useful (deferred in Concierge v1; planned for v2 enhancement flows)
 
-**E) Integration test contract and coverage**
+**F) Integration test contract and coverage**
 
 * integration test exists and follows documented rules
 * it calls all relevant decorators that must be used in analysis
 
-**F) Upload readiness**
+**G) Upload readiness**
 
 * requirements correctness (if used)
 * model artifact is `.onnx`/`.h5` and compatible
@@ -380,13 +432,15 @@ Every ensure-step:
 
 A critical requirement: Concierge must not treat “decorators exist” + “a minimal test passes once” as completion.
 
+Validation is only meaningful when it is tied to an explicit Local Runtime Profile. Any local Python-based check must execute through the resolved Poetry runtime and record which runtime profile was used.
+
 ### 9.1 Three layers of validation
 
 **Layer 1: Surface inventory (fast signal, not sufficient)**
 Discover what integration interfaces appear present across the upload boundary defined by `leap.yaml` include/exclude + entry file. This may use:
 
 * static scanning (best-effort)
-* runtime import and introspection (when environment supports)
+* runtime import and introspection through the resolved Poetry runtime profile
 
 Purpose:
 
@@ -397,6 +451,7 @@ Purpose:
 **Layer 2: Concierge runtime coverage harness (semantic + high-resolution)**
 Concierge runs a deterministic harness that:
 
+* executes through the resolved Poetry runtime profile
 * runs preprocess and validates subsets; train+validation are mandatory
 * selects multiple indices per subset (bounded)
 * calls every input encoder across those indices
@@ -430,6 +485,18 @@ Tensorleap states only decorators called in `@tensorleap_integration_test` are u
 * track what must be wired (expected encoders/predictions/metrics)
 * enforce that the integration test calls them
 * ensure integration test follows documented constraints
+
+### 9.3 Runtime provenance is part of correctness
+
+The validator and evidence bundle should record the runtime profile used for every local validation action, including:
+
+* Poetry executable/version
+* resolved interpreter path
+* Python version
+* whether the runtime was auto-resolved or user-confirmed
+* enough fingerprint data to detect later drift
+
+This makes runtime drift distinguishable from code regressions.
 
 ---
 
@@ -585,11 +652,18 @@ Use Docker to run tests in clean environments:
 * run harness + integration test
 * optionally validate CLI interactions against a test server
 
+Production Concierge and fixture bootstrap must stay separate:
+
+* production behavior attaches to an existing Poetry-managed project environment and does not create a fresh one
+* fixture/dev bootstrap may create clean environments with `pyenv` + Poetry when needed for deterministic tests
+* that fixture convenience must not become an implicit production assumption
+
 ### 13.3 Test tiers
 
 **Tier 1: Unit tests (no agent, no Docker required)**
 
 * snapshots, invalidation rules
+* Poetry project detection, runtime-profile resolution, and ambiguity handling
 * parsing and include/exclude resolution
 * planner step selection
 * git operations (diff, revert, commit)
@@ -598,6 +672,7 @@ Use Docker to run tests in clean environments:
 **Tier 2: Orchestrator integration tests (no live agent)**
 
 * stub AgentRunner behavior deterministically
+* validate Poetry runtime gating, dependency-readiness checks, and runtime-profile invalidation
 * validate state-machine correctness, gating, and validations
 
 **Tier 3: Live-agent end-to-end tests (optional / slower)**
@@ -676,6 +751,7 @@ Concierge should produce:
 * **Small, composable ensure-steps:** each step is idempotent and has a precise acceptance check.
 * **TDD-first:** ensure-steps are added with tests (Tier 1/2).
 * **Agent as collaborator, not driver:** agent helps edit/understand; Concierge decides ordering and completion.
+* **Explicit runtime boundary:** local Python commands run through the resolved Poetry runtime, not ambient shell activation.
 * **Evidence-driven progress:** “done” is defined by harness outputs + integration test + optional push success.
 
 ### 16.2 Agent-session hygiene rules (revised)
@@ -699,13 +775,17 @@ Open decision. Default to branch-in-place, but keep design extensible for sandbo
 
 Need heuristics to propose candidates; user-confirmed selection.
 
-### 17.3 Python environment strategy
+### 17.3 Extending beyond Poetry-managed projects
 
-Concierge must run harness/integration test. Options include:
+This is no longer open for v1: local developer-machine runtime support is fixed to Poetry-managed Python projects, and Concierge does not create interpreters or brand-new project environments in production.
 
-* reuse user environment
-* create managed venv under `.concierge/`
-* Docker validation mode
+The remaining open question is when and how to extend the runtime subsystem beyond Poetry, for example to:
+
+* `requirements.txt`-only repos
+* pip-tools
+* Conda
+* Hatch
+* `uv`
 
 ### 17.4 Agent boundary enforcement
 

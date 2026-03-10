@@ -19,6 +19,7 @@ func TestFixtureCaseMissingInputEncoders_Recovers(t *testing.T) {
 	t.Setenv(validate.HarnessEnableEnvVar, "0")
 
 	_, postRoot := resolveFixtureRoots(t, "mnist")
+	postRoot = cloneFixtureRepoForTest(t, postRoot)
 	integrationPath := filepath.Join(postRoot, "leap_integration.py")
 	binderPath := filepath.Join(postRoot, "leap_binder.py")
 
@@ -76,6 +77,7 @@ func TestFixtureCaseMissingGTEncoders_Recovers(t *testing.T) {
 	t.Setenv(validate.HarnessEnableEnvVar, "0")
 
 	_, postRoot := resolveFixtureRoots(t, "mnist")
+	postRoot = cloneFixtureRepoForTest(t, postRoot)
 	integrationPath := filepath.Join(postRoot, "leap_integration.py")
 	binderPath := filepath.Join(postRoot, "leap_binder.py")
 

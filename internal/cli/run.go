@@ -374,6 +374,8 @@ func newRunCommand() *cobra.Command {
 				return nil
 			case orchestrator.RunStopReasonInterrupted:
 				return fmt.Errorf("the current Claude step was interrupted. review the latest output and rerun `concierge run` when you're ready to continue")
+			case orchestrator.RunStopReasonNeedsUserAction:
+				return fmt.Errorf("Concierge needs you to complete the manual step described above before it can continue. After that, rerun `concierge run`.")
 			case orchestrator.RunStopReasonMaxIterations:
 				return fmt.Errorf("integration still has pending requirements. run `concierge run` again to continue guided checks.\ntip: use `--max-iterations 3` to run multiple guided rounds in one command")
 			case orchestrator.RunStopReasonCancelled:
@@ -452,8 +454,12 @@ func stepApprovalMessage(
 	checklist = append(
 		checklist,
 		"",
-		"I can continue by addressing this missing step now.",
 	)
+	if len(blockers) > 0 {
+		checklist = append(checklist, "I can continue by addressing this missing step now.")
+	} else {
+		checklist = append(checklist, "I can continue with this step now.")
+	}
 	return strings.Join(checklist, "\n")
 }
 
@@ -795,7 +801,7 @@ func approvalGuidanceForStep(stepID core.EnsureStepID) stepApprovalGuidance {
 		}
 	case core.EnsureStepPythonRuntime:
 		return stepApprovalGuidance{
-			Explanation: "Concierge needs one resolved Poetry environment plus the project dependencies required to run local Tensorleap checks.",
+			Explanation: "Concierge needs a Poetry environment for this project and the packages required to run local Tensorleap checks.",
 			DocsURL:     stepGuideWritingIntegrationURL,
 		}
 	case core.EnsureStepLeapCLIAuth:

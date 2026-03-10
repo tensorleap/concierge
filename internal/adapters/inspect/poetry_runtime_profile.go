@@ -44,9 +44,6 @@ func (r *PoetryRuntimeResolver) Resolve(
 	if r.runCommand == nil {
 		r.runCommand = runPoetryRuntimeCommand
 	}
-	if reusableRuntimeProfile(previous, snapshot, repoRoot) {
-		return PoetryRuntimeResolution{Profile: cloneRuntimeProfile(previous)}, nil
-	}
 	if !snapshot.Runtime.SupportedProject || !snapshot.Runtime.PoetryFound {
 		return PoetryRuntimeResolution{}, nil
 	}
@@ -93,26 +90,6 @@ func (r *PoetryRuntimeResolver) Resolve(
 		Profile:           profile,
 		SuspiciousReasons: suspiciousRuntimeReasons(snapshot, previous, profile),
 	}, nil
-}
-
-func reusableRuntimeProfile(previous *core.LocalRuntimeProfile, snapshot core.WorkspaceSnapshot, repoRoot string) bool {
-	if previous == nil || strings.TrimSpace(previous.InterpreterPath) == "" {
-		return false
-	}
-	if normalizeRuntimePath(previous.Fingerprint.ProjectRoot) != normalizeRuntimePath(repoRoot) {
-		return false
-	}
-	currentPyProjectHash := strings.TrimSpace(snapshot.FileHashes["pyproject.toml"])
-	if previous.Fingerprint.PyProjectHash != "" && currentPyProjectHash != "" &&
-		previous.Fingerprint.PyProjectHash != currentPyProjectHash {
-		return false
-	}
-	currentPoetryLockHash := strings.TrimSpace(snapshot.FileHashes["poetry.lock"])
-	if previous.Fingerprint.PoetryLockHash != "" && currentPoetryLockHash != "" &&
-		previous.Fingerprint.PoetryLockHash != currentPoetryLockHash {
-		return false
-	}
-	return true
 }
 
 func suspiciousRuntimeReasons(

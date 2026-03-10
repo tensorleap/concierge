@@ -142,7 +142,7 @@ func HumanEnsureStepLabel(stepID EnsureStepID) string {
 	case EnsureStepRepositoryContext:
 		return "Repository context is ready"
 	case EnsureStepPythonRuntime:
-		return "Poetry runtime is resolved and ready"
+		return "Poetry environment is available and has the required packages"
 	case EnsureStepLeapCLIAuth:
 		return "Leap CLI is installed and authenticated"
 	case EnsureStepServerConnectivity:
@@ -190,7 +190,7 @@ func HumanEnsureStepRequirementLabel(stepID EnsureStepID) string {
 	case EnsureStepRepositoryContext:
 		return "Repository context should be ready"
 	case EnsureStepPythonRuntime:
-		return "Poetry runtime should be resolved and ready"
+		return "Poetry environment should be available and have the required packages"
 	case EnsureStepLeapCLIAuth:
 		return "Leap CLI should be installed and authenticated"
 	case EnsureStepServerConnectivity:

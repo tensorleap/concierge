@@ -5,6 +5,10 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 MANIFEST_PATH="${REPO_ROOT}/fixtures/manifest.json"
 FIXTURES_ROOT="${REPO_ROOT}/.fixtures"
+RESET_LIB_PATH="${REPO_ROOT}/scripts/fixtures_reset_lib.sh"
+
+# shellcheck source=./fixtures_reset_lib.sh
+source "${RESET_LIB_PATH}"
 
 fail() {
   echo "error: $*" >&2
@@ -166,6 +170,45 @@ assert_clean_git_tree() {
   fi
 }
 
+write_fixture_reset_script() {
+  local repo_dir="$1"
+  local variant_kind="$2"
+  local post_ref="$3"
+  shift 3
+
+  local strip_files=("$@")
+  local script_path="${repo_dir}/.fixture_reset.sh"
+
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'set -euo pipefail'
+    echo
+    echo 'SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"'
+    echo 'CONCIERGE_ROOT="$(cd -- "${SCRIPT_DIR}/../../.." && pwd)"'
+    echo
+    echo '# shellcheck source=/dev/null'
+    echo 'source "${CONCIERGE_ROOT}/scripts/fixtures_reset_lib.sh"'
+    printf 'POST_REF=%q\n' "${post_ref}"
+    echo
+
+    if [[ "${variant_kind}" == "pre" ]]; then
+      echo 'STRIP_FILES=('
+      local rel_path
+      for rel_path in "${strip_files[@]}"; do
+        printf '  %q\n' "${rel_path}"
+      done
+      echo ')'
+      echo
+      echo 'fixture_reset_pre_variant "${SCRIPT_DIR}" "${POST_REF}" "${STRIP_FILES[@]}"'
+    else
+      echo 'fixture_reset_post_variant "${SCRIPT_DIR}" "${POST_REF}"'
+    fi
+  } >"${script_path}"
+
+  chmod +x "${script_path}"
+  fixture_add_local_exclude "${repo_dir}" "/.fixture_reset.sh"
+}
+
 reset_fixture_dir() {
   local dir="$1"
   [[ -e "${dir}" ]] || return 0
@@ -178,6 +221,7 @@ require_cmd git
 require_cmd jq
 require_cmd rg
 [[ -f "${MANIFEST_PATH}" ]] || fail "manifest not found: ${MANIFEST_PATH}"
+[[ -f "${RESET_LIB_PATH}" ]] || fail "fixture reset library not found: ${RESET_LIB_PATH}"
 
 jq -e '.fixtures and (.fixtures | type == "array")' "${MANIFEST_PATH}" >/dev/null \
   || fail "invalid manifest schema in ${MANIFEST_PATH}"
@@ -221,6 +265,7 @@ while IFS= read -r fixture_json; do
   log "  Cloning post variant and checking out pinned commit"
   git_fixture clone --quiet --no-checkout --filter=blob:none "${repo}" "${post_dir}"
   git_fixture -C "${post_dir}" checkout --quiet "${post_ref}"
+  write_fixture_reset_script "${post_dir}" post "${post_ref}"
   ensure_relevant_model_lfs_hydrated "${post_dir}" "post variant for fixture '${id}'"
 
   log "  Verifying required integration files exist in post variant"
@@ -284,35 +329,10 @@ while IFS= read -r fixture_json; do
   reset_fixture_dir "${pre_dir}"
   git_fixture clone --quiet --no-checkout --filter=blob:none "${repo}" "${pre_dir}"
   git_fixture -C "${pre_dir}" checkout --quiet "${post_ref}"
+  write_fixture_reset_script "${pre_dir}" pre "${post_ref}" "${strip_files[@]}"
 
   log "  Stripping pre-integration files from pre variant"
-  for rel_path in "${strip_files[@]}"; do
-    rm -rf -- "${pre_dir:?}/${rel_path}"
-  done
-
-  # Remove compiled artifacts that can leak stripped integration semantics.
-  stripped_py_basenames=()
-  for rel_path in "${strip_files[@]}"; do
-    if [[ "${rel_path}" == *.py ]]; then
-      stripped_py_basenames+=("$(basename "${rel_path}" .py)")
-    fi
-  done
-
-  while IFS= read -r abs_path; do
-    [[ -n "${abs_path}" ]] || continue
-    rel_path="${abs_path#"${pre_dir}/"}"
-    rm -f -- "${pre_dir:?}/${rel_path}"
-  done < <(find "${pre_dir}" -type f -path '*/__pycache__/leap*.pyc' | sort)
-
-  for base_name in "${stripped_py_basenames[@]}"; do
-    while IFS= read -r abs_path; do
-      [[ -n "${abs_path}" ]] || continue
-      rel_path="${abs_path#"${pre_dir}/"}"
-      rm -f -- "${pre_dir:?}/${rel_path}"
-    done < <(find "${pre_dir}" -type f -path "*/__pycache__/${base_name}*.pyc" | sort)
-  done
-
-  find "${pre_dir}" -type d -name '__pycache__' -empty -delete
+  "${pre_dir}/.fixture_reset.sh"
 
   remaining_pre_root_leap_files=()
   while IFS= read -r rel_path; do
@@ -371,19 +391,6 @@ while IFS= read -r fixture_json; do
   done < <(collect_tensorleap_text_files "${pre_dir}")
   ((${#pre_tensorleap_files[@]} == 0)) \
     || fail "fixture '${id}': pre variant still contains files with 'tensorleap': ${pre_tensorleap_files[*]}"
-
-  log "  Committing stripped pre variant so git tree remains clean"
-  git -C "${pre_dir}" add -A
-  git -C "${pre_dir}" diff --cached --quiet \
-    && fail "fixture '${id}' had no changes after stripping files"
-
-  GIT_AUTHOR_NAME="Concierge Fixture Bot" \
-  GIT_AUTHOR_EMAIL="concierge-fixtures@local" \
-  GIT_AUTHOR_DATE="2000-01-01T00:00:00Z" \
-  GIT_COMMITTER_NAME="Concierge Fixture Bot" \
-  GIT_COMMITTER_EMAIL="concierge-fixtures@local" \
-  GIT_COMMITTER_DATE="2000-01-01T00:00:00Z" \
-    git -C "${pre_dir}" commit --quiet -m "Create pre-integration fixture variant"
 
   assert_clean_git_tree "${pre_dir}" "pre variant for fixture '${id}'"
 

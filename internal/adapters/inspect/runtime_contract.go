@@ -44,7 +44,7 @@ func inspectRuntimeContract(snapshot core.WorkspaceSnapshot, status *core.Integr
 	if !runtimeState.PoetryFound {
 		status.Issues = append(status.Issues, core.Issue{
 			Code:     core.IssueCodePoetryNotFound,
-			Message:  "Poetry is required for Concierge local runtime checks, but `poetry` was not found in PATH",
+			Message:  "Concierge needs Poetry installed to inspect this project's Python environment, but `poetry` was not found in PATH",
 			Severity: core.SeverityError,
 			Scope:    core.IssueScopeEnvironment,
 		})
@@ -54,7 +54,7 @@ func inspectRuntimeContract(snapshot core.WorkspaceSnapshot, status *core.Integr
 	if snapshot.RuntimeProfile == nil || strings.TrimSpace(snapshot.RuntimeProfile.InterpreterPath) == "" {
 		status.Issues = append(status.Issues, core.Issue{
 			Code:     core.IssueCodePoetryEnvironmentUnresolved,
-			Message:  "I could not resolve an existing Poetry environment for this project yet, so local Python checks are blocked",
+			Message:  "Concierge could not find a working Poetry environment for this project. Run `poetry install` in this repo first. If `poetry env info --executable` still does not print a Python path, run `poetry env use <python>`, then rerun `concierge run`.",
 			Severity: core.SeverityError,
 			Scope:    core.IssueScopeEnvironment,
 		})
@@ -63,7 +63,7 @@ func inspectRuntimeContract(snapshot core.WorkspaceSnapshot, status *core.Integr
 	if !snapshot.RuntimeProfile.DependenciesReady {
 		status.Issues = append(status.Issues, core.Issue{
 			Code:     core.IssueCodePoetryCheckFailed,
-			Message:  "the Poetry project metadata or lock state is not healthy yet; run the runtime step before local Python checks",
+			Message:  "This project's Poetry configuration is not healthy yet. Run `poetry check`, fix any reported problem, then rerun Concierge.",
 			Severity: core.SeverityError,
 			Scope:    core.IssueScopeEnvironment,
 		})
@@ -71,7 +71,7 @@ func inspectRuntimeContract(snapshot core.WorkspaceSnapshot, status *core.Integr
 	if !snapshot.RuntimeProfile.CodeLoaderReady {
 		status.Issues = append(status.Issues, core.Issue{
 			Code:     core.IssueCodeCodeLoaderMissing,
-			Message:  "the resolved Poetry environment cannot import `code_loader`, so Tensorleap runtime code is not ready yet",
+			Message:  "This project's Poetry environment cannot import `code_loader`, which Tensorleap runtime checks require.",
 			Severity: core.SeverityError,
 			Scope:    core.IssueScopeEnvironment,
 		})
@@ -89,7 +89,7 @@ func inspectRuntimeContract(snapshot core.WorkspaceSnapshot, status *core.Integr
 	if !ok {
 		status.Issues = append(status.Issues, core.Issue{
 			Code:     core.IssueCodePythonVersionUnsupported,
-			Message:  fmt.Sprintf("unable to parse the resolved Poetry Python version from %q", versionString),
+			Message:  fmt.Sprintf("Concierge could not read the Poetry Python version from %q", versionString),
 			Severity: core.SeverityError,
 			Scope:    core.IssueScopeEnvironment,
 		})
@@ -99,7 +99,7 @@ func inspectRuntimeContract(snapshot core.WorkspaceSnapshot, status *core.Integr
 	if major < 3 || (major == 3 && minor < 8) {
 		status.Issues = append(status.Issues, core.Issue{
 			Code:     core.IssueCodePythonVersionUnsupported,
-			Message:  fmt.Sprintf("resolved Poetry runtime uses Python %d.%d; Concierge requires Python 3.8+", major, minor),
+			Message:  fmt.Sprintf("This project's Poetry environment uses Python %d.%d; Concierge requires Python 3.8+", major, minor),
 			Severity: core.SeverityError,
 			Scope:    core.IssueScopeEnvironment,
 		})

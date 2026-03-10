@@ -328,6 +328,9 @@ func shouldOfferInteractiveHelp(report core.IterationReport, attentionCheck core
 	if hasEvidenceValue(report.Evidence, "executor.mode", "stub") {
 		return false
 	}
+	if hasEvidenceValue(report.Evidence, "executor.mode", "self_service") {
+		return false
+	}
 	return true
 }
 
@@ -387,7 +390,9 @@ func stepGuidanceLines(stepID core.EnsureStepID, issues []core.Issue) []string {
 		}
 		if hasIssueCode(issues, core.IssueCodePoetryEnvironmentUnresolved) {
 			return []string{
-				"Next step: create or select the project's Poetry environment yourself, confirm `poetry env info --executable` works, then rerun `concierge run`.",
+				"Next step: run `poetry install` in this project.",
+				"If `poetry env info --executable` still does not print a Python path, run `poetry env use <python>`, then rerun `concierge run`.",
+				"You do not need to start Concierge with `poetry run`; Concierge will use the Poetry environment automatically.",
 			}
 		}
 		if hasIssueCode(issues, core.IssueCodePoetryCheckFailed) {

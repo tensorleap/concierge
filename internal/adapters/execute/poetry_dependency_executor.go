@@ -41,9 +41,10 @@ func (e *PoetryDependencyExecutor) Execute(ctx context.Context, snapshot core.Wo
 		return core.ExecutionResult{
 			Step:    step,
 			Applied: false,
-			Summary: "Poetry environment is not resolved yet",
+			Summary: runtimeSelfServiceSummary(snapshot),
 			Evidence: []core.EvidenceItem{
-				{Name: "executor.mode", Value: "poetry_dependency"},
+				{Name: "executor.mode", Value: "self_service"},
+				{Name: "executor.actionable", Value: "false"},
 			},
 		}, nil
 	}
@@ -88,4 +89,15 @@ func runPoetryDependencyCommand(ctx context.Context, dir, name string, args ...s
 
 	err := cmd.Run()
 	return stdout.Bytes(), stderr.Bytes(), err
+}
+
+func runtimeSelfServiceSummary(snapshot core.WorkspaceSnapshot) string {
+	switch {
+	case !snapshot.Runtime.SupportedProject:
+		return "Concierge needs a Poetry-managed project before it can run local Tensorleap checks"
+	case !snapshot.Runtime.PoetryFound:
+		return "Concierge cannot continue until Poetry is installed and available in PATH"
+	default:
+		return "Concierge cannot continue until this project has an existing Poetry environment"
+	}
 }

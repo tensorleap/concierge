@@ -17,10 +17,11 @@ type RunOptions struct {
 type RunStopReason string
 
 const (
-	RunStopReasonSuccess       RunStopReason = "success"
-	RunStopReasonMaxIterations RunStopReason = "max_iterations"
-	RunStopReasonCancelled     RunStopReason = "cancelled"
-	RunStopReasonInterrupted   RunStopReason = "interrupted_step"
+	RunStopReasonSuccess         RunStopReason = "success"
+	RunStopReasonMaxIterations   RunStopReason = "max_iterations"
+	RunStopReasonCancelled       RunStopReason = "cancelled"
+	RunStopReasonInterrupted     RunStopReason = "interrupted_step"
+	RunStopReasonNeedsUserAction RunStopReason = "needs_user_action"
 )
 
 // RunResult aggregates per-iteration reports for one run invocation.
@@ -68,6 +69,12 @@ func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOpti
 				StopReason: RunStopReasonInterrupted,
 			}, nil
 		}
+		if requiresUserAction(report) {
+			return RunResult{
+				Reports:    reports,
+				StopReason: RunStopReasonNeedsUserAction,
+			}, nil
+		}
 		if report.Step.ID == core.EnsureStepComplete && report.Validation.Passed {
 			return RunResult{
 				Reports:    reports,
@@ -85,6 +92,15 @@ func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOpti
 func hasInterruptedAgent(report core.IterationReport) bool {
 	for _, item := range report.Evidence {
 		if item.Name == "agent.interrupted" && item.Value == "true" {
+			return true
+		}
+	}
+	return false
+}
+
+func requiresUserAction(report core.IterationReport) bool {
+	for _, item := range report.Evidence {
+		if item.Name == "executor.mode" && item.Value == "self_service" {
 			return true
 		}
 	}

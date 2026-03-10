@@ -479,6 +479,47 @@ func TestRunDeclineStepApprovalLeavesRepoUnchanged(t *testing.T) {
 	}
 }
 
+func TestRunStopsAfterManualRuntimeSetupIsRequired(t *testing.T) {
+	t.Setenv("CONCIERGE_ENABLE_HARNESS", "0")
+	mockLeapCLIInstalled(t)
+	mockPoetryEnvInfoFailure(t)
+
+	repo := initRunTestRepo(t, true)
+	if err := os.RemoveAll(filepath.Join(repo, ".concierge")); err != nil {
+		t.Fatalf("RemoveAll failed: %v", err)
+	}
+	withWorkingDir(t, repo)
+
+	output, err := executeCLI(t, "run", "--max-iterations=3", "--no-color")
+	if err == nil {
+		t.Fatal("expected run to stop for manual runtime setup")
+	}
+	if !strings.Contains(err.Error(), "complete the manual step described above") {
+		t.Fatalf("expected manual-step error, got: %v", err)
+	}
+	if strings.Count(output, "Integration Checklist") != 1 {
+		t.Fatalf("expected one checklist before stopping, got output: %q", output)
+	}
+	if strings.Contains(output, "You > Continue now? [y/N]:") {
+		t.Fatalf("did not expect approval prompt for manual-only runtime blocker, got output: %q", output)
+	}
+	if !strings.Contains(output, "Poetry environment should be available and have the required packages") {
+		t.Fatalf("expected user-facing runtime label, got output: %q", output)
+	}
+	if !strings.Contains(output, "Concierge could not find a working Poetry environment for this project.") {
+		t.Fatalf("expected explicit missing-environment message, got output: %q", output)
+	}
+	if !strings.Contains(output, "Next step: run `poetry install` in this project.") {
+		t.Fatalf("expected concrete self-service guidance, got output: %q", output)
+	}
+	if !strings.Contains(output, "If `poetry env info --executable` still does not print a Python path, run `poetry env use <python>`, then rerun `concierge run`.") {
+		t.Fatalf("expected explicit Poetry fallback guidance, got output: %q", output)
+	}
+	if !strings.Contains(output, "You do not need to start Concierge with `poetry run`; Concierge will use the Poetry environment automatically.") {
+		t.Fatalf("expected explicit guidance about running Concierge directly, got output: %q", output)
+	}
+}
+
 func TestRunWithPersistWritesConciergeArtifacts(t *testing.T) {
 	disableHarness(t)
 	repo := initRunTestRepo(t, true)
@@ -825,6 +866,40 @@ case "$cmd" in
       exit 0
     fi
     python3 "${@:3}"
+    ;;
+  *)
+    echo "unsupported poetry command" >&2
+    exit 1
+    ;;
+esac
+`
+	if err := os.WriteFile(poetryPath, []byte(poetryScript), 0o755); err != nil {
+		t.Fatalf("WriteFile failed for mock poetry CLI: %v", err)
+	}
+
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return binDir
+}
+
+func mockPoetryEnvInfoFailure(t *testing.T) string {
+	t.Helper()
+
+	binDir := t.TempDir()
+	poetryPath := filepath.Join(binDir, "poetry")
+	poetryScript := `#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-}"
+case "$cmd" in
+  --version)
+    echo "Poetry 2.0.0"
+    ;;
+  env)
+    if [[ "${2:-}" != "info" || "${3:-}" != "--executable" ]]; then
+      echo "unsupported poetry env command" >&2
+      exit 1
+    fi
+    exit 1
     ;;
   *)
     echo "unsupported poetry command" >&2

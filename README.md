@@ -3,7 +3,7 @@
 **Document type:** Design document (handoff-ready for implementation)
 **Primary audience:** Engineering + agent-assisted coding implementation
 **Status:** Draft (implementation-oriented, no step-by-step implementation plan)
-**Implementation status (2026-03-03):** Concierge v1 scope is explicitly focused on mandatory onboarding requirements. Optional asset assistance (metadata, visualizers, metrics, loss, custom layers) is deferred to v2.
+**Implementation status (2026-03-10):** Concierge v1 scope remains focused on mandatory onboarding requirements. The design now assumes the guide-native `leap_integration.py` workflow plus a Poetry-only local runtime boundary. Optional asset assistance (metadata, visualizers, metrics, loss, custom layers) is deferred to v2.
 
 ---
 
@@ -37,13 +37,13 @@ Concierge must align with Tensorleap’s documented integration flow and runtime
 
 ### 2.1 Expected integration artifacts and flow
 
-Tensorleap documents an expected folder structure for code integration that includes:
+`GUIDE.md` and the current decorator-based Tensorleap workflow establish a canonical authoring shape:
 
-* `leap_binder.py` — integration script
-* `leap.yaml` — mandatory configuration
-* `integration_test.py` — local integration test script (name may vary, concept is mandatory)
+* `leap_integration.py` — canonical entry script and local validator harness
+* `leap.yaml` — mandatory configuration, with `entryFile` pointing at `leap_integration.py`
+* decorated interfaces inside `leap_integration.py`, including preprocess, input encoders, GT encoders, model loading, and integration-test wiring
 
-This structure is explicitly presented as the “expected file structure” for a Tensorleap code integration. (See **Tensorleap Integration** guide.)
+Legacy `leap_binder.py` repositories still exist, but Concierge should treat them as migration input only. New authoring should converge on `leap_integration.py`, not continue extending binder-style registration as the primary API surface.
 
 ### 2.2 `leap.yaml` is mandatory and defines upload boundaries
 
@@ -63,37 +63,62 @@ Tensorleap-compatible models are:
 * `.onnx` or `.h5`
 * inputs and outputs must include a batch dimension: `[Batch, ...]` (dynamic or fixed batch supported)
 
-### 2.4 Integration script structure: preprocess + encoders (+ optional hooks)
+### 2.4 Decorator-based integration structure
 
-Tensorleap describes the integration script as:
+Tensorleap’s current authoring model is decorator-first and entrypoint-first:
 
-* **Preprocess function**: runs once, returns a list of `PreprocessResponse` objects for dataset slices (train/validation/test/unlabeled).
+* `leap_integration.py` is both the integration module and the runnable local validation entrypoint.
+* **Preprocess function**: runs once, takes no arguments, and returns a list of `PreprocessResponse` objects for dataset slices.
   At least **train + validation are mandatory**.
-* **Input encoders**: called per-sample `(idx, preprocess_response)`; registered with `@tensorleap_input_encoder(...)`.
-* **Ground truth encoders**: called per-sample; registered with `@tensorleap_gt_encoder(...)`.
-* Optional: metadata functions, custom visualizers, metrics, loss, custom layers.
+* **Input encoders**: called per-sample `(sample_id, preprocess_response)` and registered with `@tensorleap_input_encoder(...)`.
+* **Ground truth encoders**: called per-sample and registered with `@tensorleap_gt_encoder(...)`.
+* `@tensorleap_load_model(...)` loads an `.onnx` or `.h5` model and declares prediction semantics.
+* `@tensorleap_integration_test()` is the thin wiring layer that connects decorated interfaces into one model path.
+* Optional hooks remain available for metadata, custom visualizers, custom metrics, loss, and custom layers.
 
 Nuance: for the *unlabeled* set, GT encoders + metrics/loss won’t run.
 
-**Concierge v1 scope note:** although Tensorleap supports optional hooks, Concierge v1 does not validate, enforce, or auto-generate optional assets. Concierge v1 targets only mandatory integration contracts required to reach a working upload.
+**Concierge v1 scope note:** although Tensorleap supports optional hooks, Concierge v1 does not validate, enforce, or auto-generate optional assets. Concierge v1 targets only the mandatory contracts required to reach a working upload, while still understanding the validator signals emitted by optional interfaces.
 
-### 2.5 Integration test is mandatory and has strict rules
+### 2.5 Validation is call-driven, not definition-driven
 
-Tensorleap’s **integration test** is mandatory and serves two purposes:
+The guide-native workflow changes what “present” means:
 
-* locally simulate and validate the data flow (types/shapes/values/visualizations)
-* instruct Tensorleap how to connect integration interfaces to model inference and analysis
+* a decorator being defined is not enough; validation happens only when the decorated function is actually called
+* early `__main__` blocks should directly call new interfaces such as `preprocess()`, input encoders, GT encoders, and `load_model()`
+* as soon as a minimal real model path exists, `__main__` should switch to calling `integration_test(...)`
 
-It requires implementing:
+This matters because `@tensorleap_integration_test` re-runs itself in mapping mode, then triggers binder-level checks. A clean run can print `Successful!`, but that still proves only first-sample wiring, not full dataset health.
 
-* `@tensorleap_load_model(...)` (supported model formats `.h5` or `.onnx`)
-* `@tensorleap_integration_test()` (wires everything together)
+### 2.6 `leap_integration.py` is a progressive local validator
 
-Critical constraint: only decorators **called within** `@tensorleap_integration_test` are used in platform analysis; decorators defined but not called won’t be executed.
+Concierge should mirror the staged validator behavior described in `GUIDE.md`:
 
-Tensorleap also documents specific “dos/don’ts” for the integration test (what logic belongs where, and avoiding manual batch-dim manipulation).
+* import-time/decorator-time feedback catches duplicate names and invalid decorator arguments
+* direct calls validate function signatures, return types, dtypes, ranks, and batching mistakes
+* the exit hook prints a status table only when the entry script filename is exactly `leap_integration.py`
+* the status table and “recommended next interface” message are useful human-oriented progress signals
+* `LeapLoader.check_dataset()` is the better machine-oriented interface because it returns structured parse results instead of only terminal text
 
-### 2.6 CLI upload prerequisites and common failures
+This makes local execution part of the authoring loop, not a final smoke test after the integration is “done.”
+
+### 2.7 Guide-native authoring order
+
+Concierge should drive users through the same order that unlocks progressively more informative validation:
+
+1. create `leap_integration.py` and `leap.yaml`
+2. implement preprocess
+3. inspect model I/O contract
+4. implement the minimum required input encoder set
+5. implement `@tensorleap_load_model`
+6. add a minimal, thin `@tensorleap_integration_test`
+7. add remaining required input encoders
+8. add GT encoders
+9. expand from first-sample success to multiple training/validation samples
+
+Optional assets remain out of Concierge v1 scope, but the planner should still preserve this contract order.
+
+### 2.8 CLI upload prerequisites and common failures
 
 Concierge must understand and validate the CLI upload path:
 
@@ -344,15 +369,20 @@ Concierge must handle:
 * custom layers and external code requirements
 * secrets required for data access
 
-### 7.2 Integration layout modes
+### 7.2 Canonical integration layout and migration stance
 
-Tensorleap documents a root-level expected structure (`leap_binder.py`, `leap.yaml`, `integration_test.py`). Some quickstarts reference a `.tensorleap/` structure in CLI workflows.
+Concierge should support repositories that still contain legacy binder-style code, but v1 should have one canonical authoring target:
 
-Concierge must **not** hardcode one layout:
+* root-level `leap_integration.py`
+* root-level `leap.yaml`
+* `leap.yaml.entryFile = leap_integration.py`
 
-* detect existing integration artifacts
-* if none exist, offer a default scaffold aligned with the “expected folder structure”
-* store the chosen layout in Concierge state
+Design stance:
+
+* detect legacy artifacts such as `leap_binder.py` and binder-style helper modules
+* treat legacy code as source material to port, not as the target shape for new edits
+* normalize newly scaffolded or repaired integrations toward the guide-native `leap_integration.py` flow
+* preserve `.tensorleap/` or other repo-specific layouts only when there is a concrete reason not to converge on the canonical entrypoint
 
 ---
 
@@ -363,8 +393,9 @@ Concierge implements the iterative loop:
 * capture snapshot
 * inspect integration state
 * ensure repository prerequisites and the local Poetry runtime
-* detect inputs/targets, ensure encoders
-* ensure integration test coverage and local validation
+* ensure the canonical `leap_integration.py` / `leap.yaml` layout
+* progress through the next guide-native authoring milestone
+* validate first through the built-in local validator, then through higher-coverage Concierge validation
 * confirm upload and perform `leap push`
 * loop until success or max iterations
 
@@ -402,25 +433,36 @@ Every ensure-step:
 * ensure server reachable; `leap server info` yields mounted dataset volumes
 * ensure secrets context (if needed) is correctly configured
 
-**D) `leap.yaml` correctness**
+**D) Canonical guide-native layout**
 
-* exists, parseable, has valid `entryFile`
-* include/exclude covers required uploaded files
+* `leap.yaml` exists, is parseable, and points `entryFile` at `leap_integration.py`
+* include/exclude covers all runtime-read files
+* legacy binder files are treated as migration input, not the preferred end state
 * initial integration nuance: don’t force populated IDs prematurely
 
-**E) Integration script correctness**
+**E) Progressive authoring milestones**
 
-* preprocess returns at least train+validation `PreprocessResponse`
-* input encoders exist and execute reliably across multiple indices
-* GT encoders exist and execute on labeled subsets
-* optional hooks where useful (deferred in Concierge v1; planned for v2 enhancement flows)
+* preprocess runs directly and returns at least train+validation `PreprocessResponse`
+* model I/O contract is understood before expecting useful model-path validation
+* the minimum required input encoder set can execute on a real sample
+* `@tensorleap_load_model` executes directly and declares model semantics
+* a thin `@tensorleap_integration_test` exists as soon as one real model path exists
+* remaining required input encoders and GT encoders are added in guide-native order
 
-**F) Integration test contract and coverage**
+**F) Integration-test mapping and coverage**
 
-* integration test exists and follows documented rules
-* it calls all relevant decorators that must be used in analysis
+* integration test exists and follows guide-native rules
+* it calls the relevant decorators that must be used in analysis
+* it stays thin and declarative so mapping-mode re-execution succeeds
+* it avoids direct dataset access, arbitrary Python transforms, and manual batch-dimension manipulation in the integration-test body
 
-**G) Upload readiness**
+**G) Multi-stage validation**
+
+* human-oriented `python leap_integration.py` runs reach the next expected validator milestone
+* machine-oriented `LeapLoader.check_dataset()` results are captured for tooling
+* Concierge expands validation from first-sample success to bounded multi-sample coverage
+
+**H) Upload readiness**
 
 * requirements correctness (if used)
 * model artifact is `.onnx`/`.h5` and compatible
@@ -430,11 +472,11 @@ Every ensure-step:
 
 ## 9) Validation strategy: avoid “skeleton-only” false success
 
-A critical requirement: Concierge must not treat “decorators exist” + “a minimal test passes once” as completion.
+A critical requirement: Concierge must not flatten the guide-native validator into a single binary pass/fail check, and it must not treat “decorators exist” + “a minimal test passes once” as completion.
 
 Validation is only meaningful when it is tied to an explicit Local Runtime Profile. Any local Python-based check must execute through the resolved Poetry runtime and record which runtime profile was used.
 
-### 9.1 Three layers of validation
+### 9.1 Five layers of validation
 
 **Layer 1: Surface inventory (fast signal, not sufficient)**
 Discover what integration interfaces appear present across the upload boundary defined by `leap.yaml` include/exclude + entry file. This may use:
@@ -448,7 +490,31 @@ Purpose:
 * planning (what’s missing)
 * user messaging
 
-**Layer 2: Concierge runtime coverage harness (semantic + high-resolution)**
+**Layer 2: Guide-native progressive local validation**
+Concierge should execute and interpret the built-in local validator surface in the same staged order described in `GUIDE.md`:
+
+* import-time/decorator-time validation
+* direct calls to preprocess, input encoders, GT encoders, and `load_model()`
+* thin `integration_test(...)` execution
+* mapping-mode re-execution and binder-level checks
+* human-oriented status-table output when the entry script is exactly `leap_integration.py`
+
+Important nuance:
+
+* `Successful!` is a milestone, not final proof
+* the exit status table is for authors and operator UX, not the primary machine interface
+* failures in mapping mode are often integration-test-body design failures, not just missing decorators
+
+**Layer 3: Structured parser validation**
+Concierge should capture machine-readable parse results from `LeapLoader.check_dataset()` (or equivalent structured parser surface) whenever available.
+
+Purpose:
+
+* avoid brittle scraping of human-only terminal output
+* distinguish import/setup/model/setup errors from handler-level failures
+* record payload-level evidence for planning and reporting
+
+**Layer 4: Concierge runtime coverage harness (semantic + high-resolution)**
 Concierge runs a deterministic harness that:
 
 * executes through the resolved Poetry runtime profile
@@ -456,6 +522,7 @@ Concierge runs a deterministic harness that:
 * selects multiple indices per subset (bounded)
 * calls every input encoder across those indices
 * calls every GT encoder across those indices for labeled subsets
+* optionally records guide-native validator milestones alongside harness results
 * optionally calls metadata/visualizers if defined (planned for Concierge v2, not v1)
 * enforces invariants:
 
@@ -470,7 +537,7 @@ This creates **high-resolution evidence** like:
 * “GT encoder Y missing or throws exception at index 1”
 * “model input shape mismatch”
 
-**Layer 3: Stub-detection heuristics (“anti-cheat”)**
+**Layer 5: Stub-detection heuristics (“anti-cheat”)**
 Practical heuristics to catch stubby integrations:
 
 * variation checks across indices (detect constant outputs)
@@ -478,13 +545,14 @@ Practical heuristics to catch stubby integrations:
 * suspicious constant labels
 * file/path existence checks and server-mount compatibility checks
 
-### 9.2 Integration test coverage is a correctness dimension
+### 9.2 Integration test correctness is both coverage and code-shape
 
-Tensorleap states only decorators called in `@tensorleap_integration_test` are used in analysis. Concierge must therefore:
+Tensorleap states only decorators called in `@tensorleap_integration_test` are used in analysis, and `GUIDE.md` adds a second constraint: the integration-test body must stay thin enough to survive mapping-mode re-execution. Concierge must therefore:
 
-* track what must be wired (expected encoders/predictions/metrics)
-* enforce that the integration test calls them
-* ensure integration test follows documented constraints
+* track what must be wired in the integration test and in what order
+* enforce that the relevant decorators are actually called
+* enforce guide-native code-shape rules for the integration-test body
+* treat direct dataset access, arbitrary Python transforms, or manual batching inside `integration_test` as correctness failures, not stylistic warnings
 
 ### 9.3 Runtime provenance is part of correctness
 

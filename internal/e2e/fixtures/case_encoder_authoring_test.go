@@ -144,7 +144,39 @@ func snapshotWithConfirmedMapping(
 		InputSymbols:       append([]string(nil), inputSymbols...),
 		GroundTruthSymbols: append([]string(nil), groundTruthSymbols...),
 	}
+	attachReadyRuntimeProfile(&snapshotValue)
 	return snapshotValue
+}
+
+func attachReadyRuntimeProfile(snapshotValue *core.WorkspaceSnapshot) {
+	if snapshotValue == nil {
+		return
+	}
+
+	pyprojectHash := strings.TrimSpace(snapshotValue.FileHashes["pyproject.toml"])
+	poetryLockHash := strings.TrimSpace(snapshotValue.FileHashes["poetry.lock"])
+	interpreterPath := "/tmp/fixture-poetry/bin/python"
+	pythonVersion := "Python 3.11.0"
+
+	snapshotValue.RuntimeProfile = &core.LocalRuntimeProfile{
+		Kind:              "poetry",
+		PoetryExecutable:  "poetry",
+		PoetryVersion:     "Poetry 1.8.3",
+		InterpreterPath:   interpreterPath,
+		PythonVersion:     pythonVersion,
+		ConfirmationMode:  "auto",
+		DependenciesReady: true,
+		CodeLoaderReady:   true,
+		Fingerprint: core.RuntimeProfileFingerprint{
+			ProjectRoot:     snapshotValue.Repository.Root,
+			PyProjectHash:   pyprojectHash,
+			PoetryLockHash:  poetryLockHash,
+			InterpreterPath: interpreterPath,
+			PythonVersion:   pythonVersion,
+		},
+	}
+	snapshotValue.Runtime.ResolvedInterpreter = interpreterPath
+	snapshotValue.Runtime.ResolvedPythonVersion = pythonVersion
 }
 
 func replaceFirstInFile(t *testing.T, filePath string, old, updated string) func() {

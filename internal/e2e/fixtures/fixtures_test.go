@@ -175,6 +175,7 @@ func TestFixturePlannerPrimaryStepPreVariant(t *testing.T) {
 
 	fixtures := loadFixtures(t)
 	allowedPrimary := map[core.EnsureStepID]struct{}{
+		core.EnsureStepPythonRuntime:           {},
 		core.EnsureStepLeapYAML:                {},
 		core.EnsureStepIntegrationScript:       {},
 		core.EnsureStepPreprocessContract:      {},

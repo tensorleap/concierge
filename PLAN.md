@@ -28,10 +28,10 @@ The remaining work starts from that baseline.
 ## Progress
 
 - [x] (2026-03-10 00:00Z) Replaced the historical plan with a pending-only plan aligned to `GUIDE.md` and the Poetry runtime boundary.
-- [ ] `ENV1` `PENDING` - Capture runtime facts in snapshots and classify Poetry support deterministically.
-- [ ] `ENV2` `PENDING` - Resolve and persist a Local Runtime Profile for the selected repo root.
-- [ ] `ENV3` `PENDING` - Model dependency readiness and Tensorleap-local package readiness as explicit runtime gates.
-- [ ] `ENV4` `PENDING` - Enforce runtime gating in planner/UX and route all local Python execution through the resolved Poetry boundary.
+- [x] `ENV1` `DONE` - Capture runtime facts in snapshots and classify Poetry support deterministically.
+- [x] `ENV2` `DONE` - Resolve and persist a Local Runtime Profile for the selected repo root.
+- [x] `ENV3` `DONE` - Model dependency readiness and Tensorleap-local package readiness as explicit runtime gates.
+- [x] `ENV4` `DONE` - Enforce runtime gating in planner/UX and route all local Python execution through the resolved Poetry boundary.
 - [ ] `GUIDE1` `PENDING` - Make `leap_integration.py` the canonical integration layout and migration target.
 - [ ] `GUIDE2` `PENDING` - Implement guide-native progressive validator orchestration and reporting.
 - [ ] `GUIDE3` `PENDING` - Enforce thin `integration_test` rules and targeted authoring for integration-test wiring failures.

@@ -4,6 +4,7 @@ This ExecPlan is a living document. Keep `Progress`, `Gap Analysis`, `Surprises 
 
 ## Revision Notes
 
+- 2026-03-10: Marked all remaining `DONE` plan items as `ACCEPTED` on `main` per user direction; synchronized gap-analysis references, progress rows, and step-section headers for `Plan tracking bootstrap` and `10M1A-10M1G`.
 - 2026-02-26: Merged `feature/step-doctor-ui-polish` to `main`; accepted Steps `7A`, `7B`, `8A`, `8B`, `9A`, and `9B`.
 - 2026-02-26: Re-baselined remaining work after a full README/PLAN/code audit. Added explicit gap analysis and replaced the old two-step tail (`Step 7`, `Step 8`) with a detailed operational completion plan (`Steps 7A-12B`).
 - 2026-02-26: Verified current baseline is green locally: `go test ./...`, `bash scripts/fixtures_prepare.sh`, `bash scripts/fixtures_verify.sh`, `bash scripts/fixtures_run_checks.sh`.
@@ -60,8 +61,8 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | G16 | README docs requirements + operator handoff | README/docs do not yet describe detection->suggest->author->validate authoring loop by capability | Onboarding and operations remain ambiguous for the core concierge value proposition | 14A |
 | G17 | V1 quality gate requirement: commit approval must run after delta-scoped integration checks | Pre-commit stage is implemented with step-local validation and changed-file syntax gates (`10B1`) | Closed for runtime commit ordering and delta quality gates; keep regression coverage | 10B1 (`ACCEPTED`) |
 | G18 | README §10 + user requirement: agent tasks need Tensorleap domain context plus strict scoped edits | Agent context pipeline is implemented and merged (knowledge pack, scoped policy, repo context pack, structured prompt wiring) | Closed for context injection baseline; fixture-level context-quality assertions remain pending | 10C-10F (`ACCEPTED`), 12H |
-| G19 | User requirement (2026-03-04 + 2026-03-05): enforce mandatory contract order `preprocess -> input encoders -> GT encoders -> integration test` and stop deriving encoder requirements from integration-test calls | Inspector/planner now gate integration-test authoring behind encoder mapping confirmation and no longer derive encoder requirements from integration-test call graphs | Closed for ordering+requirement-source behavior; keep regression coverage | 10M1F (`DONE`) |
-| G20 | `RESEARCH.md` conclusions (2026-03-05): replicate Python input/GT discovery success in Go with staged artifacts and semantic-first evaluation | Go runtime now persists staged discovery artifacts (`lead_pack`, `agent_prompt_bundle`, `agent_raw_output`, `normalized_findings`, `comparison_report`) with framework-agnostic extraction + normalizer/post-processing plus optional runtime-signature corroboration notes/diffs | Closed for current research-parity scope; keep regression coverage | 10M1A-10M1G (`DONE`) |
+| G19 | User requirement (2026-03-04 + 2026-03-05): enforce mandatory contract order `preprocess -> input encoders -> GT encoders -> integration test` and stop deriving encoder requirements from integration-test calls | Inspector/planner now gate integration-test authoring behind encoder mapping confirmation and no longer derive encoder requirements from integration-test call graphs | Closed for ordering+requirement-source behavior; keep regression coverage | 10M1F (`ACCEPTED`) |
+| G20 | `RESEARCH.md` conclusions (2026-03-05): replicate Python input/GT discovery success in Go with staged artifacts and semantic-first evaluation | Go runtime now persists staged discovery artifacts (`lead_pack`, `agent_prompt_bundle`, `agent_raw_output`, `normalized_findings`, `comparison_report`) with framework-agnostic extraction + normalizer/post-processing plus optional runtime-signature corroboration notes/diffs | Closed for current research-parity scope; keep regression coverage | 10M1A-10M1G (`ACCEPTED`) |
 | G21 | README §5.2/§6 + augmentation: Local Runtime Profile must be explicit, Poetry-only in v1, and persisted with invalidation | Current runtime probing is partial and not persisted as a first-class Poetry runtime profile with drift tracking | Local validation can target the wrong interpreter or a stale environment | 10M2A, 10M2B |
 | G22 | README §8 + augmentation: unresolved runtime must block remaining Python-dependent authoring/validation | Planner/ensure-step taxonomy do not yet prioritize `ensure.local_poetry_runtime` ahead of remaining authoring and validation work | Concierge can generate or validate code before runtime context is trustworthy | 10M2C |
 | G23 | README §8/§10 + augmentation: runtime readiness includes project dependencies and Tensorleap-local dependency state | No explicit Poetry dependency-readiness step or repo-visible dependency-edit path for Tensorleap-local package | Success can depend on hidden env mutation, missing installs, or non-reviewable local overlays | 10M2D |
@@ -72,7 +73,7 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 
 | Item | Status | Updated | Scope |
 | --- | --- | --- | --- |
-| Plan tracking bootstrap | `DONE` | 2026-02-25 | Established `PLAN.md` as the cross-session source of truth. |
+| Plan tracking bootstrap | `ACCEPTED` | 2026-03-10 (`main`, user-directed state sync) | Established `PLAN.md` as the cross-session source of truth. |
 | Step 1: Baseline cleanup | `ACCEPTED` | 2026-02-25 (`main`) | Removed inherited workflows, initialized Go baseline CI. |
 | Step 2: Cobra bootstrap + release automation | `ACCEPTED` | 2026-02-25 (`main`) | Added core CLI commands and semver release pipeline (linux/macos amd64+arm64). |
 | Step 3: Core deterministic contracts | `ACCEPTED` | 2026-02-25 (`main`) | Added core types, errors, ports, issue catalog, and issue->step mapping. |
@@ -114,13 +115,13 @@ Finish Concierge from deterministic scaffold to fully operational integration as
 | Step 10K: Input-encoder suggestion and authoring flow | `ACCEPTED` | 2026-03-04 (`main`, commit `2b90758`) | Render missing-input suggestions to users and pass symbol-level context to authoring executor. |
 | Step 10L: GT-encoder need detection | `ACCEPTED` | 2026-03-04 (`main`, commit `2b90758`) | Detect GT encoder deficits and labeled-subset contract violations. |
 | Step 10M: GT-encoder suggestion and authoring flow | `ACCEPTED` | 2026-03-04 (`main`, commit `2b90758`) | Render GT-target suggestions and enforce labeled-subset constraints in authoring tasks. |
-| Step 10M1A: Input/GT discovery pipeline stage contracts + artifact persistence | `DONE` | 2026-03-05 | Port research pipeline stage model into Go with typed artifacts (`fixture_state`, `lead_pack`, `agent_prompt_bundle`, `agent_raw_output`, `normalized_findings`, `comparison_report`) persisted per iteration. |
-| Step 10M1B: Framework-agnostic lead extraction in Go | `DONE` | 2026-03-05 | Implement deterministic code/artifact signal extraction and framework detection (`pytorch`, `tensorflow`, `mixed`, `unknown`) with ranked lead output. |
-| Step 10M1C: Semantic investigator prompt/run plumbing | `DONE` | 2026-03-05 | Add discovery-specific agent prompt bundle, metadata capture, and quality gates that treat lead-pack read confirmation as informational when leads are injected directly. |
-| Step 10M1D: Multi-shape findings normalizer hardening | `DONE` | 2026-03-05 | Accept schema variants and synonymous fields from agent outputs; fail with actionable diagnostics on malformed or empty normalized payloads. |
-| Step 10M1E: Branch-aware input/GT post-processing rules | `DONE` | 2026-03-05 | Add deterministic tokenizer-dict splitting and resolvable branch-priority heuristics while retaining conditional alternatives. |
-| Step 10M1F: User mapping confirmation + strict contract-order planner gating | `DONE` | 2026-03-05 | Require user confirmation/adjustment of proposed input/GT mappings, persist accepted contracts, enforce `preprocess -> input -> GT -> integration-test` ordering, and remove integration-test call graph as encoder requirement source. |
-| Step 10M1G: Fixture parity + optional runtime signature corroboration | `DONE` | 2026-03-05 | Validate Go discovery pipeline against research-success fixtures (`yolov5_visdrone`, `ultralytics`) with `imdb` edge-case coverage and optional ONNX/Keras signature corroboration. |
+| Step 10M1A: Input/GT discovery pipeline stage contracts + artifact persistence | `ACCEPTED` | 2026-03-10 (`main`, user-directed state sync) | Port research pipeline stage model into Go with typed artifacts (`fixture_state`, `lead_pack`, `agent_prompt_bundle`, `agent_raw_output`, `normalized_findings`, `comparison_report`) persisted per iteration. |
+| Step 10M1B: Framework-agnostic lead extraction in Go | `ACCEPTED` | 2026-03-10 (`main`, user-directed state sync) | Implement deterministic code/artifact signal extraction and framework detection (`pytorch`, `tensorflow`, `mixed`, `unknown`) with ranked lead output. |
+| Step 10M1C: Semantic investigator prompt/run plumbing | `ACCEPTED` | 2026-03-10 (`main`, user-directed state sync) | Add discovery-specific agent prompt bundle, metadata capture, and quality gates that treat lead-pack read confirmation as informational when leads are injected directly. |
+| Step 10M1D: Multi-shape findings normalizer hardening | `ACCEPTED` | 2026-03-10 (`main`, user-directed state sync) | Accept schema variants and synonymous fields from agent outputs; fail with actionable diagnostics on malformed or empty normalized payloads. |
+| Step 10M1E: Branch-aware input/GT post-processing rules | `ACCEPTED` | 2026-03-10 (`main`, user-directed state sync) | Add deterministic tokenizer-dict splitting and resolvable branch-priority heuristics while retaining conditional alternatives. |
+| Step 10M1F: User mapping confirmation + strict contract-order planner gating | `ACCEPTED` | 2026-03-10 (`main`, user-directed state sync) | Require user confirmation/adjustment of proposed input/GT mappings, persist accepted contracts, enforce `preprocess -> input -> GT -> integration-test` ordering, and remove integration-test call graph as encoder requirement source. |
+| Step 10M1G: Fixture parity + optional runtime signature corroboration | `ACCEPTED` | 2026-03-10 (`main`, user-directed state sync) | Validate Go discovery pipeline against research-success fixtures (`yolov5_visdrone`, `ultralytics`) with `imdb` edge-case coverage and optional ONNX/Keras signature corroboration. |
 | Step 10M2A: Poetry project detection + runtime snapshot expansion | `PENDING` | — | Expand snapshot/inspection coverage for `pyproject.toml`, `poetry.lock`, Poetry presence, ambient env diagnostics, and unsupported-project detection. |
 | Step 10M2B: Local Runtime Profile resolution + persistence | `PENDING` | — | Resolve interpreter path/version via Poetry, persist runtime profile state, and invalidate it deterministically on drift. |
 | Step 10M2C: Runtime ensure-step + planner ordering | `PENDING` | — | Add `ensure.local_poetry_runtime` and make unresolved runtime the highest-priority blocker before remaining Python-dependent authoring/validation. |
@@ -166,7 +167,7 @@ Out of scope for this release train:
 
 ## Detailed Step Specifications
 
-### Step 10M1B: Framework-agnostic lead extraction in Go (`DONE`)
+### Step 10M1B: Framework-agnostic lead extraction in Go (`ACCEPTED`)
 
 Objective:
 
@@ -216,7 +217,7 @@ Rollback boundary:
 
 ---
 
-### Step 10M1C: Semantic investigator prompt/run plumbing (`DONE`)
+### Step 10M1C: Semantic investigator prompt/run plumbing (`ACCEPTED`)
 
 Objective:
 
@@ -270,7 +271,7 @@ Rollback boundary:
 
 ---
 
-### Step 10M1D: Multi-shape findings normalizer hardening (`DONE`)
+### Step 10M1D: Multi-shape findings normalizer hardening (`ACCEPTED`)
 
 Objective:
 
@@ -323,7 +324,7 @@ Rollback boundary:
 
 ---
 
-### Step 10M1E: Branch-aware input/GT post-processing rules (`DONE`)
+### Step 10M1E: Branch-aware input/GT post-processing rules (`ACCEPTED`)
 
 Objective:
 
@@ -373,7 +374,7 @@ Rollback boundary:
 
 ---
 
-### Step 10M1F: User mapping confirmation + strict contract-order planner gating (`DONE`)
+### Step 10M1F: User mapping confirmation + strict contract-order planner gating (`ACCEPTED`)
 
 Objective:
 
@@ -433,7 +434,7 @@ Rollback boundary:
 
 ---
 
-### Step 10M1G: Fixture parity + optional runtime signature corroboration (`DONE`)
+### Step 10M1G: Fixture parity + optional runtime signature corroboration (`ACCEPTED`)
 
 Objective:
 

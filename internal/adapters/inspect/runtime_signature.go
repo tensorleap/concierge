@@ -5,30 +5,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
+	"github.com/tensorleap/concierge/internal/adapters/validate"
 	"github.com/tensorleap/concierge/internal/core"
 )
 
-const runtimeSignatureProbeTimeout = 20 * time.Second
-
 var runtimeSignatureProbeRunner = runRuntimeSignatureProbe
 
-func detectRuntimeModelInputs(repoRoot string, contracts *core.IntegrationContracts) ([]string, []string) {
+func detectRuntimeModelInputs(snapshot core.WorkspaceSnapshot, contracts *core.IntegrationContracts) ([]string, []string) {
 	notes := make([]string, 0, 4)
 	if contracts == nil {
 		return nil, append(notes, "runtime_signature:skip:no_contracts")
 	}
 
+	repoRoot := strings.TrimSpace(snapshot.Repository.Root)
 	modelPath, modelType := runtimeSignatureModelPath(repoRoot, contracts)
 	if strings.TrimSpace(modelPath) == "" || strings.TrimSpace(modelType) == "" {
 		return nil, append(notes, "runtime_signature:skip:no_supported_model_candidate")
 	}
 
-	inputs, err := runtimeSignatureProbeRunner(modelPath, modelType)
+	inputs, err := runtimeSignatureProbeRunner(snapshot, modelPath, modelType)
 	if err != nil {
 		return nil, append(notes, fmt.Sprintf("runtime_signature:error:%s", strings.TrimSpace(err.Error())))
 	}
@@ -92,30 +90,24 @@ func resolveRuntimeSignatureModelPath(repoRoot string, modelPath string) (string
 	}
 }
 
-func runRuntimeSignatureProbe(modelPath string, modelType string) ([]string, error) {
+func runRuntimeSignatureProbe(snapshot core.WorkspaceSnapshot, modelPath string, modelType string) ([]string, error) {
 	probeCode := runtimeProbeScript(modelType)
 	if strings.TrimSpace(probeCode) == "" {
 		return nil, fmt.Errorf("unsupported runtime signature model type %q", modelType)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), runtimeSignatureProbeTimeout)
-	defer cancel()
-
-	command := exec.CommandContext(ctx, "python3", "-c", probeCode, modelPath)
-	output, err := command.CombinedOutput()
+	runner := validate.NewPythonRuntimeRunner()
+	commandResult, err := runner.RunPython(context.Background(), snapshot, "-c", probeCode, modelPath)
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil, fmt.Errorf("python probe timed out")
-		}
-		return nil, fmt.Errorf("python probe failed: %s", strings.TrimSpace(string(output)))
+		return nil, fmt.Errorf("python probe failed: %s", strings.TrimSpace(err.Error()))
 	}
 
 	var payload struct {
 		Inputs []string `json:"inputs"`
 		Error  string   `json:"error"`
 	}
-	if unmarshalErr := json.Unmarshal(output, &payload); unmarshalErr != nil {
-		return nil, fmt.Errorf("python probe returned malformed payload: %s", strings.TrimSpace(string(output)))
+	if unmarshalErr := json.Unmarshal([]byte(commandResult.Stdout), &payload); unmarshalErr != nil {
+		return nil, fmt.Errorf("python probe returned malformed payload: %s", strings.TrimSpace(commandResult.Stdout))
 	}
 	if strings.TrimSpace(payload.Error) != "" {
 		return nil, fmt.Errorf("python probe error: %s", strings.TrimSpace(payload.Error))

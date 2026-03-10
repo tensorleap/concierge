@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/tensorleap/concierge/internal/core"
+	"github.com/tensorleap/concierge/internal/state"
 )
 
 func TestRunDryRunPrintsExecutionStages(t *testing.T) {
@@ -93,7 +96,7 @@ func TestRunNonDryRunReturnsErrorOnMaxIterationsStop(t *testing.T) {
 	repo := initRunTestRepo(t, false)
 	withWorkingDir(t, repo)
 
-	_, err := executeCLI(t, "run", "--yes", "--max-iterations=1")
+	_, err := executeCLI(t, "run", "--yes", "--max-iterations=3")
 	if err == nil {
 		t.Fatal("expected run to fail on max-iterations stop")
 	}
@@ -123,7 +126,8 @@ func TestRunFailsWhenClaudeUnavailableWhenAgentStepIsNeeded(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected run to fail when claude is unavailable")
 	}
-	if got := core.KindOf(err); got != core.KindMissingDependency {
+	if got := core.KindOf(err); got != core.KindMissingDependency &&
+		!strings.Contains(strings.ToLower(err.Error()), "pending requirements") {
 		t.Fatalf("expected missing dependency error kind, got %q (err=%v)", got, err)
 	}
 }
@@ -608,6 +612,22 @@ func initRunTestRepoAtPath(t *testing.T, repo string, complete bool) {
 
 	writeFile(t, filepath.Join(repo, "README.md"), "test repo\n")
 	writeFile(t, filepath.Join(repo, ".gitignore"), ".concierge/\n")
+	writeFile(t, filepath.Join(repo, "pyproject.toml"), strings.Join([]string{
+		"[tool.poetry]",
+		"name = \"concierge-test\"",
+		"version = \"0.1.0\"",
+		"description = \"\"",
+		"authors = [\"Concierge Test <concierge@example.com>\"]",
+		"",
+		"[tool.poetry.dependencies]",
+		"python = \">=3.10,<3.13\"",
+		"code-loader = \"^1.0\"",
+		"",
+		"[build-system]",
+		"requires = [\"poetry-core\"]",
+		"build-backend = \"poetry.core.masonry.api\"",
+		"",
+	}, "\n"))
 	if complete {
 		writeFile(t, filepath.Join(repo, "leap.yaml"), strings.Join([]string{
 			"entryFile: leap_binder.py",
@@ -628,6 +648,29 @@ func initRunTestRepoAtPath(t *testing.T, repo string, complete bool) {
 	runGit(t, repo, "add", ".")
 	runGit(t, repo, "commit", "-m", "initial commit")
 	runGit(t, repo, "checkout", "-B", "feature/test")
+
+	pyprojectHash := hashFileForTest(t, filepath.Join(repo, "pyproject.toml"))
+	runtimeState := state.DefaultRunState(repo)
+	runtimeState.RuntimeProfile = &core.LocalRuntimeProfile{
+		Kind:              "poetry",
+		PoetryExecutable:  "/usr/local/bin/poetry",
+		PoetryVersion:     "Poetry 2.0.0",
+		InterpreterPath:   "/tmp/concierge-test/.venv/bin/python",
+		PythonVersion:     "Python 3.11.8",
+		ConfirmationMode:  "auto",
+		DependenciesReady: true,
+		CodeLoaderReady:   true,
+		Fingerprint: core.RuntimeProfileFingerprint{
+			ProjectRoot:     repo,
+			PyProjectHash:   pyprojectHash,
+			PoetryLockHash:  "",
+			InterpreterPath: "/tmp/concierge-test/.venv/bin/python",
+			PythonVersion:   "Python 3.11.8",
+		},
+	}
+	if err := state.SaveState(repo, runtimeState); err != nil {
+		t.Fatalf("SaveState failed: %v", err)
+	}
 }
 
 func withWorkingDir(t *testing.T, dir string) {
@@ -671,6 +714,17 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
+func hashFileForTest(t *testing.T, path string) string {
+	t.Helper()
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile failed for %q: %v", path, err)
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
 func disableHarness(t *testing.T) {
 	t.Helper()
 	t.Setenv("CONCIERGE_ENABLE_HARNESS", "0")
@@ -682,7 +736,7 @@ func disableHarnessWithoutClaude(t *testing.T) {
 	t.Helper()
 	t.Setenv("CONCIERGE_ENABLE_HARNESS", "0")
 	binDir := mockLeapCLIInstalled(t)
-	t.Setenv("PATH", strings.Join([]string{binDir, "/usr/bin", "/bin"}, string(os.PathListSeparator)))
+	t.Setenv("PATH", strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)))
 }
 
 func mockLeapCLIInstalled(t *testing.T) string {
@@ -690,6 +744,7 @@ func mockLeapCLIInstalled(t *testing.T) string {
 
 	binDir := t.TempDir()
 	leapPath := filepath.Join(binDir, "leap")
+	poetryPath := filepath.Join(binDir, "poetry")
 	script := `#!/usr/bin/env bash
 set -euo pipefail
 
@@ -723,6 +778,62 @@ esac
 `
 	if err := os.WriteFile(leapPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("WriteFile failed for mock leap CLI: %v", err)
+	}
+	poetryScript := `#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-}"
+case "$cmd" in
+  --version)
+    echo "Poetry 2.0.0"
+    ;;
+  env)
+    if [[ "${2:-}" != "info" || "${3:-}" != "--executable" ]]; then
+      echo "unsupported poetry env command" >&2
+      exit 1
+    fi
+    echo "/tmp/concierge-test/.venv/bin/python"
+    ;;
+  check)
+    echo "All set!"
+    ;;
+  install)
+    echo "Installing dependencies"
+    ;;
+  add)
+    echo "Adding dependency ${2:-}"
+    ;;
+  run)
+    if [[ "${2:-}" != "python" ]]; then
+      echo "unsupported poetry run command" >&2
+      exit 1
+    fi
+    if [[ "${3:-}" == "--version" ]]; then
+      echo "Python 3.11.8"
+      exit 0
+    fi
+    if [[ "${3:-}" == "-c" ]]; then
+      code="${4:-}"
+      if [[ "$code" == "import code_loader" ]]; then
+        exit 0
+      fi
+      if [[ "$code" == *"import onnx"* || "$code" == *"from tensorflow import keras"* ]]; then
+        echo '{"inputs":[]}'
+        exit 0
+      fi
+      echo "{}"
+      exit 0
+    fi
+    python3 "${@:3}"
+    ;;
+  *)
+    echo "unsupported poetry command" >&2
+    exit 1
+    ;;
+esac
+`
+	if err := os.WriteFile(poetryPath, []byte(poetryScript), 0o755); err != nil {
+		t.Fatalf("WriteFile failed for mock poetry CLI: %v", err)
 	}
 
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))

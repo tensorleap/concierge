@@ -148,6 +148,7 @@ func (e *Engine) runIteration(
 
 	evidence := append([]core.EvidenceItem(nil), finalResult.Evidence...)
 	evidence = append(evidence, decision.Evidence...)
+	evidence = append(evidence, validation.Evidence...)
 
 	report := core.IterationReport{
 		GeneratedAt:     e.clock(),

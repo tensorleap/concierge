@@ -16,10 +16,15 @@ const (
 	IssueCodeIntegrationBranchMissing IssueCode = "integration_branch_missing"
 
 	// Runtime dependencies.
-	IssueCodePythonNotFound           IssueCode = "python_not_found"
-	IssueCodePythonVersionUnsupported IssueCode = "python_version_unsupported"
-	IssueCodeRequirementsMissing      IssueCode = "requirements_missing"
-	IssueCodeRequirementsParseFailed  IssueCode = "requirements_parse_failed"
+	IssueCodePoetryNotFound              IssueCode = "poetry_not_found"
+	IssueCodeRuntimeProjectUnsupported   IssueCode = "runtime_project_unsupported"
+	IssueCodePoetryEnvironmentUnresolved IssueCode = "poetry_environment_unresolved"
+	IssueCodeRuntimeProfileDrifted       IssueCode = "runtime_profile_drifted"
+	IssueCodePoetryCheckFailed           IssueCode = "poetry_check_failed"
+	IssueCodeCodeLoaderMissing           IssueCode = "code_loader_missing"
+	IssueCodePythonVersionUnsupported    IssueCode = "python_version_unsupported"
+	IssueCodeRequirementsMissing         IssueCode = "requirements_missing"
+	IssueCodeRequirementsParseFailed     IssueCode = "requirements_parse_failed"
 
 	// Tensorleap CLI, auth, server, and secrets.
 	IssueCodeLeapCLINotFound                 IssueCode = "leap_cli_not_found"
@@ -139,7 +144,12 @@ var knownIssueCodes = []IssueCode{
 	IssueCodeProjectRootUnselected,
 	IssueCodeWorkingTreeDirty,
 	IssueCodeIntegrationBranchMissing,
-	IssueCodePythonNotFound,
+	IssueCodePoetryNotFound,
+	IssueCodeRuntimeProjectUnsupported,
+	IssueCodePoetryEnvironmentUnresolved,
+	IssueCodeRuntimeProfileDrifted,
+	IssueCodePoetryCheckFailed,
+	IssueCodeCodeLoaderMissing,
 	IssueCodePythonVersionUnsupported,
 	IssueCodeRequirementsMissing,
 	IssueCodeRequirementsParseFailed,

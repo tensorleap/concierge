@@ -68,7 +68,7 @@ func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOpti
 				StopReason: RunStopReasonInterrupted,
 			}, nil
 		}
-		if report.Step.ID == core.EnsureStepComplete {
+		if report.Step.ID == core.EnsureStepComplete && report.Validation.Passed {
 			return RunResult{
 				Reports:    reports,
 				StopReason: RunStopReasonSuccess,

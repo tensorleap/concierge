@@ -1,12 +1,8 @@
 package validate
 
 import (
-	"bytes"
 	"context"
-	"errors"
-	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -22,32 +18,29 @@ const (
 
 const defaultHarnessTimeout = 120 * time.Second
 
-type harnessCommandRunner func(ctx context.Context, dir, command string, args ...string) ([]byte, []byte, error)
-
 // HarnessRunResult captures parsed output from a harness invocation.
 type HarnessRunResult struct {
-	Enabled bool
-	Events  []HarnessEvent
-	Issues  []core.Issue
+	Enabled  bool
+	Events   []HarnessEvent
+	Issues   []core.Issue
+	Evidence []core.EvidenceItem
 }
 
 // HarnessRunner invokes an optional Python harness and parses NDJSON output.
 type HarnessRunner struct {
-	timeout    time.Duration
-	scriptPath string
-	getEnv     func(string) string
-	lookPath   func(string) (string, error)
-	runCommand harnessCommandRunner
+	timeout       time.Duration
+	scriptPath    string
+	getEnv        func(string) string
+	runtimeRunner *PythonRuntimeRunner
 }
 
 // NewHarnessRunner creates a harness runner with default command wiring.
 func NewHarnessRunner() *HarnessRunner {
 	return &HarnessRunner{
-		timeout:    defaultHarnessTimeout,
-		scriptPath: filepath.Join("scripts", "harness_stub.py"),
-		getEnv:     os.Getenv,
-		lookPath:   exec.LookPath,
-		runCommand: runHarnessCommand,
+		timeout:       defaultHarnessTimeout,
+		scriptPath:    filepath.Join("scripts", "harness_stub.py"),
+		getEnv:        os.Getenv,
+		runtimeRunner: NewPythonRuntimeRunner(),
 	}
 }
 
@@ -63,11 +56,6 @@ func (r *HarnessRunner) Run(ctx context.Context, snapshot core.WorkspaceSnapshot
 	if err != nil {
 		return HarnessRunResult{}, err
 	}
-	pythonPath, err := r.resolvePythonPath()
-	if err != nil {
-		return HarnessRunResult{}, err
-	}
-
 	runDir := strings.TrimSpace(snapshot.Repository.Root)
 	if runDir == "" {
 		runDir = "."
@@ -76,16 +64,12 @@ func (r *HarnessRunner) Run(ctx context.Context, snapshot core.WorkspaceSnapshot
 	runCtx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 
-	stdout, stderr, err := r.runCommand(runCtx, runDir, pythonPath, scriptPath, "--repo-root", runDir)
+	commandResult, err := r.runtimeRunner.RunPython(runCtx, snapshot, scriptPath, "--repo-root", runDir)
 	if err != nil {
-		errWithStderr := err
-		if stderrText := strings.TrimSpace(string(stderr)); stderrText != "" {
-			errWithStderr = fmt.Errorf("%w (stderr: %s)", err, stderrText)
-		}
-		return HarnessRunResult{}, core.WrapError(core.KindUnknown, "validate.harness.run", errWithStderr)
+		return HarnessRunResult{}, core.WrapError(core.KindUnknown, "validate.harness.run", err)
 	}
 
-	events, issues, err := ParseHarnessEvents(stdout)
+	events, issues, err := ParseHarnessEvents([]byte(commandResult.Stdout))
 	if err != nil {
 		return HarnessRunResult{}, err
 	}
@@ -94,6 +78,14 @@ func (r *HarnessRunner) Run(ctx context.Context, snapshot core.WorkspaceSnapshot
 		Enabled: true,
 		Events:  events,
 		Issues:  issues,
+		Evidence: []core.EvidenceItem{
+			{Name: "runtime.command", Value: commandResult.Command},
+			{Name: "runtime.stdout", Value: commandResult.Stdout},
+			{Name: "runtime.stderr", Value: commandResult.Stderr},
+			{Name: "runtime.poetry_version", Value: strings.TrimSpace(snapshot.Runtime.PoetryVersion)},
+			{Name: "runtime.interpreter_path", Value: strings.TrimSpace(snapshot.Runtime.ResolvedInterpreter)},
+			{Name: "runtime.python_version", Value: strings.TrimSpace(snapshot.Runtime.ResolvedPythonVersion)},
+		},
 	}, nil
 }
 
@@ -107,11 +99,8 @@ func (r *HarnessRunner) ensureDefaults() {
 	if r.getEnv == nil {
 		r.getEnv = os.Getenv
 	}
-	if r.lookPath == nil {
-		r.lookPath = exec.LookPath
-	}
-	if r.runCommand == nil {
-		r.runCommand = runHarnessCommand
+	if r.runtimeRunner == nil {
+		r.runtimeRunner = NewPythonRuntimeRunner()
 	}
 }
 
@@ -126,32 +115,4 @@ func (r *HarnessRunner) resolveScriptPath() (string, error) {
 	}
 
 	return scriptPath, nil
-}
-
-func (r *HarnessRunner) resolvePythonPath() (string, error) {
-	pythonPath, err := r.lookPath("python3")
-	if err == nil {
-		return pythonPath, nil
-	}
-
-	fallbackPath, fallbackErr := r.lookPath("python")
-	if fallbackErr == nil {
-		return fallbackPath, nil
-	}
-
-	combined := errors.Join(err, fallbackErr)
-	return "", core.WrapError(core.KindUnknown, "validate.harness.python_lookup", combined)
-}
-
-func runHarnessCommand(ctx context.Context, dir, command string, args ...string) ([]byte, []byte, error) {
-	cmd := exec.CommandContext(ctx, command, args...)
-	cmd.Dir = dir
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	return stdout.Bytes(), stderr.Bytes(), err
 }

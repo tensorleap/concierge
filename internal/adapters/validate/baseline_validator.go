@@ -58,6 +58,7 @@ func (v *BaselineValidator) Validate(ctx context.Context, snapshot core.Workspac
 
 		if harnessResult.Enabled {
 			validation.Issues = append(validation.Issues, harnessResult.Issues...)
+			validation.Evidence = append(validation.Evidence, harnessResult.Evidence...)
 			validation.Issues = append(validation.Issues, HeuristicIssuesFromHarnessEvents(harnessResult.Events)...)
 		}
 	}

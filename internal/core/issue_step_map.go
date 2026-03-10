@@ -12,10 +12,15 @@ var preferredEnsureStepByIssueCode = map[IssueCode]EnsureStepID{
 	IssueCodeIntegrationBranchMissing: EnsureStepRepositoryContext,
 
 	// Runtime dependencies.
-	IssueCodePythonNotFound:           EnsureStepPythonRuntime,
-	IssueCodePythonVersionUnsupported: EnsureStepPythonRuntime,
-	IssueCodeRequirementsMissing:      EnsureStepPythonRuntime,
-	IssueCodeRequirementsParseFailed:  EnsureStepPythonRuntime,
+	IssueCodePoetryNotFound:              EnsureStepPythonRuntime,
+	IssueCodeRuntimeProjectUnsupported:   EnsureStepPythonRuntime,
+	IssueCodePoetryEnvironmentUnresolved: EnsureStepPythonRuntime,
+	IssueCodeRuntimeProfileDrifted:       EnsureStepPythonRuntime,
+	IssueCodePoetryCheckFailed:           EnsureStepPythonRuntime,
+	IssueCodeCodeLoaderMissing:           EnsureStepPythonRuntime,
+	IssueCodePythonVersionUnsupported:    EnsureStepPythonRuntime,
+	IssueCodeRequirementsMissing:         EnsureStepPythonRuntime,
+	IssueCodeRequirementsParseFailed:     EnsureStepPythonRuntime,
 
 	// Tensorleap CLI, auth, server, and secrets.
 	IssueCodeLeapCLINotFound:                 EnsureStepLeapCLIAuth,

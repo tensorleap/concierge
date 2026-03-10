@@ -42,6 +42,7 @@ func (e *StubExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnaps
 // DispatcherExecutor routes supported deterministic steps to filesystem executor and
 // falls back to the stub executor for unsupported ensure-steps.
 type DispatcherExecutor struct {
+	poetry     *PoetryDependencyExecutor
 	filesystem *FilesystemExecutor
 	agent      *AgentExecutor
 	fallback   *StubExecutor
@@ -55,6 +56,7 @@ func NewDispatcherExecutor() *DispatcherExecutor {
 // NewDispatcherExecutorWithAgent creates an executor with optional agent fallback.
 func NewDispatcherExecutorWithAgent(agentExecutor *AgentExecutor) *DispatcherExecutor {
 	return &DispatcherExecutor{
+		poetry:     NewPoetryDependencyExecutor(),
 		filesystem: NewFilesystemExecutor(),
 		agent:      agentExecutor,
 		fallback:   NewStubExecutor(),
@@ -65,6 +67,9 @@ func NewDispatcherExecutorWithAgent(agentExecutor *AgentExecutor) *DispatcherExe
 func (d *DispatcherExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnapshot, step core.EnsureStep) (core.ExecutionResult, error) {
 	if isFilesystemStep(step.ID) {
 		return d.filesystem.Execute(ctx, snapshot, step)
+	}
+	if step.ID == core.EnsureStepPythonRuntime && d.poetry != nil {
+		return d.poetry.Execute(ctx, snapshot, step)
 	}
 	if (step.ID == core.EnsureStepPreprocessContract || step.ID == core.EnsureStepModelContract) && d.agent == nil {
 		return core.ExecutionResult{}, core.NewError(

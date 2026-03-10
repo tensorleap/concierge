@@ -54,16 +54,47 @@ type WorkspaceSnapshot struct {
 	Repository              RepositoryState         `json:"repository"`
 	FileHashes              map[string]string       `json:"fileHashes,omitempty"`
 	Runtime                 RuntimeState            `json:"runtime,omitempty"`
+	RuntimeProfile          *LocalRuntimeProfile    `json:"runtimeProfile,omitempty"`
 	LeapCLI                 LeapCLIState            `json:"leapCli,omitempty"`
 }
 
 // RuntimeState captures lightweight runtime/tooling fingerprints.
 type RuntimeState struct {
-	ProbeRan          bool     `json:"probeRan"`
-	PythonFound       bool     `json:"pythonFound"`
-	PythonExecutable  string   `json:"pythonExecutable,omitempty"`
-	PythonVersion     string   `json:"pythonVersion,omitempty"`
-	RequirementsFiles []string `json:"requirementsFiles,omitempty"`
+	ProbeRan              bool     `json:"probeRan"`
+	PoetryFound           bool     `json:"poetryFound"`
+	PoetryExecutable      string   `json:"poetryExecutable,omitempty"`
+	PoetryVersion         string   `json:"poetryVersion,omitempty"`
+	SupportedProject      bool     `json:"supportedProject"`
+	ProjectSupportReason  string   `json:"projectSupportReason,omitempty"`
+	PyProjectPresent      bool     `json:"pyprojectPresent"`
+	PoetryLockPresent     bool     `json:"poetryLockPresent"`
+	AmbientVirtualEnv     string   `json:"ambientVirtualEnv,omitempty"`
+	AmbientCondaPrefix    string   `json:"ambientCondaPrefix,omitempty"`
+	RequirementsFiles     []string `json:"requirementsFiles,omitempty"`
+	ResolvedInterpreter   string   `json:"resolvedInterpreter,omitempty"`
+	ResolvedPythonVersion string   `json:"resolvedPythonVersion,omitempty"`
+}
+
+// LocalRuntimeProfile captures the persisted Poetry runtime selected for local execution.
+type LocalRuntimeProfile struct {
+	Kind              string                    `json:"kind"`
+	PoetryExecutable  string                    `json:"poetryExecutable,omitempty"`
+	PoetryVersion     string                    `json:"poetryVersion,omitempty"`
+	InterpreterPath   string                    `json:"interpreterPath,omitempty"`
+	PythonVersion     string                    `json:"pythonVersion,omitempty"`
+	ConfirmationMode  string                    `json:"confirmationMode,omitempty"`
+	DependenciesReady bool                      `json:"dependenciesReady,omitempty"`
+	CodeLoaderReady   bool                      `json:"codeLoaderReady,omitempty"`
+	Fingerprint       RuntimeProfileFingerprint `json:"fingerprint"`
+}
+
+// RuntimeProfileFingerprint captures the inputs that invalidate a persisted runtime profile.
+type RuntimeProfileFingerprint struct {
+	ProjectRoot     string `json:"projectRoot,omitempty"`
+	PyProjectHash   string `json:"pyprojectHash,omitempty"`
+	PoetryLockHash  string `json:"poetryLockHash,omitempty"`
+	InterpreterPath string `json:"interpreterPath,omitempty"`
+	PythonVersion   string `json:"pythonVersion,omitempty"`
 }
 
 // LeapCLIState captures non-destructive CLI/auth/server readiness probes.
@@ -375,8 +406,9 @@ type GitDecision struct {
 
 // ValidationResult describes post-execution acceptance checks.
 type ValidationResult struct {
-	Passed bool    `json:"passed"`
-	Issues []Issue `json:"issues,omitempty"`
+	Passed   bool           `json:"passed"`
+	Issues   []Issue        `json:"issues,omitempty"`
+	Evidence []EvidenceItem `json:"evidence,omitempty"`
 }
 
 // CheckStatus is a user-facing verification state for one checked requirement.

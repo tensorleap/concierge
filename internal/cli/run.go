@@ -128,6 +128,54 @@ func newRunCommand() *cobra.Command {
 				selectedEncoderMapping = cloneEncoderMappingContract(mapping)
 				selectedEncoderMappingMu.Unlock()
 			}
+			resolvedRuntimeProfile := cloneLocalRuntimeProfile(loadedState.RuntimeProfile)
+			var resolvedRuntimeProfileMu sync.RWMutex
+			getRuntimeProfile := func() *core.LocalRuntimeProfile {
+				resolvedRuntimeProfileMu.RLock()
+				defer resolvedRuntimeProfileMu.RUnlock()
+				return cloneLocalRuntimeProfile(resolvedRuntimeProfile)
+			}
+			setRuntimeProfile := func(profile *core.LocalRuntimeProfile) {
+				resolvedRuntimeProfileMu.Lock()
+				resolvedRuntimeProfile = cloneLocalRuntimeProfile(profile)
+				resolvedRuntimeProfileMu.Unlock()
+			}
+			runtimeResolver := inspect.NewPoetryRuntimeResolver()
+			resolveRuntimeProfile := func(ctx context.Context, snapshotValue core.WorkspaceSnapshot) (*core.LocalRuntimeProfile, error) {
+				resolution, err := runtimeResolver.Resolve(ctx, repoRoot, snapshotValue, getRuntimeProfile())
+				if err != nil {
+					return nil, err
+				}
+				if resolution.Profile == nil {
+					setRuntimeProfile(nil)
+					return nil, nil
+				}
+				if len(resolution.SuspiciousReasons) > 0 {
+					if !yes {
+						if nonInteractive {
+							return nil, core.NewError(
+								core.KindUnknown,
+								"cli.run.runtime_confirmation_required",
+								"Poetry resolved an unexpected runtime and this run is non-interactive; rerun interactively or pass --yes to accept it",
+							)
+						}
+						approved, err := confirmRuntimeProfile(promptInput, cmd.OutOrStdout(), getRuntimeProfile(), resolution)
+						if err != nil {
+							return nil, err
+						}
+						if !approved {
+							return nil, core.NewError(
+								core.KindUnknown,
+								"cli.run.runtime_confirmation_rejected",
+								"runtime confirmation was rejected",
+							)
+						}
+					}
+					resolution.Profile.ConfirmationMode = "user_confirmed"
+				}
+				setRuntimeProfile(resolution.Profile)
+				return cloneLocalRuntimeProfile(resolution.Profile), nil
+			}
 
 			var iterationReporter ports.Reporter = report.NewStdoutReporterWithOptions(
 				writer,
@@ -246,13 +294,16 @@ func newRunCommand() *cobra.Command {
 					base:              snapshot.NewGitSnapshotter(),
 					selectedModelFn:   getSelectedModelPath,
 					selectedMappingFn: getSelectedEncoderMapping,
+					runtimeProfileFn:  getRuntimeProfile,
+					resolveRuntimeFn:  resolveRuntimeProfile,
 				},
 				Inspector: inspect.NewBaselineInspector(),
 				Planner:   plannerAdapter,
 				Executor: execute.NewApprovalExecutor(
 					modelPathHintExecutor{
-						base:            baseExecutor,
-						selectedModelFn: getSelectedModelPath,
+						base:             baseExecutor,
+						selectedModelFn:  getSelectedModelPath,
+						runtimeProfileFn: getRuntimeProfile,
 					},
 					stepApproval,
 				),
@@ -303,6 +354,7 @@ func newRunCommand() *cobra.Command {
 							repoRoot,
 							getSelectedModelPath(),
 							getSelectedEncoderMapping(),
+							getRuntimeProfile(),
 							invalidationReasons,
 						)
 						if err := state.SaveState(repoRoot, nextState); err != nil {
@@ -419,6 +471,14 @@ func humanInvalidationSummary(reasons []string) string {
 			labels = append(labels, "Git commit changed")
 		case state.InvalidationReasonWorktreeFingerprintDiff:
 			labels = append(labels, "files changed")
+		case state.InvalidationReasonRuntimePyProjectChanged:
+			labels = append(labels, "pyproject.toml changed")
+		case state.InvalidationReasonRuntimePoetryLockChanged:
+			labels = append(labels, "poetry.lock changed")
+		case state.InvalidationReasonRuntimeInterpreterChanged:
+			labels = append(labels, "Poetry interpreter changed")
+		case state.InvalidationReasonRuntimePythonVersionChanged:
+			labels = append(labels, "Poetry Python version changed")
 		default:
 			labels = append(labels, "workspace changed")
 		}
@@ -489,6 +549,9 @@ func cloneWorkspaceSnapshot(snapshot core.WorkspaceSnapshot) core.WorkspaceSnaps
 	if len(snapshot.Runtime.RequirementsFiles) > 0 {
 		cloned.Runtime.RequirementsFiles = append([]string(nil), snapshot.Runtime.RequirementsFiles...)
 	}
+	if snapshot.RuntimeProfile != nil {
+		cloned.RuntimeProfile = cloneLocalRuntimeProfile(snapshot.RuntimeProfile)
+	}
 	return cloned
 }
 
@@ -506,6 +569,15 @@ func cloneEncoderMappingContract(mapping *core.EncoderMappingContract) *core.Enc
 	if len(mapping.Notes) > 0 {
 		cloned.Notes = append([]string(nil), mapping.Notes...)
 	}
+	return &cloned
+}
+
+func cloneLocalRuntimeProfile(profile *core.LocalRuntimeProfile) *core.LocalRuntimeProfile {
+	if profile == nil {
+		return nil
+	}
+	cloned := *profile
+	cloned.Fingerprint = profile.Fingerprint
 	return &cloned
 }
 
@@ -723,7 +795,7 @@ func approvalGuidanceForStep(stepID core.EnsureStepID) stepApprovalGuidance {
 		}
 	case core.EnsureStepPythonRuntime:
 		return stepApprovalGuidance{
-			Explanation: "Python and dependencies are required to run integration code and validation checks.",
+			Explanation: "Concierge needs one resolved Poetry environment plus the project dependencies required to run local Tensorleap checks.",
 			DocsURL:     stepGuideWritingIntegrationURL,
 		}
 	case core.EnsureStepLeapCLIAuth:
@@ -821,6 +893,8 @@ type modelPathHintSnapshotter struct {
 	base              ports.Snapshotter
 	selectedModelFn   func() string
 	selectedMappingFn func() *core.EncoderMappingContract
+	runtimeProfileFn  func() *core.LocalRuntimeProfile
+	resolveRuntimeFn  func(context.Context, core.WorkspaceSnapshot) (*core.LocalRuntimeProfile, error)
 }
 
 func (s modelPathHintSnapshotter) Snapshot(ctx context.Context, request core.SnapshotRequest) (core.WorkspaceSnapshot, error) {
@@ -837,12 +911,26 @@ func (s modelPathHintSnapshotter) Snapshot(ctx context.Context, request core.Sna
 	if s.selectedMappingFn != nil {
 		snapshotValue.ConfirmedEncoderMapping = cloneEncoderMappingContract(s.selectedMappingFn())
 	}
+	if s.resolveRuntimeFn != nil {
+		profile, err := s.resolveRuntimeFn(ctx, snapshotValue)
+		if err != nil {
+			return core.WorkspaceSnapshot{}, err
+		}
+		snapshotValue.RuntimeProfile = cloneLocalRuntimeProfile(profile)
+		if profile != nil {
+			snapshotValue.Runtime.ResolvedInterpreter = strings.TrimSpace(profile.InterpreterPath)
+			snapshotValue.Runtime.ResolvedPythonVersion = strings.TrimSpace(profile.PythonVersion)
+		}
+	} else if s.runtimeProfileFn != nil {
+		snapshotValue.RuntimeProfile = cloneLocalRuntimeProfile(s.runtimeProfileFn())
+	}
 	return snapshotValue, nil
 }
 
 type modelPathHintExecutor struct {
-	base            ports.Executor
-	selectedModelFn func() string
+	base             ports.Executor
+	selectedModelFn  func() string
+	runtimeProfileFn func() *core.LocalRuntimeProfile
 }
 
 func (e modelPathHintExecutor) Execute(ctx context.Context, snapshotValue core.WorkspaceSnapshot, step core.EnsureStep) (core.ExecutionResult, error) {
@@ -853,6 +941,13 @@ func (e modelPathHintExecutor) Execute(ctx context.Context, snapshotValue core.W
 		selectedPath := normalizeModelPathValue(e.selectedModelFn())
 		if selectedPath != "" {
 			snapshotValue.SelectedModelPath = selectedPath
+		}
+	}
+	if e.runtimeProfileFn != nil {
+		snapshotValue.RuntimeProfile = cloneLocalRuntimeProfile(e.runtimeProfileFn())
+		if snapshotValue.RuntimeProfile != nil {
+			snapshotValue.Runtime.ResolvedInterpreter = strings.TrimSpace(snapshotValue.RuntimeProfile.InterpreterPath)
+			snapshotValue.Runtime.ResolvedPythonVersion = strings.TrimSpace(snapshotValue.RuntimeProfile.PythonVersion)
 		}
 	}
 	return e.base.Execute(ctx, snapshotValue, step)

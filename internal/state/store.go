@@ -38,6 +38,10 @@ func LoadState(projectRoot string) (RunState, error) {
 	} else {
 		state.SelectedProjectRoot = normalizeRoot(state.SelectedProjectRoot)
 	}
+	state.RuntimeProfile = cloneRuntimeProfile(state.RuntimeProfile)
+	if state.RuntimeProfile != nil {
+		state.RuntimeProfile.Fingerprint.ProjectRoot = normalizeRoot(state.RuntimeProfile.Fingerprint.ProjectRoot)
+	}
 
 	return state, nil
 }
@@ -57,6 +61,10 @@ func SaveState(projectRoot string, state RunState) error {
 		toWrite.SelectedProjectRoot = paths.ProjectRoot()
 	} else {
 		toWrite.SelectedProjectRoot = normalizeRoot(toWrite.SelectedProjectRoot)
+	}
+	toWrite.RuntimeProfile = cloneRuntimeProfile(toWrite.RuntimeProfile)
+	if toWrite.RuntimeProfile != nil {
+		toWrite.RuntimeProfile.Fingerprint.ProjectRoot = normalizeRoot(toWrite.RuntimeProfile.Fingerprint.ProjectRoot)
 	}
 	toWrite.InvalidationReasons = append([]string(nil), toWrite.InvalidationReasons...)
 

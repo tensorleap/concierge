@@ -12,9 +12,13 @@ const (
 	// CurrentVersion is the on-disk schema version for state.json.
 	CurrentVersion = 1
 
-	InvalidationReasonProjectRootChanged      = "project_root_changed"
-	InvalidationReasonGitHeadChanged          = "git_head_changed"
-	InvalidationReasonWorktreeFingerprintDiff = "worktree_fingerprint_changed"
+	InvalidationReasonProjectRootChanged          = "project_root_changed"
+	InvalidationReasonGitHeadChanged              = "git_head_changed"
+	InvalidationReasonWorktreeFingerprintDiff     = "worktree_fingerprint_changed"
+	InvalidationReasonRuntimePyProjectChanged     = "runtime_pyproject_changed"
+	InvalidationReasonRuntimePoetryLockChanged    = "runtime_poetry_lock_changed"
+	InvalidationReasonRuntimeInterpreterChanged   = "runtime_interpreter_changed"
+	InvalidationReasonRuntimePythonVersionChanged = "runtime_python_version_changed"
 )
 
 // RunState captures mutable orchestration state persisted between runs.
@@ -23,6 +27,7 @@ type RunState struct {
 	SelectedProjectRoot     string                       `json:"selectedProjectRoot"`
 	SelectedModelPath       string                       `json:"selectedModelPath,omitempty"`
 	ConfirmedEncoderMapping *core.EncoderMappingContract `json:"confirmedEncoderMapping,omitempty"`
+	RuntimeProfile          *core.LocalRuntimeProfile    `json:"runtimeProfile,omitempty"`
 	LastSnapshotID          string                       `json:"lastSnapshotId,omitempty"`
 	LastHead                string                       `json:"lastHead,omitempty"`
 	LastWorktreeFingerprint string                       `json:"lastWorktreeFingerprint,omitempty"`
@@ -41,7 +46,7 @@ func DefaultRunState(projectRoot string) RunState {
 
 // ComputeInvalidationReasons compares persisted state to a fresh snapshot.
 func ComputeInvalidationReasons(previous RunState, snapshot core.WorkspaceSnapshot, selectedProjectRoot string) []string {
-	reasons := make([]string, 0, 3)
+	reasons := make([]string, 0, 7)
 
 	previousRoot := normalizeRoot(previous.SelectedProjectRoot)
 	currentRoot := normalizeRoot(selectedProjectRoot)
@@ -57,6 +62,38 @@ func ComputeInvalidationReasons(previous RunState, snapshot core.WorkspaceSnapsh
 		reasons = append(reasons, InvalidationReasonWorktreeFingerprintDiff)
 	}
 
+	if previous.RuntimeProfile != nil {
+		currentPyProjectHash := strings.TrimSpace(snapshot.FileHashes["pyproject.toml"])
+		currentPoetryLockHash := strings.TrimSpace(snapshot.FileHashes["poetry.lock"])
+		currentInterpreter := ""
+		currentPythonVersion := ""
+		if snapshot.RuntimeProfile != nil {
+			currentInterpreter = strings.TrimSpace(snapshot.RuntimeProfile.InterpreterPath)
+			currentPythonVersion = strings.TrimSpace(snapshot.RuntimeProfile.PythonVersion)
+		}
+
+		if previous.RuntimeProfile.Fingerprint.PyProjectHash != "" &&
+			currentPyProjectHash != "" &&
+			previous.RuntimeProfile.Fingerprint.PyProjectHash != currentPyProjectHash {
+			reasons = append(reasons, InvalidationReasonRuntimePyProjectChanged)
+		}
+		if previous.RuntimeProfile.Fingerprint.PoetryLockHash != "" &&
+			currentPoetryLockHash != "" &&
+			previous.RuntimeProfile.Fingerprint.PoetryLockHash != currentPoetryLockHash {
+			reasons = append(reasons, InvalidationReasonRuntimePoetryLockChanged)
+		}
+		if previous.RuntimeProfile.InterpreterPath != "" &&
+			currentInterpreter != "" &&
+			previous.RuntimeProfile.InterpreterPath != currentInterpreter {
+			reasons = append(reasons, InvalidationReasonRuntimeInterpreterChanged)
+		}
+		if previous.RuntimeProfile.PythonVersion != "" &&
+			currentPythonVersion != "" &&
+			previous.RuntimeProfile.PythonVersion != currentPythonVersion {
+			reasons = append(reasons, InvalidationReasonRuntimePythonVersionChanged)
+		}
+	}
+
 	return reasons
 }
 
@@ -68,6 +105,7 @@ func UpdateForIteration(
 	selectedProjectRoot string,
 	selectedModelPath string,
 	confirmedMapping *core.EncoderMappingContract,
+	runtimeProfile *core.LocalRuntimeProfile,
 	invalidationReasons []string,
 ) RunState {
 	next := previous
@@ -75,6 +113,7 @@ func UpdateForIteration(
 	next.SelectedProjectRoot = normalizeRoot(selectedProjectRoot)
 	next.SelectedModelPath = normalizeModelPath(selectedModelPath)
 	next.ConfirmedEncoderMapping = cloneEncoderMappingContract(confirmedMapping)
+	next.RuntimeProfile = cloneRuntimeProfile(runtimeProfile)
 	next.LastSnapshotID = snapshot.ID
 	next.LastHead = snapshot.Repository.Head
 	next.LastWorktreeFingerprint = snapshot.WorktreeFingerprint
@@ -117,5 +156,14 @@ func cloneEncoderMappingContract(mapping *core.EncoderMappingContract) *core.Enc
 	if len(mapping.Notes) > 0 {
 		cloned.Notes = append([]string(nil), mapping.Notes...)
 	}
+	return &cloned
+}
+
+func cloneRuntimeProfile(profile *core.LocalRuntimeProfile) *core.LocalRuntimeProfile {
+	if profile == nil {
+		return nil
+	}
+	cloned := *profile
+	cloned.Fingerprint = profile.Fingerprint
 	return &cloned
 }

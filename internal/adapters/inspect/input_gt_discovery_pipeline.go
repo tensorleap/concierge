@@ -111,7 +111,7 @@ func inspectInputGTDiscovery(ctx context.Context, snapshot core.WorkspaceSnapsho
 	findings = postProcessInputGTFindings(findings, leadPack.FrameworkDetection.Candidate)
 	artifacts.NormalizedFindings = &findings
 
-	runtimeInputs, runtimeNotes := detectRuntimeModelInputs(repoRoot, status.Contracts)
+	runtimeInputs, runtimeNotes := detectRuntimeModelInputs(snapshot, status.Contracts)
 	comparison := buildInputGTComparisonReport(findings, runtimeInputs, runtimeNotes)
 	artifacts.ComparisonReport = &comparison
 	status.Contracts.InputGTDiscovery = artifacts

@@ -175,6 +175,13 @@ func attachReadyRuntimeProfile(snapshotValue *core.WorkspaceSnapshot) {
 			PythonVersion:   pythonVersion,
 		},
 	}
+	snapshotValue.Runtime.ProbeRan = true
+	snapshotValue.Runtime.PyProjectPresent = true
+	snapshotValue.Runtime.PoetryLockPresent = poetryLockHash != ""
+	snapshotValue.Runtime.SupportedProject = true
+	snapshotValue.Runtime.PoetryFound = true
+	snapshotValue.Runtime.PoetryExecutable = "poetry"
+	snapshotValue.Runtime.PoetryVersion = "Poetry 1.8.3"
 	snapshotValue.Runtime.ResolvedInterpreter = interpreterPath
 	snapshotValue.Runtime.ResolvedPythonVersion = pythonVersion
 }

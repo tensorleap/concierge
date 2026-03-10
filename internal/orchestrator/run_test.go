@@ -17,6 +17,7 @@ type runHarness struct {
 	reportCount        int
 	cancelAfterReports int
 	cancel             context.CancelFunc
+	executionEvidence  []core.EvidenceItem
 }
 
 func newRunHarness(stepSequence []core.EnsureStepID) *runHarness {
@@ -68,9 +69,10 @@ func (h *runHarness) Execute(ctx context.Context, snapshot core.WorkspaceSnapsho
 	}
 
 	return core.ExecutionResult{
-		Step:    step,
-		Applied: true,
-		Summary: "ok",
+		Step:     step,
+		Applied:  true,
+		Summary:  "ok",
+		Evidence: append([]core.EvidenceItem(nil), h.executionEvidence...),
 	}, nil
 }
 
@@ -209,6 +211,25 @@ func TestEngineRunReturnsErrorWhenRunIterationErrors(t *testing.T) {
 	}
 	if len(result.Reports) != 1 {
 		t.Fatalf("expected one successful report before error, got %d", len(result.Reports))
+	}
+}
+
+func TestEngineRunStopsWhenManualUserActionIsRequired(t *testing.T) {
+	harness := newRunHarness([]core.EnsureStepID{core.EnsureStepPythonRuntime, core.EnsureStepComplete})
+	harness.executionEvidence = []core.EvidenceItem{
+		{Name: "executor.mode", Value: "self_service"},
+	}
+	engine := newRunTestEngine(t, harness)
+
+	result, err := engine.Run(context.Background(), core.SnapshotRequest{}, RunOptions{MaxIterations: 5})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if result.StopReason != RunStopReasonNeedsUserAction {
+		t.Fatalf("expected stop reason %q, got %q", RunStopReasonNeedsUserAction, result.StopReason)
+	}
+	if len(result.Reports) != 1 {
+		t.Fatalf("expected one report, got %d", len(result.Reports))
 	}
 }
 

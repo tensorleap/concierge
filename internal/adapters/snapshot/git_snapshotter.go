@@ -87,7 +87,7 @@ func (g *GitSnapshotter) Snapshot(ctx context.Context, request core.SnapshotRequ
 	}, "|")))
 
 	fileHashes := captureFileHashes(root)
-	runtimeState := g.captureRuntimeState(ctx, root)
+	runtimeState := newRuntimeSnapshotter(g.runCommand, g.lookPath).capture(ctx, root)
 	leapCLIState := g.captureLeapCLIState(ctx, root)
 
 	return core.WorkspaceSnapshot{
@@ -228,6 +228,7 @@ func captureFileHashes(repoRoot string) map[string]string {
 		"integration_test.py",
 		"requirements.txt",
 		"pyproject.toml",
+		"poetry.lock",
 	}
 
 	hashes := make(map[string]string, len(files))
@@ -260,35 +261,8 @@ func captureFileHashes(repoRoot string) map[string]string {
 
 	return ordered
 }
-
-func (g *GitSnapshotter) captureRuntimeState(ctx context.Context, repoRoot string) core.RuntimeState {
-	state := core.RuntimeState{
-		ProbeRan:          true,
-		RequirementsFiles: detectRequirementsFiles(repoRoot),
-	}
-
-	pythonCandidates := []string{"python3", "python"}
-	for _, executable := range pythonCandidates {
-		if _, err := g.lookPath(executable); err != nil {
-			continue
-		}
-
-		output, err := g.commandOutput(ctx, repoRoot, executable, "--version")
-		if err != nil {
-			continue
-		}
-
-		state.PythonFound = true
-		state.PythonExecutable = executable
-		state.PythonVersion = strings.TrimSpace(output)
-		break
-	}
-
-	return state
-}
-
 func detectRequirementsFiles(repoRoot string) []string {
-	candidates := []string{"requirements.txt", "pyproject.toml"}
+	candidates := []string{"requirements.txt", "pyproject.toml", "poetry.lock"}
 	found := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
 		path := filepath.Join(repoRoot, candidate)

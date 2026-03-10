@@ -256,6 +256,57 @@ func TestReporterShowsManualGuidanceWhenExecutorCannotApplyFix(t *testing.T) {
 	}
 }
 
+func TestReporterShowsPoetryInstallGuidanceWhenRuntimeNeedsManualSetup(t *testing.T) {
+	var sink strings.Builder
+	reporter := NewStdoutReporter(&sink)
+
+	err := reporter.Report(context.Background(), core.IterationReport{
+		SnapshotID: "snapshot-123",
+		Step:       core.EnsureStep{ID: core.EnsureStepPythonRuntime},
+		Evidence: []core.EvidenceItem{
+			{Name: "executor.mode", Value: "self_service"},
+		},
+		Checks: []core.VerifiedCheck{
+			{
+				StepID:   core.EnsureStepPythonRuntime,
+				Label:    core.HumanEnsureStepRequirementLabel(core.EnsureStepPythonRuntime),
+				Status:   core.CheckStatusFail,
+				Blocking: true,
+				Issues: []core.Issue{
+					{
+						Code:     core.IssueCodePoetryEnvironmentUnresolved,
+						Message:  "Concierge could not find a working Poetry environment for this project. Run `poetry install` in this repo first.",
+						Severity: core.SeverityError,
+						Scope:    core.IssueScopeEnvironment,
+					},
+				},
+			},
+		},
+		Validation: core.ValidationResult{Passed: false},
+	})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	output := sink.String()
+	expectedSnippets := []string{
+		"Missing integration step: Poetry environment should be available and have the required packages",
+		"Concierge could not find a working Poetry environment for this project.",
+		"I cannot apply an automated fix for this check in the current run.",
+		"Next step: run `poetry install` in this project.",
+		"If `poetry env info --executable` still does not print a Python path, run `poetry env use <python>`, then rerun `concierge run`.",
+		"You do not need to start Concierge with `poetry run`; Concierge will use the Poetry environment automatically.",
+	}
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(output, snippet) {
+			t.Fatalf("expected output to contain %q, got %q", snippet, output)
+		}
+	}
+	if strings.Contains(output, "I can help with this step interactively and will ask before making any changes.") {
+		t.Fatalf("did not expect interactive-help claim for self-service runtime setup, got %q", output)
+	}
+}
+
 func TestReporterReturnsWriteError(t *testing.T) {
 	reporter := NewStdoutReporter(failingWriter{})
 

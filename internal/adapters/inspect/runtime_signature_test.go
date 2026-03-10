@@ -15,7 +15,10 @@ func TestDetectRuntimeModelInputsUsesResolvedModelPath(t *testing.T) {
 	writeFixtureFile(t, repoRoot, "model/demo.onnx", "binary")
 
 	previousRunner := runtimeSignatureProbeRunner
-	runtimeSignatureProbeRunner = func(path string, modelType string) ([]string, error) {
+	runtimeSignatureProbeRunner = func(snapshot core.WorkspaceSnapshot, path string, modelType string) ([]string, error) {
+		if snapshot.Repository.Root != repoRoot {
+			t.Fatalf("expected repo root %q, got %q", repoRoot, snapshot.Repository.Root)
+		}
 		if path != modelPath {
 			t.Fatalf("expected probe path %q, got %q", modelPath, path)
 		}
@@ -28,7 +31,12 @@ func TestDetectRuntimeModelInputsUsesResolvedModelPath(t *testing.T) {
 		runtimeSignatureProbeRunner = previousRunner
 	})
 
-	inputs, notes := detectRuntimeModelInputs(repoRoot, &core.IntegrationContracts{
+	inputs, notes := detectRuntimeModelInputs(core.WorkspaceSnapshot{
+		Repository: core.RepositoryState{Root: repoRoot},
+		RuntimeProfile: &core.LocalRuntimeProfile{
+			InterpreterPath: "/tmp/venv/bin/python",
+		},
+	}, &core.IntegrationContracts{
 		ResolvedModelPath: "model/demo.onnx",
 	})
 	if !reflect.DeepEqual(inputs, []string{"attention_masks", "input_ids"}) {
@@ -41,7 +49,9 @@ func TestDetectRuntimeModelInputsUsesResolvedModelPath(t *testing.T) {
 
 func TestDetectRuntimeModelInputsSkipsUnsupportedOrMissingModel(t *testing.T) {
 	repoRoot := t.TempDir()
-	inputs, notes := detectRuntimeModelInputs(repoRoot, &core.IntegrationContracts{
+	inputs, notes := detectRuntimeModelInputs(core.WorkspaceSnapshot{
+		Repository: core.RepositoryState{Root: repoRoot},
+	}, &core.IntegrationContracts{
 		ModelCandidates: []core.ModelCandidate{
 			{Path: "model/demo.pt"},
 		},

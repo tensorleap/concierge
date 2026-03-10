@@ -5,6 +5,10 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 MANIFEST_PATH="${REPO_ROOT}/fixtures/manifest.json"
 FIXTURES_ROOT="${REPO_ROOT}/.fixtures"
+RESET_LIB_PATH="${REPO_ROOT}/scripts/fixtures_reset_lib.sh"
+
+# shellcheck source=./fixtures_reset_lib.sh
+source "${RESET_LIB_PATH}"
 
 fail() {
   echo "error: $*" >&2
@@ -140,10 +144,84 @@ assert_clean_git_tree() {
   fi
 }
 
+path_is_listed() {
+  local needle="$1"
+  shift
+  local item
+  for item in "$@"; do
+    [[ "${item}" == "${needle}" ]] && return 0
+  done
+  return 1
+}
+
+assert_placeholder_readme() {
+  local path="$1"
+  local label="$2"
+
+  [[ -f "${path}" ]] || fail "${label} expected placeholder README at ${path}"
+  grep -q '^# Fixture Placeholder$' "${path}" \
+    || fail "${label} placeholder README missing marker line: ${path}"
+}
+
+assert_fixture_reset_script() {
+  local repo_dir="$1"
+  local label="$2"
+  local script_path="${repo_dir}/.fixture_reset.sh"
+
+  [[ -f "${script_path}" ]] || fail "${label} is missing .fixture_reset.sh"
+  [[ -x "${script_path}" ]] || fail "${label} has a non-executable .fixture_reset.sh"
+}
+
+choose_reset_probe_file() {
+  local repo_dir="$1"
+  local rel_path
+
+  rel_path="$(git -C "${repo_dir}" ls-files -- '*.md' '*.py' '*.yaml' '*.yml' '*.txt' | head -n 1)"
+  if [[ -z "${rel_path}" ]]; then
+    rel_path="$(git -C "${repo_dir}" ls-files | head -n 1)"
+  fi
+
+  [[ -n "${rel_path}" ]] || fail "could not find a tracked file to dirty in ${repo_dir}"
+  printf '%s\n' "${rel_path}"
+}
+
+dirty_repo_for_reset_check() {
+  local repo_dir="$1"
+  local label="$2"
+  local probe_file
+  probe_file="$(choose_reset_probe_file "${repo_dir}")"
+
+  printf '\n# fixture reset probe\n' >>"${repo_dir}/${probe_file}"
+  touch "${repo_dir}/.fixture_reset_probe.tmp"
+
+  if [[ -z "$(git -C "${repo_dir}" status --porcelain)" ]]; then
+    fail "${label} did not become dirty during reset-script verification"
+  fi
+}
+
+exercise_fixture_reset_script() {
+  local repo_dir="$1"
+  local label="$2"
+  local expected_head="$3"
+  local script_path="${repo_dir}/.fixture_reset.sh"
+
+  assert_fixture_reset_script "${repo_dir}" "${label}"
+  dirty_repo_for_reset_check "${repo_dir}" "${label}"
+  "${script_path}"
+
+  local actual_head
+  actual_head="$(git -C "${repo_dir}" rev-parse HEAD)"
+  [[ "${actual_head}" == "${expected_head}" ]] \
+    || fail "${label} reset script restored unexpected HEAD: expected ${expected_head}, got ${actual_head}"
+
+  assert_clean_git_tree "${repo_dir}" "${label}"
+}
+
 require_cmd git
 require_cmd jq
 require_cmd rg
 [[ -f "${MANIFEST_PATH}" ]] || fail "manifest not found: ${MANIFEST_PATH}"
+[[ -f "${RESET_LIB_PATH}" ]] || fail "fixture reset library not found: ${RESET_LIB_PATH}"
 
 jq -e '.fixtures and (.fixtures | type == "array")' "${MANIFEST_PATH}" >/dev/null \
   || fail "invalid manifest schema in ${MANIFEST_PATH}"
@@ -176,10 +254,22 @@ while IFS= read -r fixture_json; do
   log "Verifying fixture '${id}'"
   [[ -d "${post_dir}/.git" ]] || fail "post variant missing git repo for fixture '${id}'"
   [[ -d "${pre_dir}/.git" ]] || fail "pre variant missing git repo for fixture '${id}'"
+  assert_fixture_reset_script "${post_dir}" "post variant for fixture '${id}'"
+  assert_fixture_reset_script "${pre_dir}" "pre variant for fixture '${id}'"
+
+  declared_pre_readmes=()
+  while IFS= read -r rel_path; do
+    [[ -n "${rel_path}" ]] || continue
+    declared_pre_readmes+=("${rel_path}")
+  done < <(fixture_collect_declared_readme_files "${pre_dir}")
 
   log "  Checking strip_for_pre expectations across post/pre variants"
   for rel_path in "${strip_files[@]}"; do
     [[ -e "${post_dir}/${rel_path}" ]] || fail "fixture '${id}': '${rel_path}' missing in post variant"
+    if path_is_listed "${rel_path}" "${declared_pre_readmes[@]}"; then
+      assert_placeholder_readme "${pre_dir}/${rel_path}" "fixture '${id}'"
+      continue
+    fi
     [[ ! -e "${pre_dir}/${rel_path}" ]] || fail "fixture '${id}': '${rel_path}' still exists in pre variant"
   done
 
@@ -301,6 +391,13 @@ while IFS= read -r fixture_json; do
   log "  Validating both repos are clean"
   assert_clean_git_tree "${post_dir}" "post variant for fixture '${id}'"
   assert_clean_git_tree "${pre_dir}" "pre variant for fixture '${id}'"
+
+  log "  Exercising generated reset scripts"
+  exercise_fixture_reset_script "${post_dir}" "post variant for fixture '${id}'" "${post_ref}"
+  exercise_fixture_reset_script \
+    "${pre_dir}" \
+    "pre variant for fixture '${id}'" \
+    "$(git -C "${pre_dir}" rev-parse HEAD)"
 
   log "Verified fixture '${id}'"
 done < <(jq -c '.fixtures[]' "${MANIFEST_PATH}")

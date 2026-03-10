@@ -3,9 +3,11 @@ package fixtures
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -175,6 +177,7 @@ func TestFixturePlannerPrimaryStepPreVariant(t *testing.T) {
 
 	fixtures := loadFixtures(t)
 	allowedPrimary := map[core.EnsureStepID]struct{}{
+		core.EnsureStepPythonRuntime:           {},
 		core.EnsureStepLeapYAML:                {},
 		core.EnsureStepIntegrationScript:       {},
 		core.EnsureStepPreprocessContract:      {},
@@ -254,11 +257,12 @@ func TestFixturePersistenceArtifactsExistWhenEnabled(t *testing.T) {
 
 func assertPersistenceArtifactsForVariant(t *testing.T, repoRoot string) {
 	t.Helper()
-	if err := os.RemoveAll(filepath.Join(repoRoot, ".concierge")); err != nil {
+	workingRoot := cloneFixtureRepoForTest(t, repoRoot)
+	if err := os.RemoveAll(filepath.Join(workingRoot, ".concierge")); err != nil {
 		t.Fatalf("RemoveAll failed: %v", err)
 	}
 
-	reporter, err := report.NewFileReporter(repoRoot, io.Discard)
+	reporter, err := report.NewFileReporter(workingRoot, io.Discard)
 	if err != nil {
 		t.Fatalf("NewFileReporter failed: %v", err)
 	}
@@ -275,7 +279,7 @@ func assertPersistenceArtifactsForVariant(t *testing.T, repoRoot string) {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
 
-	result, err := engine.Run(context.Background(), core.SnapshotRequest{RepoRoot: repoRoot}, orchestrator.RunOptions{MaxIterations: 1})
+	result, err := engine.Run(context.Background(), core.SnapshotRequest{RepoRoot: workingRoot}, orchestrator.RunOptions{MaxIterations: 1})
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
@@ -284,12 +288,12 @@ func assertPersistenceArtifactsForVariant(t *testing.T, repoRoot string) {
 	}
 
 	snapshotID := result.Reports[0].SnapshotID
-	reportPath := filepath.Join(repoRoot, ".concierge", "reports", snapshotID+".json")
+	reportPath := filepath.Join(workingRoot, ".concierge", "reports", snapshotID+".json")
 	if _, err := os.Stat(reportPath); err != nil {
 		t.Fatalf("expected report file %q: %v", reportPath, err)
 	}
 
-	evidencePath := filepath.Join(repoRoot, ".concierge", "evidence", snapshotID, "executor.mode.log")
+	evidencePath := filepath.Join(workingRoot, ".concierge", "evidence", snapshotID, "executor.mode.log")
 	if _, err := os.Stat(evidencePath); err != nil {
 		t.Fatalf("expected evidence file %q: %v", evidencePath, err)
 	}
@@ -410,6 +414,23 @@ func repoRootFromRuntime(t *testing.T) string {
 		t.Fatal("runtime.Caller failed")
 	}
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", ".."))
+}
+
+func cloneFixtureRepoForTest(t *testing.T, sourceRoot string) string {
+	t.Helper()
+
+	cloneRoot := filepath.Join(t.TempDir(), "repo")
+	cmd := exec.Command(
+		"bash",
+		"-lc",
+		fmt.Sprintf("mkdir -p %q && cp -R %q/. %q", cloneRoot, sourceRoot, cloneRoot),
+	)
+	cmd.Env = os.Environ()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("copy fixture repo failed for %q: %v\n%s", sourceRoot, err, output)
+	}
+	return cloneRoot
 }
 
 func shouldAllowPostVariantModelGap(fixtureID string, repoRoot string, blockers []core.Issue) bool {

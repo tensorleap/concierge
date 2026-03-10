@@ -243,12 +243,18 @@ func TestSnapshotResolveRootErrorIsTyped(t *testing.T) {
 func TestSnapshotIncludesEnvironmentFingerprints(t *testing.T) {
 	repo := initGitRepo(t)
 	writeFile(t, filepath.Join(repo, "requirements.txt"), "numpy\n")
+	writeFile(t, filepath.Join(repo, "pyproject.toml"), strings.Join([]string{
+		"[tool.poetry]",
+		"name = \"demo\"",
+		"version = \"0.1.0\"",
+		"",
+	}, "\n"))
 
 	snapshotter := NewGitSnapshotter()
 	snapshotter.lookPath = func(file string) (string, error) {
 		switch file {
-		case "python3":
-			return "/usr/bin/python3", nil
+		case "poetry":
+			return "/usr/local/bin/poetry", nil
 		case "leap":
 			return "/usr/local/bin/leap", nil
 		default:
@@ -260,8 +266,8 @@ func TestSnapshotIncludesEnvironmentFingerprints(t *testing.T) {
 		_ = dir
 		command := name + " " + strings.Join(args, " ")
 		switch command {
-		case "python3 --version":
-			return []byte("Python 3.11.8\n"), nil, nil
+		case "poetry --version":
+			return []byte("Poetry 2.0.0\n"), nil, nil
 		case "leap --version":
 			return []byte("leap v0.2.0\n"), nil, nil
 		case "leap auth whoami":
@@ -278,16 +284,19 @@ func TestSnapshotIncludesEnvironmentFingerprints(t *testing.T) {
 		t.Fatalf("Snapshot returned error: %v", err)
 	}
 
-	if !snapshotValue.Runtime.PythonFound {
-		t.Fatal("expected Python to be marked as found")
+	if !snapshotValue.Runtime.PoetryFound {
+		t.Fatal("expected Poetry to be marked as found")
 	}
-	if snapshotValue.Runtime.PythonExecutable != "python3" {
-		t.Fatalf("expected python executable %q, got %q", "python3", snapshotValue.Runtime.PythonExecutable)
+	if snapshotValue.Runtime.PoetryExecutable != "/usr/local/bin/poetry" {
+		t.Fatalf("expected poetry executable %q, got %q", "/usr/local/bin/poetry", snapshotValue.Runtime.PoetryExecutable)
 	}
-	if snapshotValue.Runtime.PythonVersion != "Python 3.11.8" {
-		t.Fatalf("expected python version %q, got %q", "Python 3.11.8", snapshotValue.Runtime.PythonVersion)
+	if snapshotValue.Runtime.PoetryVersion != "Poetry 2.0.0" {
+		t.Fatalf("expected poetry version %q, got %q", "Poetry 2.0.0", snapshotValue.Runtime.PoetryVersion)
 	}
-	if len(snapshotValue.Runtime.RequirementsFiles) != 1 || snapshotValue.Runtime.RequirementsFiles[0] != "requirements.txt" {
+	if !snapshotValue.Runtime.SupportedProject {
+		t.Fatalf("expected poetry project classification to pass, got reason %q", snapshotValue.Runtime.ProjectSupportReason)
+	}
+	if len(snapshotValue.Runtime.RequirementsFiles) != 2 {
 		t.Fatalf("expected requirements file detection, got %+v", snapshotValue.Runtime.RequirementsFiles)
 	}
 
@@ -315,8 +324,8 @@ func TestSnapshotServerInfoProbeUsesExtendedTimeout(t *testing.T) {
 	snapshotter := NewGitSnapshotter()
 	snapshotter.lookPath = func(file string) (string, error) {
 		switch file {
-		case "python3":
-			return "/usr/bin/python3", nil
+		case "poetry":
+			return "/usr/local/bin/poetry", nil
 		case "leap":
 			return "/usr/local/bin/leap", nil
 		default:
@@ -338,8 +347,8 @@ func TestSnapshotServerInfoProbeUsesExtendedTimeout(t *testing.T) {
 		timeout := time.Until(deadline)
 		command := name + " " + strings.Join(args, " ")
 		switch command {
-		case "python3 --version":
-			return []byte("Python 3.11.8\n"), nil, nil
+		case "poetry --version":
+			return []byte("Poetry 2.0.0\n"), nil, nil
 		case "leap --version":
 			leapVersionTimeout = timeout
 			return []byte("leap v0.2.0\n"), nil, nil

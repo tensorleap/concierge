@@ -19,6 +19,7 @@ func TestFixtureCaseMissingInputEncoders_Recovers(t *testing.T) {
 	t.Setenv(validate.HarnessEnableEnvVar, "0")
 
 	_, postRoot := resolveFixtureRoots(t, "mnist")
+	postRoot = cloneFixtureRepoForTest(t, postRoot)
 	integrationPath := filepath.Join(postRoot, "leap_integration.py")
 	binderPath := filepath.Join(postRoot, "leap_binder.py")
 
@@ -76,6 +77,7 @@ func TestFixtureCaseMissingGTEncoders_Recovers(t *testing.T) {
 	t.Setenv(validate.HarnessEnableEnvVar, "0")
 
 	_, postRoot := resolveFixtureRoots(t, "mnist")
+	postRoot = cloneFixtureRepoForTest(t, postRoot)
 	integrationPath := filepath.Join(postRoot, "leap_integration.py")
 	binderPath := filepath.Join(postRoot, "leap_binder.py")
 
@@ -144,7 +146,46 @@ func snapshotWithConfirmedMapping(
 		InputSymbols:       append([]string(nil), inputSymbols...),
 		GroundTruthSymbols: append([]string(nil), groundTruthSymbols...),
 	}
+	attachReadyRuntimeProfile(&snapshotValue)
 	return snapshotValue
+}
+
+func attachReadyRuntimeProfile(snapshotValue *core.WorkspaceSnapshot) {
+	if snapshotValue == nil {
+		return
+	}
+
+	pyprojectHash := strings.TrimSpace(snapshotValue.FileHashes["pyproject.toml"])
+	poetryLockHash := strings.TrimSpace(snapshotValue.FileHashes["poetry.lock"])
+	interpreterPath := "/tmp/fixture-poetry/bin/python"
+	pythonVersion := "Python 3.11.0"
+
+	snapshotValue.RuntimeProfile = &core.LocalRuntimeProfile{
+		Kind:              "poetry",
+		PoetryExecutable:  "poetry",
+		PoetryVersion:     "Poetry 1.8.3",
+		InterpreterPath:   interpreterPath,
+		PythonVersion:     pythonVersion,
+		ConfirmationMode:  "auto",
+		DependenciesReady: true,
+		CodeLoaderReady:   true,
+		Fingerprint: core.RuntimeProfileFingerprint{
+			ProjectRoot:     snapshotValue.Repository.Root,
+			PyProjectHash:   pyprojectHash,
+			PoetryLockHash:  poetryLockHash,
+			InterpreterPath: interpreterPath,
+			PythonVersion:   pythonVersion,
+		},
+	}
+	snapshotValue.Runtime.ProbeRan = true
+	snapshotValue.Runtime.PyProjectPresent = true
+	snapshotValue.Runtime.PoetryLockPresent = poetryLockHash != ""
+	snapshotValue.Runtime.SupportedProject = true
+	snapshotValue.Runtime.PoetryFound = true
+	snapshotValue.Runtime.PoetryExecutable = "poetry"
+	snapshotValue.Runtime.PoetryVersion = "Poetry 1.8.3"
+	snapshotValue.Runtime.ResolvedInterpreter = interpreterPath
+	snapshotValue.Runtime.ResolvedPythonVersion = pythonVersion
 }
 
 func replaceFirstInFile(t *testing.T, filePath string, old, updated string) func() {

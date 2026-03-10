@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,19 +17,21 @@ func TestHarnessRunnerTimeout(t *testing.T) {
 	runner := NewHarnessRunner()
 	runner.timeout = 20 * time.Millisecond
 	runner.scriptPath = writeHarnessStubScript(t)
-	runner.lookPath = func(file string) (string, error) {
-		return "/usr/bin/python3", nil
-	}
-	runner.runCommand = func(ctx context.Context, dir, command string, args ...string) ([]byte, []byte, error) {
-		<-ctx.Done()
-		return nil, nil, ctx.Err()
+	runner.runtimeRunner = &PythonRuntimeRunner{
+		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
+			<-ctx.Done()
+			return nil, nil, ctx.Err()
+		},
 	}
 
-	_, err := runner.Run(context.Background(), core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: t.TempDir()}})
+	_, err := runner.Run(context.Background(), core.WorkspaceSnapshot{
+		Repository:     core.RepositoryState{Root: t.TempDir()},
+		RuntimeProfile: &core.LocalRuntimeProfile{InterpreterPath: "/tmp/venv/bin/python"},
+	})
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
-	if !errors.Is(err, context.DeadlineExceeded) {
+	if !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
 		t.Fatalf("expected deadline exceeded, got %v", err)
 	}
 }
@@ -38,17 +41,24 @@ func TestHarnessRunnerSuccessPath(t *testing.T) {
 	root := t.TempDir()
 	runner := NewHarnessRunner()
 	runner.scriptPath = writeHarnessStubScript(t)
-	runner.lookPath = func(file string) (string, error) {
-		return "/usr/bin/python3", nil
-	}
-	runner.runCommand = func(ctx context.Context, dir, command string, args ...string) ([]byte, []byte, error) {
-		if dir != root {
-			t.Fatalf("expected run dir %q, got %q", root, dir)
-		}
-		return []byte("{\"event\":\"validation\",\"status\":\"failed\",\"message\":\"bad\"}\n"), nil, nil
+	runner.runtimeRunner = &PythonRuntimeRunner{
+		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
+			if dir != root {
+				t.Fatalf("expected run dir %q, got %q", root, dir)
+			}
+			return []byte("{\"event\":\"validation\",\"status\":\"failed\",\"message\":\"bad\"}\n"), nil, nil
+		},
 	}
 
-	result, err := runner.Run(context.Background(), core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: root}})
+	result, err := runner.Run(context.Background(), core.WorkspaceSnapshot{
+		Repository:     core.RepositoryState{Root: root},
+		RuntimeProfile: &core.LocalRuntimeProfile{InterpreterPath: "/tmp/venv/bin/python"},
+		Runtime: core.RuntimeState{
+			PoetryVersion:         "Poetry 2.0.0",
+			ResolvedInterpreter:   "/tmp/venv/bin/python",
+			ResolvedPythonVersion: "Python 3.11.8",
+		},
+	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
@@ -70,17 +80,19 @@ func TestHarnessRunnerRespectsEnablementEnvVar(t *testing.T) {
 	t.Setenv(HarnessEnableEnvVar, "0")
 	runner := NewHarnessRunner()
 	runner.scriptPath = writeHarnessStubScript(t)
-	runner.lookPath = func(file string) (string, error) {
-		return "/usr/bin/python3", nil
-	}
 
 	called := false
-	runner.runCommand = func(ctx context.Context, dir, command string, args ...string) ([]byte, []byte, error) {
-		called = true
-		return nil, nil, nil
+	runner.runtimeRunner = &PythonRuntimeRunner{
+		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
+			called = true
+			return nil, nil, nil
+		},
 	}
 
-	result, err := runner.Run(context.Background(), core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: t.TempDir()}})
+	result, err := runner.Run(context.Background(), core.WorkspaceSnapshot{
+		Repository:     core.RepositoryState{Root: t.TempDir()},
+		RuntimeProfile: &core.LocalRuntimeProfile{InterpreterPath: "/tmp/venv/bin/python"},
+	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}

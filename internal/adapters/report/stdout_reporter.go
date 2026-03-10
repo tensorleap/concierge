@@ -328,6 +328,9 @@ func shouldOfferInteractiveHelp(report core.IterationReport, attentionCheck core
 	if hasEvidenceValue(report.Evidence, "executor.mode", "stub") {
 		return false
 	}
+	if hasEvidenceValue(report.Evidence, "executor.mode", "self_service") {
+		return false
+	}
 	return true
 }
 
@@ -373,6 +376,37 @@ func stepGuidanceLines(stepID core.EnsureStepID, issues []core.Issue) []string {
 	case core.EnsureStepServerConnectivity:
 		return []string{
 			"Next step: run `leap server info` and make sure your Tensorleap server is reachable on port 4589, then rerun `concierge run`.",
+		}
+	case core.EnsureStepPythonRuntime:
+		if hasIssueCode(issues, core.IssueCodePoetryNotFound) {
+			return []string{
+				"Next step: install Poetry, run `poetry --version`, and rerun `concierge run`.",
+			}
+		}
+		if hasIssueCode(issues, core.IssueCodeRuntimeProjectUnsupported) {
+			return []string{
+				"Next step: point Concierge at a Poetry-managed project root and rerun `concierge run`.",
+			}
+		}
+		if hasIssueCode(issues, core.IssueCodePoetryEnvironmentUnresolved) {
+			return []string{
+				"Next step: run `poetry install` in this project.",
+				"If `poetry env info --executable` still does not print a Python path, run `poetry env use <python>`, then rerun `concierge run`.",
+				"You do not need to start Concierge with `poetry run`; Concierge will use the Poetry environment automatically.",
+			}
+		}
+		if hasIssueCode(issues, core.IssueCodePoetryCheckFailed) {
+			return []string{
+				"Next step: review your Poetry project metadata, run `poetry check`, and rerun `concierge run`.",
+			}
+		}
+		if hasIssueCode(issues, core.IssueCodeCodeLoaderMissing) {
+			return []string{
+				"Next step: add or install `code-loader` in the resolved Poetry environment, then rerun `concierge run`.",
+			}
+		}
+		return []string{
+			"Next step: verify `poetry env info --executable`, `poetry check`, and `poetry run python --version`, then rerun `concierge run`.",
 		}
 	default:
 		return []string{

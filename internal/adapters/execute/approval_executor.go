@@ -2,6 +2,7 @@ package execute
 
 import (
 	"context"
+	"strings"
 
 	"github.com/tensorleap/concierge/internal/core"
 	"github.com/tensorleap/concierge/internal/core/ports"
@@ -40,7 +41,7 @@ func (e *ApprovalExecutor) Execute(ctx context.Context, snapshot core.WorkspaceS
 		step = canonicalStep
 	}
 
-	if step.ID != core.EnsureStepComplete {
+	if step.ID != core.EnsureStepComplete && stepNeedsApproval(snapshot, step) {
 		approved, err := e.approve(step)
 		if err != nil {
 			return core.ExecutionResult{}, core.WrapError(core.KindUnknown, "execute.approval.prompt", err)
@@ -64,4 +65,17 @@ func (e *ApprovalExecutor) Execute(ctx context.Context, snapshot core.WorkspaceS
 	}
 	result.Evidence = append(result.Evidence, core.EvidenceItem{Name: "executor.change_approval", Value: "approved"})
 	return result, nil
+}
+
+func stepNeedsApproval(snapshot core.WorkspaceSnapshot, step core.EnsureStep) bool {
+	if step.ID != core.EnsureStepPythonRuntime {
+		return true
+	}
+	if !snapshot.Runtime.SupportedProject || !snapshot.Runtime.PoetryFound {
+		return false
+	}
+	if snapshot.RuntimeProfile == nil || strings.TrimSpace(snapshot.RuntimeProfile.InterpreterPath) == "" {
+		return false
+	}
+	return true
 }

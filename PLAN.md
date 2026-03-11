@@ -32,7 +32,7 @@ The remaining work starts from that baseline.
 - [x] `ENV2` `DONE` - Resolve and persist a Local Runtime Profile for the selected repo root.
 - [x] `ENV3` `DONE` - Model dependency readiness and Tensorleap-local package readiness as explicit runtime gates.
 - [x] `ENV4` `DONE` - Enforce runtime gating in planner/UX and route all local Python execution through the resolved Poetry boundary.
-- [ ] `GUIDE1` `PENDING` - Make `leap_integration.py` the canonical integration layout for fresh repos.
+- [x] `GUIDE1` `DONE` - Make `leap_integration.py` the canonical integration layout for fresh repos.
 - [ ] `GUIDE2` `PENDING` - Implement guide-native progressive validator orchestration and reporting.
 - [ ] `GUIDE3` `PENDING` - Enforce thin `integration_test` rules and targeted authoring for integration-test wiring failures.
 - [ ] `VAL1` `PENDING` - Replace the stub harness with multi-sample runtime validation plus issue mapping.

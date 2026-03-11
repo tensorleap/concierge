@@ -118,7 +118,7 @@ func TestRunMaxIterationsDefaultsToUnlimited(t *testing.T) {
 
 func TestRunFailsWhenClaudeUnavailableWhenAgentStepIsNeeded(t *testing.T) {
 	repo := initRunTestRepo(t, true)
-	writeFile(t, filepath.Join(repo, "leap_binder.py"), "def helper():\n    return []\n")
+	writeFile(t, filepath.Join(repo, "leap_integration.py"), "def helper():\n    return []\n")
 	disableHarnessWithoutClaude(t)
 	withWorkingDir(t, repo)
 
@@ -360,7 +360,7 @@ func TestStepApprovalPromptDoesNotExposeModelRecommendationDetails(t *testing.T)
 
 func TestStepApprovalPromptUsesUserFacingPreprocessLanguage(t *testing.T) {
 	repoRoot := t.TempDir()
-	writeFile(t, filepath.Join(repoRoot, "leap_binder.py"), "from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_preprocess\n\n@tensorleap_preprocess()\ndef preprocess_data():\n    return []\n")
+	writeFile(t, filepath.Join(repoRoot, "leap_integration.py"), "from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_preprocess\n\n@tensorleap_preprocess()\ndef preprocess_data():\n    return []\n")
 
 	step, ok := core.EnsureStepByID(core.EnsureStepPreprocessContract)
 	if !ok {
@@ -388,7 +388,7 @@ func TestStepApprovalPromptUsesUserFacingPreprocessLanguage(t *testing.T) {
 
 func TestStepApprovalPromptDoesNotExposeInputEncoderRecommendationDetails(t *testing.T) {
 	repoRoot := t.TempDir()
-	writeFile(t, filepath.Join(repoRoot, "leap_binder.py"), strings.Join([]string{
+	writeFile(t, filepath.Join(repoRoot, "leap_integration.py"), strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_input_encoder, tensorleap_integration_test",
 		"",
 		"@tensorleap_input_encoder('image')",
@@ -422,7 +422,7 @@ func TestStepApprovalPromptDoesNotExposeInputEncoderRecommendationDetails(t *tes
 
 func TestStepApprovalPromptDoesNotExposeGTRecommendationDetails(t *testing.T) {
 	repoRoot := t.TempDir()
-	writeFile(t, filepath.Join(repoRoot, "leap_binder.py"), strings.Join([]string{
+	writeFile(t, filepath.Join(repoRoot, "leap_integration.py"), strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_gt_encoder, tensorleap_integration_test",
 		"",
 		"@tensorleap_gt_encoder('label')",
@@ -671,18 +671,21 @@ func initRunTestRepoAtPath(t *testing.T, repo string, complete bool) {
 	}, "\n"))
 	if complete {
 		writeFile(t, filepath.Join(repo, "leap.yaml"), strings.Join([]string{
-			"entryFile: leap_binder.py",
+			"entryFile: leap_integration.py",
 			"",
 		}, "\n"))
-		writeFile(t, filepath.Join(repo, "leap_binder.py"), strings.Join([]string{
-			"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_preprocess",
+		writeFile(t, filepath.Join(repo, "leap_integration.py"), strings.Join([]string{
+			"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_integration_test, tensorleap_preprocess",
 			"",
 			"@tensorleap_preprocess()",
 			"def preprocess():",
 			"    return []",
 			"",
+			"@tensorleap_integration_test()",
+			"def integration_test(sample_id, preprocess_response):",
+			"    return None",
+			"",
 		}, "\n"))
-		writeFile(t, filepath.Join(repo, "leap_custom_test.py"), "def test_noop():\n    return None\n")
 		writeFile(t, filepath.Join(repo, "model", "model.h5"), "binary\n")
 	}
 
@@ -777,7 +780,19 @@ func disableHarnessWithoutClaude(t *testing.T) {
 	t.Helper()
 	t.Setenv("CONCIERGE_ENABLE_HARNESS", "0")
 	binDir := mockLeapCLIInstalled(t)
-	t.Setenv("PATH", strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)))
+	pathEntries := []string{binDir}
+	for _, command := range []string{"git", "bash", "python3"} {
+		resolved, err := exec.LookPath(command)
+		if err != nil {
+			continue
+		}
+		dir := filepath.Dir(resolved)
+		if contains(pathEntries, dir) {
+			continue
+		}
+		pathEntries = append(pathEntries, dir)
+	}
+	t.Setenv("PATH", strings.Join(pathEntries, string(os.PathListSeparator)))
 }
 
 func mockLeapCLIInstalled(t *testing.T) string {
@@ -929,4 +944,13 @@ echo "claude mock: $*"
 	}
 
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }

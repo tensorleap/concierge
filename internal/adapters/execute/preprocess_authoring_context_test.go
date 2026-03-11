@@ -10,7 +10,7 @@ import (
 
 func TestBuildPreprocessAuthoringRecommendationFromEntryFile(t *testing.T) {
 	repoRoot := t.TempDir()
-	writeTextFile(t, filepath.Join(repoRoot, "leap_binder.py"), `from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_preprocess
+	writeTextFile(t, filepath.Join(repoRoot, "leap_integration.py"), `from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_preprocess
 
 @tensorleap_preprocess()
 def preprocess_one():

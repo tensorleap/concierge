@@ -9,10 +9,10 @@ import (
 
 func TestGTEncoderDetectorEmitsMissingIssue(t *testing.T) {
 	root := t.TempDir()
-	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_custom_test.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
 	writeFixtureFile(t, root, "model/demo.h5", "binary\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model, tensorleap_preprocess, tensorleap_integration_test",
 		"",
 		"@tensorleap_load_model()",
@@ -48,10 +48,10 @@ func TestGTEncoderDetectorEmitsMissingIssue(t *testing.T) {
 
 func TestGTEncoderDetectorEmitsContractMismatchIssue(t *testing.T) {
 	root := t.TempDir()
-	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_custom_test.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
 	writeFixtureFile(t, root, "model/demo.h5", "binary\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model, tensorleap_preprocess, tensorleap_gt_encoder, tensorleap_integration_test",
 		"",
 		"@tensorleap_load_model()",
@@ -85,10 +85,10 @@ func TestGTEncoderDetectorEmitsContractMismatchIssue(t *testing.T) {
 
 func TestGTEncoderDetectorRespectsUnlabeledSubsetRule(t *testing.T) {
 	root := t.TempDir()
-	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_custom_test.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
 	writeFixtureFile(t, root, "model/demo.h5", "binary\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model, tensorleap_preprocess, tensorleap_gt_encoder, tensorleap_integration_test",
 		"",
 		"@tensorleap_load_model()",
@@ -125,10 +125,10 @@ func TestGTEncoderDetectorRespectsUnlabeledSubsetRule(t *testing.T) {
 
 func TestGTEncoderDetectorSupportsMultilineFunctionSignatures(t *testing.T) {
 	root := t.TempDir()
-	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_custom_test.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
 	writeFixtureFile(t, root, "model/demo.h5", "binary\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model, tensorleap_preprocess, tensorleap_gt_encoder, tensorleap_integration_test",
 		"",
 		"@tensorleap_load_model()",

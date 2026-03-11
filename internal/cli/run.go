@@ -831,7 +831,7 @@ func approvalGuidanceForStep(stepID core.EnsureStepID) stepApprovalGuidance {
 		}
 	case core.EnsureStepIntegrationScript:
 		return stepApprovalGuidance{
-			Explanation: "The integration script is where preprocess and encoder interfaces are defined for Tensorleap.",
+			Explanation: "Tensorleap integration code must live in the root leap_integration.py entrypoint that Concierge manages.",
 			DocsURL:     stepGuideWritingIntegrationURL,
 		}
 	case core.EnsureStepPreprocessContract:

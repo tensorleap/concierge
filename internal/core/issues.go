@@ -62,6 +62,7 @@ const (
 
 	// Integration files and decorators.
 	IssueCodeIntegrationScriptMissing               IssueCode = "integration_script_missing"
+	IssueCodeIntegrationScriptNonCanonical          IssueCode = "integration_script_non_canonical"
 	IssueCodeIntegrationScriptImportFailed          IssueCode = "integration_script_import_failed"
 	IssueCodeIntegrationTestMissing                 IssueCode = "integration_test_missing"
 	IssueCodeIntegrationTestDecoratorMissing        IssueCode = "integration_test_decorator_missing"
@@ -182,6 +183,7 @@ var knownIssueCodes = []IssueCode{
 	IssueCodeModelInputShapeMismatch,
 	IssueCodeModelOutputShapeMismatch,
 	IssueCodeIntegrationScriptMissing,
+	IssueCodeIntegrationScriptNonCanonical,
 	IssueCodeIntegrationScriptImportFailed,
 	IssueCodeIntegrationTestMissing,
 	IssueCodeIntegrationTestDecoratorMissing,

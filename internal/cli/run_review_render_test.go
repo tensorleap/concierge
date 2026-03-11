@@ -17,9 +17,9 @@ func TestPromptChangeReviewApprovalRendersUserFacingReview(t *testing.T) {
 
 	review := gitmanager.ChangeReview{
 		Focus: "leap.yaml should be present and valid",
-		Files: []string{"A\tleap.yaml", "A\tleap_binder.py"},
-		Stat:  " leap.yaml      | 10 ++++++++++\n leap_binder.py | 20 ++++++++++++++++++++\n 2 files changed, 30 insertions(+)",
-		Patch: "diff --git a/leap.yaml b/leap.yaml\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/leap.yaml\n@@ -0,0 +1 @@\n+entryFile: leap_binder.py",
+		Files: []string{"A\tleap.yaml", "A\tleap_integration.py"},
+		Stat:  " leap.yaml      | 10 ++++++++++\n leap_integration.py | 20 ++++++++++++++++++++\n 2 files changed, 30 insertions(+)",
+		Patch: "diff --git a/leap.yaml b/leap.yaml\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/leap.yaml\n@@ -0,0 +1 @@\n+entryFile: leap_integration.py",
 	}
 
 	output := new(bytes.Buffer)

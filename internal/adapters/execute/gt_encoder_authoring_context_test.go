@@ -54,7 +54,7 @@ func TestGTEncoderRecommendationListsMissingSymbols(t *testing.T) {
 
 func TestGTEncoderRecommendationFallsBackToSourceDiscovery(t *testing.T) {
 	repoRoot := t.TempDir()
-	writeTextFile(t, filepath.Join(repoRoot, "leap_binder.py"), `from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_gt_encoder, tensorleap_integration_test
+	writeTextFile(t, filepath.Join(repoRoot, "leap_integration.py"), `from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_gt_encoder, tensorleap_integration_test
 
 @tensorleap_gt_encoder("label")
 def encode_label():

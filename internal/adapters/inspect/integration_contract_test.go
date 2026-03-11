@@ -11,9 +11,9 @@ import (
 
 func TestContractDiscoveryFindsDecoratedFunctions(t *testing.T) {
 	root := t.TempDir()
-	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_custom_test.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from somewhere import decorators",
 		"",
 		"@tensorleap_load_model()",
@@ -48,8 +48,8 @@ func TestContractDiscoveryFindsDecoratedFunctions(t *testing.T) {
 	}
 
 	contracts := status.Contracts
-	if contracts.EntryFile != "leap_custom_test.py" {
-		t.Fatalf("expected entry file %q, got %q", "leap_custom_test.py", contracts.EntryFile)
+	if contracts.EntryFile != "leap_integration.py" {
+		t.Fatalf("expected entry file %q, got %q", "leap_integration.py", contracts.EntryFile)
 	}
 	if !reflect.DeepEqual(contracts.LoadModelFunctions, []string{"load_model"}) {
 		t.Fatalf("expected load model functions %v, got %v", []string{"load_model"}, contracts.LoadModelFunctions)
@@ -70,9 +70,9 @@ func TestContractDiscoveryFindsDecoratedFunctions(t *testing.T) {
 
 func TestContractDiscoveryCapturesIntegrationTestCalls(t *testing.T) {
 	root := t.TempDir()
-	writeFixtureFile(t, root, "leap.yaml", "entryFile: integration_test.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "integration_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"@tensorleap_integration_test()",
 		"def run_integration():",
 		"    load_model()",
@@ -106,8 +106,8 @@ func TestContractDiscoveryCapturesIntegrationTestCalls(t *testing.T) {
 func TestContractDiscoveryGracefullyHandlesMissingEntryFile(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", "entryFile: missing_entry.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "integration_test.py", "print('test')\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('test')\n")
 
 	inspector := NewBaselineInspector()
 	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))
@@ -128,9 +128,9 @@ func TestContractDiscoveryGracefullyHandlesMissingEntryFile(t *testing.T) {
 
 func TestContractDiscoveryGracefullyHandlesSyntaxErrors(t *testing.T) {
 	root := t.TempDir()
-	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_custom_test.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"@tensorleap_preprocess()",
 		"def broken(",
 		"    return []",
@@ -147,11 +147,11 @@ func TestContractDiscoveryGracefullyHandlesSyntaxErrors(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected %q issue, got %+v", core.IssueCodeIntegrationScriptImportFailed, status.Issues)
 	}
-	if !strings.Contains(issue.Message, "leap_custom_test.py") {
+	if !strings.Contains(issue.Message, "leap_integration.py") {
 		t.Fatalf("expected issue message to include entry file path, got %q", issue.Message)
 	}
-	if issue.Location == nil || issue.Location.Path != "leap_custom_test.py" {
-		t.Fatalf("expected issue location path %q, got %+v", "leap_custom_test.py", issue.Location)
+	if issue.Location == nil || issue.Location.Path != "leap_integration.py" {
+		t.Fatalf("expected issue location path %q, got %+v", "leap_integration.py", issue.Location)
 	}
 	if issue.Location.Line <= 0 {
 		t.Fatalf("expected issue location to include a line, got %+v", issue.Location)
@@ -160,9 +160,9 @@ func TestContractDiscoveryGracefullyHandlesSyntaxErrors(t *testing.T) {
 
 func TestContractDiscoveryEmitsMissingPreprocessIssueForBinderEntryFile(t *testing.T) {
 	root := t.TempDir()
-	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_binder.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "def not_preprocess():\n    return []\n")
-	writeFixtureFile(t, root, "integration_test.py", "print('test')\n")
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", "def not_preprocess():\n    return []\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('test')\n")
 
 	inspector := NewBaselineInspector()
 	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))

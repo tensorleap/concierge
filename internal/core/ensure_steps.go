@@ -64,7 +64,7 @@ var ensureStepCatalog = map[EnsureStepID]EnsureStep{
 	},
 	EnsureStepIntegrationScript: {
 		ID:          EnsureStepIntegrationScript,
-		Description: "Ensure integration script exists and can be imported",
+		Description: "Ensure root leap_integration.py exists and is the canonical entrypoint",
 	},
 	EnsureStepPreprocessContract: {
 		ID:          EnsureStepPreprocessContract,
@@ -154,7 +154,7 @@ func HumanEnsureStepLabel(stepID EnsureStepID) string {
 	case EnsureStepModelContract:
 		return "Model path for @tensorleap_load_model is resolved and supported"
 	case EnsureStepIntegrationScript:
-		return "Integration script is present and importable"
+		return "Root leap_integration.py is present and canonical"
 	case EnsureStepPreprocessContract:
 		return "Dataset preprocessing is configured"
 	case EnsureStepInputEncoders:
@@ -202,7 +202,7 @@ func HumanEnsureStepRequirementLabel(stepID EnsureStepID) string {
 	case EnsureStepModelContract:
 		return "Model path for @tensorleap_load_model should be resolved and supported"
 	case EnsureStepIntegrationScript:
-		return "Integration script should be present and importable"
+		return "Root leap_integration.py should be present and canonical"
 	case EnsureStepPreprocessContract:
 		return "Dataset preprocessing should be configured"
 	case EnsureStepInputEncoders:

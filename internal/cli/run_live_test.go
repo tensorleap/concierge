@@ -20,7 +20,7 @@ func TestRunLiveClaudeSmokePreprocessStep(t *testing.T) {
 	mockLeapCLIInstalled(t)
 
 	repo := initRunTestRepo(t, true)
-	writeFile(t, filepath.Join(repo, "leap_binder.py"), strings.Join([]string{
+	writeFile(t, filepath.Join(repo, "leap_integration.py"), strings.Join([]string{
 		"def helper():",
 		"    return []",
 		"",

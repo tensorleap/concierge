@@ -2,6 +2,7 @@ package execute
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,10 +40,10 @@ func TestExecutorCreatesIntegrationScriptTemplate(t *testing.T) {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	if !result.Applied {
-		t.Fatal("expected applied=true when leap_binder.py is missing")
+		t.Fatal("expected applied=true when leap_integration.py is missing")
 	}
-	if _, err := os.Stat(filepath.Join(repoRoot, "leap_binder.py")); err != nil {
-		t.Fatalf("expected leap_binder.py to be created: %v", err)
+	if _, err := os.Stat(filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile)); err != nil {
+		t.Fatalf("expected %s to be created: %v", core.CanonicalIntegrationEntryFile, err)
 	}
 }
 
@@ -56,10 +57,14 @@ func TestExecutorCreatesIntegrationTestTemplate(t *testing.T) {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	if !result.Applied {
-		t.Fatal("expected applied=true when leap_custom_test.py is missing")
+		t.Fatal("expected applied=true when integration_test scaffold is missing")
 	}
-	if _, err := os.Stat(filepath.Join(repoRoot, "leap_custom_test.py")); err != nil {
-		t.Fatalf("expected leap_custom_test.py to be created: %v", err)
+	raw, err := os.ReadFile(filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile))
+	if err != nil {
+		t.Fatalf("expected %s to be created: %v", core.CanonicalIntegrationEntryFile, err)
+	}
+	if !strings.Contains(string(raw), "@tensorleap_integration_test") {
+		t.Fatalf("expected integration-test scaffold in %s, got:\n%s", core.CanonicalIntegrationEntryFile, string(raw))
 	}
 }
 
@@ -98,15 +103,14 @@ func TestExecutorRepairsLeapYAMLIncludeAndExcludeRules(t *testing.T) {
 	repoRoot := t.TempDir()
 	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
 
-	writeFile(t, filepath.Join(repoRoot, "leap_binder.py"), "def noop():\n    return None\n")
-	writeFile(t, filepath.Join(repoRoot, "leap_custom_test.py"), "def test_noop():\n    return None\n")
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), "def noop():\n    return None\n")
 	writeFile(t, filepath.Join(repoRoot, "leap.yaml"), strings.Join([]string{
-		"entryFile: leap_binder.py",
+		"entryFile: old_entry.py",
 		"include:",
-		"  - leap_binder.py",
+		"  - old_entry.py",
 		"exclude:",
 		"  - leap.yaml",
-		"  - leap_custom_test.py",
+		"  - leap_integration.py",
 		"  - .git/**",
 		"",
 	}, "\n"))
@@ -118,13 +122,13 @@ func TestExecutorRepairsLeapYAMLIncludeAndExcludeRules(t *testing.T) {
 	if !result.Applied {
 		t.Fatal("expected leap.yaml repair to apply changes")
 	}
-	if !strings.Contains(result.Summary, "updated leap.yaml upload rules") {
-		t.Fatalf("expected upload-rules summary, got %q", result.Summary)
+	if !strings.Contains(result.Summary, "updated leap.yaml entryFile and upload rules") {
+		t.Fatalf("expected entryFile/upload-rules summary, got %q", result.Summary)
 	}
 
 	contract := readLeapYAMLContract(t, filepath.Join(repoRoot, "leap.yaml"))
-	assertContainsAll(t, contract.Include, []string{"leap.yaml", "leap_binder.py", "leap_custom_test.py"})
-	assertContainsNone(t, contract.Exclude, []string{"leap.yaml", "leap_custom_test.py"})
+	assertContainsAll(t, contract.Include, []string{"leap.yaml", "leap_integration.py"})
+	assertContainsNone(t, contract.Exclude, []string{"leap.yaml", "leap_integration.py"})
 	if !contains(contract.Exclude, ".git/**") {
 		t.Fatalf("expected non-blocking exclude pattern to remain, got %v", contract.Exclude)
 	}
@@ -135,7 +139,7 @@ func TestExecutorRepairsLeapYAMLMissingEntryFile(t *testing.T) {
 	repoRoot := t.TempDir()
 	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
 
-	writeFile(t, filepath.Join(repoRoot, "leap_binder.py"), "def noop():\n    return None\n")
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), "def noop():\n    return None\n")
 	writeFile(t, filepath.Join(repoRoot, "leap.yaml"), strings.Join([]string{
 		"include:",
 		"  - leap.yaml",
@@ -154,8 +158,8 @@ func TestExecutorRepairsLeapYAMLMissingEntryFile(t *testing.T) {
 	}
 
 	contract := readLeapYAMLContract(t, filepath.Join(repoRoot, "leap.yaml"))
-	if contract.EntryFile != "leap_binder.py" {
-		t.Fatalf("expected repaired entryFile %q, got %q", "leap_binder.py", contract.EntryFile)
+	if contract.EntryFile != core.CanonicalIntegrationEntryFile {
+		t.Fatalf("expected repaired entryFile %q, got %q", core.CanonicalIntegrationEntryFile, contract.EntryFile)
 	}
 }
 
@@ -165,10 +169,10 @@ func TestExecutorCreatesEntryFileWhenLeapYAMLEntryFileMissingOnDisk(t *testing.T
 	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
 
 	writeFile(t, filepath.Join(repoRoot, "leap.yaml"), strings.Join([]string{
-		"entryFile: leap_binder.py",
+		fmt.Sprintf("entryFile: %s", core.CanonicalIntegrationEntryFile),
 		"include:",
 		"  - leap.yaml",
-		"  - leap_binder.py",
+		"  - leap_integration.py",
 		"",
 	}, "\n"))
 
@@ -179,13 +183,13 @@ func TestExecutorCreatesEntryFileWhenLeapYAMLEntryFileMissingOnDisk(t *testing.T
 	if !result.Applied {
 		t.Fatal("expected leap.yaml step to scaffold missing entryFile target")
 	}
-	if !strings.Contains(result.Summary, "created leap_binder.py") {
+	if !strings.Contains(result.Summary, "created leap_integration.py") {
 		t.Fatalf("expected summary to mention entry file scaffold, got %q", result.Summary)
 	}
-	if _, err := os.Stat(filepath.Join(repoRoot, "leap_binder.py")); err != nil {
-		t.Fatalf("expected leap_binder.py to be created: %v", err)
+	if _, err := os.Stat(filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile)); err != nil {
+		t.Fatalf("expected %s to be created: %v", core.CanonicalIntegrationEntryFile, err)
 	}
-	assertEvidenceValue(t, result.Evidence, "executor.entry_file", "leap_binder.py")
+	assertEvidenceValue(t, result.Evidence, "executor.entry_file", core.CanonicalIntegrationEntryFile)
 	assertEvidenceValue(t, result.Evidence, "executor.entry_file.before_checksum", "missing")
 	entryAfter := evidenceValue(result.Evidence, "executor.entry_file.after_checksum")
 	if entryAfter == "" || entryAfter == "missing" {
@@ -198,14 +202,12 @@ func TestExecutorDoesNotModifyCompliantLeapYAML(t *testing.T) {
 	repoRoot := t.TempDir()
 	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
 
-	writeFile(t, filepath.Join(repoRoot, "leap_binder.py"), "def noop():\n    return None\n")
-	writeFile(t, filepath.Join(repoRoot, "leap_custom_test.py"), "def test_noop():\n    return None\n")
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), "def noop():\n    return None\n")
 	initial := strings.Join([]string{
-		"entryFile: leap_binder.py",
+		fmt.Sprintf("entryFile: %s", core.CanonicalIntegrationEntryFile),
 		"include:",
 		"  - leap.yaml",
-		"  - leap_binder.py",
-		"  - leap_custom_test.py",
+		"  - leap_integration.py",
 		"exclude:",
 		"  - .git/**",
 		"",

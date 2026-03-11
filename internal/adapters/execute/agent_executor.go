@@ -295,7 +295,6 @@ func scopePolicyEvidence(policy agent.AgentScopePolicy) []core.EvidenceItem {
 func repoContextEvidence(context core.AgentRepoContext) []core.EvidenceItem {
 	return []core.EvidenceItem{
 		{Name: "agent.repo_context.entry_file", Value: context.EntryFile},
-		{Name: "agent.repo_context.binder_file", Value: context.BinderFile},
 		{Name: "agent.repo_context.leap_yaml_boundary", Value: context.LeapYAMLBoundary},
 		{Name: "agent.repo_context.selected_model_path", Value: context.SelectedModelPath},
 		{Name: "agent.repo_context.model_candidates", Value: strings.Join(context.ModelCandidates, ",")},

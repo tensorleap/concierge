@@ -75,10 +75,19 @@ func inspectIntegrationContracts(repoRoot string, contract *leapYAMLContract, st
 	if contracts != nil {
 		status.Contracts = contracts
 	}
-	if err == nil && contracts != nil {
-		mergeBinderContracts(repoRoot, contracts, entryAbsPath)
-	}
 	if err == nil {
+		if contracts != nil && len(contracts.IntegrationTestFunctions) == 0 {
+			status.Issues = append(status.Issues, core.Issue{
+				Code:     core.IssueCodeIntegrationTestMissing,
+				Message:  fmt.Sprintf("no @tensorleap_integration_test function found in %s", entryFilePath),
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopeIntegrationTest,
+				Location: &core.IssueLocation{
+					Path:   entryFilePath,
+					Symbol: "integration_test",
+				},
+			})
+		}
 		inspectPreprocessContract(entryFilePath, string(contents), contracts, status)
 		return nil
 	}
@@ -97,40 +106,6 @@ func inspectIntegrationContracts(repoRoot string, contract *leapYAMLContract, st
 
 	return nil
 }
-
-func mergeBinderContracts(repoRoot string, contracts *core.IntegrationContracts, entryAbsPath string) {
-	if contracts == nil {
-		return
-	}
-
-	binderAbsPath := filepath.Join(repoRoot, "leap_binder.py")
-	binderAbsPath = filepath.Clean(binderAbsPath)
-	if entryAbsPath == binderAbsPath {
-		return
-	}
-
-	info, err := os.Stat(binderAbsPath)
-	if err != nil || info.IsDir() {
-		return
-	}
-
-	binderContents, err := os.ReadFile(binderAbsPath)
-	if err != nil {
-		return
-	}
-
-	binderPath := normalizedEntryFilePath(repoRoot, binderAbsPath, "leap_binder.py")
-	binderContracts, _ := discoverContractsFromPythonSource(binderPath, string(binderContents))
-	if binderContracts == nil {
-		return
-	}
-
-	contracts.LoadModelFunctions = appendUniqueStrings(contracts.LoadModelFunctions, binderContracts.LoadModelFunctions...)
-	contracts.PreprocessFunctions = appendUniqueStrings(contracts.PreprocessFunctions, binderContracts.PreprocessFunctions...)
-	contracts.InputEncoders = appendUniqueStrings(contracts.InputEncoders, binderContracts.InputEncoders...)
-	contracts.GroundTruthEncoders = appendUniqueStrings(contracts.GroundTruthEncoders, binderContracts.GroundTruthEncoders...)
-}
-
 func appendUniqueStrings(existing []string, values ...string) []string {
 	for _, value := range values {
 		existing = appendUnique(existing, value)

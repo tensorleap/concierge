@@ -9,9 +9,9 @@ import (
 
 func TestPreprocessDetectorEmitsMissingFunctionIssue(t *testing.T) {
 	root := t.TempDir()
-	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_custom_test.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_integration_test",
 		"",
 		"@tensorleap_integration_test()",
@@ -41,9 +41,9 @@ func TestPreprocessDetectorEmitsMissingFunctionIssue(t *testing.T) {
 
 func TestPreprocessDetectorEmitsInvalidSignatureIssue(t *testing.T) {
 	root := t.TempDir()
-	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_custom_test.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_preprocess",
 		"",
 		"@tensorleap_preprocess()",
@@ -68,9 +68,9 @@ func TestPreprocessDetectorEmitsInvalidSignatureIssue(t *testing.T) {
 
 func TestPreprocessDetectorDoesNotFlagValidDefinitions(t *testing.T) {
 	root := t.TempDir()
-	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_custom_test.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_preprocess, tensorleap_load_model",
 		"",
 		"@tensorleap_preprocess()",

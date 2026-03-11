@@ -348,7 +348,7 @@ func TestPreprocessAuthoringTaskIncludesTrainValidationConstraint(t *testing.T) 
 
 func TestPreprocessAuthoringEvidenceCapturesTargetSymbols(t *testing.T) {
 	repoRoot := t.TempDir()
-	binderPath := filepath.Join(repoRoot, "leap_binder.py")
+	binderPath := filepath.Join(repoRoot, "leap_integration.py")
 	writePreprocessFixtureFile(t, binderPath, "preprocess_data")
 
 	runner := &fakeAgentRunner{
@@ -376,7 +376,7 @@ func TestPreprocessAuthoringEvidenceCapturesTargetSymbols(t *testing.T) {
 
 func TestInputEncoderAuthoringTaskCarriesSymbolList(t *testing.T) {
 	repoRoot := t.TempDir()
-	binderPath := filepath.Join(repoRoot, "leap_binder.py")
+	binderPath := filepath.Join(repoRoot, "leap_integration.py")
 	writeInputEncoderFixtureFile(t, binderPath, "image", []string{"encode_image", "encode_meta"})
 
 	runner := &fakeAgentRunner{
@@ -413,7 +413,7 @@ func TestInputEncoderAuthoringTaskCarriesSymbolList(t *testing.T) {
 
 func TestInputEncoderAuthoringEvidenceIncludesRecommendationAndResult(t *testing.T) {
 	repoRoot := t.TempDir()
-	binderPath := filepath.Join(repoRoot, "leap_binder.py")
+	binderPath := filepath.Join(repoRoot, "leap_integration.py")
 	writeInputEncoderFixtureFile(t, binderPath, "image", []string{"encode_image", "encode_meta"})
 
 	runner := &fakeAgentRunner{
@@ -447,7 +447,7 @@ func TestInputEncoderAuthoringEvidenceIncludesRecommendationAndResult(t *testing
 
 func TestGTEncoderAuthoringTaskIncludesLabeledSubsetConstraint(t *testing.T) {
 	repoRoot := t.TempDir()
-	binderPath := filepath.Join(repoRoot, "leap_binder.py")
+	binderPath := filepath.Join(repoRoot, "leap_integration.py")
 	writeGTEncoderFixtureFile(t, binderPath, "label", []string{"encode_label", "encode_mask"})
 
 	runner := &fakeAgentRunner{
@@ -484,7 +484,7 @@ func TestGTEncoderAuthoringTaskIncludesLabeledSubsetConstraint(t *testing.T) {
 
 func TestGTEncoderAuthoringEvidenceContainsTargetSymbols(t *testing.T) {
 	repoRoot := t.TempDir()
-	binderPath := filepath.Join(repoRoot, "leap_binder.py")
+	binderPath := filepath.Join(repoRoot, "leap_integration.py")
 	writeGTEncoderFixtureFile(t, binderPath, "label", []string{"encode_label", "encode_mask"})
 
 	runner := &fakeAgentRunner{

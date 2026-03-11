@@ -12,8 +12,7 @@ import (
 
 var defaultAgentAllowedFiles = []string{
 	"leap.yaml",
-	"leap_binder.py",
-	"integration_test.py",
+	core.CanonicalIntegrationEntryFile,
 }
 
 // PolicyForStep returns deterministic scope boundaries and domain rule slices for one ensure-step.
@@ -166,8 +165,6 @@ func resolveAgentAllowedFiles(snapshot core.WorkspaceSnapshot, status core.Integ
 	}
 
 	add(snapshot.SelectedModelPath)
-	add("leap_custom_test.py")
-
 	if status.Contracts != nil {
 		add(status.Contracts.EntryFile)
 		add(status.Contracts.ResolvedModelPath)

@@ -11,14 +11,13 @@ func TestBuildClaudeTaskPromptIncludesAllRequiredSections(t *testing.T) {
 	task := AgentTask{
 		Objective: "Implement missing preprocess contract behavior",
 		ScopePolicy: &AgentScopePolicy{
-			AllowedFiles:       []string{"leap_binder.py", "integration_test.py"},
+			AllowedFiles:       []string{"leap_integration.py"},
 			ForbiddenAreas:     []string{"Do not touch training loop"},
 			StopAndAskTriggers: []string{"Missing model path evidence"},
 		},
 		RepoContext: &core.AgentRepoContext{
 			RepoRoot:           "/tmp/repo",
-			EntryFile:          "leap_binder.py",
-			BinderFile:         "leap_binder.py",
+			EntryFile:          "leap_integration.py",
 			LeapYAMLBoundary:   "leap.yaml present",
 			SelectedModelPath:  "models/model.onnx",
 			ModelCandidates:    []string{"models/model.onnx"},
@@ -69,11 +68,11 @@ func TestBuildClaudeTaskPromptForInputStepExcludesOutOfScopeRuleSections(t *test
 	task := AgentTask{
 		Objective: "Implement missing input encoders",
 		ScopePolicy: &AgentScopePolicy{
-			AllowedFiles: []string{"leap_binder.py"},
+			AllowedFiles: []string{"leap_integration.py"},
 		},
 		RepoContext: &core.AgentRepoContext{
 			RepoRoot:  "/tmp/repo",
-			EntryFile: "leap_binder.py",
+			EntryFile: "leap_integration.py",
 		},
 		DomainKnowledge: &AgentDomainKnowledgePack{
 			Version:    "tlkp-v1",

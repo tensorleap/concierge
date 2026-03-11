@@ -10,10 +10,10 @@ import (
 
 func TestInputEncoderDetectorEmitsMissingEncoderIssue(t *testing.T) {
 	root := t.TempDir()
-	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_custom_test.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
 	writeFixtureFile(t, root, "model/demo.h5", "binary\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model, tensorleap_preprocess, tensorleap_integration_test",
 		"",
 		"@tensorleap_load_model()",
@@ -59,10 +59,10 @@ func TestInputEncoderDetectorEmitsMissingEncoderIssue(t *testing.T) {
 
 func TestInputEncoderDetectorEmitsCoverageIncompleteIssue(t *testing.T) {
 	root := t.TempDir()
-	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_custom_test.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
 	writeFixtureFile(t, root, "model/demo.h5", "binary\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model, tensorleap_preprocess, tensorleap_input_encoder, tensorleap_integration_test",
 		"",
 		"@tensorleap_load_model()",
@@ -100,10 +100,10 @@ func TestInputEncoderDetectorEmitsCoverageIncompleteIssue(t *testing.T) {
 
 func TestInputEncoderDetectorNoFalsePositiveWhenCoverageComplete(t *testing.T) {
 	root := t.TempDir()
-	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_custom_test.py\n")
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
 	writeFixtureFile(t, root, "model/demo.h5", "binary\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model, tensorleap_preprocess, tensorleap_input_encoder, tensorleap_integration_test",
 		"",
 		"@tensorleap_load_model()",

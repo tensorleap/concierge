@@ -96,7 +96,7 @@ func TestRunnerFailsFastWhenRequiredContextPayloadIsMissing(t *testing.T) {
 func TestRunnerRunWritesTranscript(t *testing.T) {
 	repoRoot := t.TempDir()
 	binDir := t.TempDir()
-	installMockClaude(t, binDir, "#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1-}\" == \"--help\" ]]; then\ncat <<'EOF'\n--output-format stream-json\n--include-partial-messages\nEOF\nexit 0\nfi\necho '{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"content_block\":{\"type\":\"tool_use\",\"name\":\"Read\",\"input\":{\"file_path\":\"leap_binder.py\"}}}}'\necho '{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"planning fix\"}}}'\necho '{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"final answer\"}]}}'\necho '{\"type\":\"result\",\"result\":\"done\"}'\necho 'stderr line' >&2\n")
+	installMockClaude(t, binDir, "#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1-}\" == \"--help\" ]]; then\ncat <<'EOF'\n--output-format stream-json\n--include-partial-messages\nEOF\nexit 0\nfi\necho '{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"content_block\":{\"type\":\"tool_use\",\"name\":\"Read\",\"input\":{\"file_path\":\"leap_integration.py\"}}}}'\necho '{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"planning fix\"}}}'\necho '{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"final answer\"}]}}'\necho '{\"type\":\"result\",\"result\":\"done\"}'\necho 'stderr line' >&2\n")
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	transcriptPath := filepath.Join(repoRoot, ".concierge", "evidence", "snapshot-1", "agent.transcript.log")
@@ -133,7 +133,7 @@ func TestRunnerRunWritesTranscript(t *testing.T) {
 	if !strings.Contains(contents, "--verbose") {
 		t.Fatalf("expected verbose flag in transcript, got: %q", contents)
 	}
-	if !strings.Contains(contents, "[tool] Scanning repository code: leap_binder.py") {
+	if !strings.Contains(contents, "[tool] Scanning repository code: leap_integration.py") {
 		t.Fatalf("expected tool transcript line, got: %q", contents)
 	}
 	if !strings.Contains(contents, "planning fix") {
@@ -169,15 +169,14 @@ func validAgentTask(repoRoot, transcriptPath string) AgentTask {
 	return AgentTask{
 		Objective: "Implement preprocess contract",
 		ScopePolicy: &AgentScopePolicy{
-			AllowedFiles:       []string{"leap_binder.py"},
+			AllowedFiles:       []string{"leap_integration.py"},
 			ForbiddenAreas:     []string{"Do not touch training loop"},
 			StopAndAskTriggers: []string{"Missing model context"},
 			DomainSections:     []string{"preprocess_contract"},
 		},
 		RepoContext: &core.AgentRepoContext{
 			RepoRoot:           repoRoot,
-			EntryFile:          "leap_binder.py",
-			BinderFile:         "leap_binder.py",
+			EntryFile:          "leap_integration.py",
 			LeapYAMLBoundary:   "leap.yaml present",
 			SelectedModelPath:  "models/model.onnx",
 			ModelCandidates:    []string{"models/model.onnx"},

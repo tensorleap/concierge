@@ -125,12 +125,57 @@ func TestValidatorReturnsErrorWhenHarnessFails(t *testing.T) {
 	}
 }
 
+func TestValidatorIngestsGuideIssuesAndEvidence(t *testing.T) {
+	validator := newBaselineValidatorWithGuideHarness(fakeGuideRunner{
+		result: GuideValidationResult{
+			Issues: []core.Issue{
+				{
+					Code:     core.IssueCodeIntegrationTestExecutionFailed,
+					Message:  "mapping mode failed",
+					Severity: core.SeverityError,
+					Scope:    core.IssueScopeIntegrationTest,
+				},
+			},
+			Evidence: []core.EvidenceItem{
+				{Name: core.GuideEvidenceSummary, Value: `{"recommendation":{"stage":"thin_integration_test"}}`},
+			},
+		},
+	}, nil)
+
+	validation, err := validator.Validate(context.Background(), core.WorkspaceSnapshot{}, core.ExecutionResult{
+		Step: core.EnsureStep{ID: core.EnsureStepIntegrationTestContract},
+	})
+	if err != nil {
+		t.Fatalf("Validate returned error: %v", err)
+	}
+	if validation.Passed {
+		t.Fatalf("expected guide error to fail validation, got %+v", validation)
+	}
+	if !containsIssueCode(validation.Issues, core.IssueCodeIntegrationTestExecutionFailed) {
+		t.Fatalf("expected guide issue in %+v", validation.Issues)
+	}
+	if !hasEvidenceName(validation.Evidence, core.GuideEvidenceSummary) {
+		t.Fatalf("expected guide evidence in %+v", validation.Evidence)
+	}
+}
+
 type fakeHarnessRunner struct {
 	result HarnessRunResult
 	err    error
 }
 
 func (f fakeHarnessRunner) Run(ctx context.Context, snapshot core.WorkspaceSnapshot) (HarnessRunResult, error) {
+	_ = ctx
+	_ = snapshot
+	return f.result, f.err
+}
+
+type fakeGuideRunner struct {
+	result GuideValidationResult
+	err    error
+}
+
+func (f fakeGuideRunner) Run(ctx context.Context, snapshot core.WorkspaceSnapshot) (GuideValidationResult, error) {
 	_ = ctx
 	_ = snapshot
 	return f.result, f.err

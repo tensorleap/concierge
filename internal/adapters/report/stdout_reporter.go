@@ -204,6 +204,17 @@ func writeSummaryLine(writer io.Writer, report core.IterationReport, options Out
 		}
 	}
 
+	if guideLines := guideSummaryLines(report); len(guideLines) > 0 {
+		if _, err := fmt.Fprintln(writer, "Guide validation:"); err != nil {
+			return err
+		}
+		for _, line := range guideLines {
+			if _, err := fmt.Fprintf(writer, "- %s\n", line); err != nil {
+				return err
+			}
+		}
+	}
+
 	if len(report.Notes) > 0 {
 		if _, err := fmt.Fprintln(writer, "Notes:"); err != nil {
 			return err
@@ -447,4 +458,47 @@ func paint(text, colorCode string, enabled bool) string {
 		return text
 	}
 	return colorCode + text + ansiReset
+}
+
+func guideSummaryLines(report core.IterationReport) []string {
+	summary, ok := core.ParseGuideValidationSummary(report.Evidence)
+	if !ok || summary.Skipped {
+		return nil
+	}
+
+	lines := make([]string, 0, 4)
+	if summary.Local.Successful {
+		lines = append(lines, "First-sample milestone: `Successful!` was reached. This only proves the first-sample path, not the whole dataset.")
+	} else if summary.Parser.Attempted && summary.Parser.Available && summary.Parser.IsValid {
+		lines = append(lines, "First-sample milestone: `LeapLoader.check_dataset()` returned a valid first-sample parse.")
+	}
+
+	if len(summary.Local.DefaultWarnings) > 0 {
+		lines = append(lines, "Default warnings remain: "+trimGuideWarning(summary.Local.DefaultWarnings[0]))
+		if len(summary.Local.DefaultWarnings) > 1 {
+			lines = append(lines, fmt.Sprintf("%d additional default-warning lines were omitted for brevity.", len(summary.Local.DefaultWarnings)-1))
+		}
+	}
+
+	if message := strings.TrimSpace(summary.Recommendation.Message); message != "" {
+		lines = append(lines, message)
+	}
+
+	if summary.Parser.Attempted && !summary.Parser.Available && strings.TrimSpace(summary.Parser.UnavailableReason) != "" {
+		lines = append(lines, "Machine parse: "+strings.TrimSpace(summary.Parser.UnavailableReason))
+	}
+
+	return lines
+}
+
+func trimGuideWarning(warning string) string {
+	trimmed := strings.TrimSpace(warning)
+	if trimmed == "" {
+		return ""
+	}
+
+	if index := strings.Index(trimmed, " For more information"); index >= 0 {
+		trimmed = strings.TrimSpace(trimmed[:index])
+	}
+	return trimmed
 }

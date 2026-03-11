@@ -11,14 +11,20 @@ type harnessInvoker interface {
 	Run(ctx context.Context, snapshot core.WorkspaceSnapshot) (HarnessRunResult, error)
 }
 
+type guideInvoker interface {
+	Run(ctx context.Context, snapshot core.WorkspaceSnapshot) (GuideValidationResult, error)
+}
+
 // BaselineValidator performs deterministic execution-level checks.
 type BaselineValidator struct {
+	guideRunner   guideInvoker
 	harnessRunner harnessInvoker
 }
 
 // NewBaselineValidator creates a baseline validator adapter.
 func NewBaselineValidator() *BaselineValidator {
 	return &BaselineValidator{
+		guideRunner:   NewGuideValidator(),
 		harnessRunner: NewHarnessRunner(),
 	}
 }
@@ -50,6 +56,16 @@ func (v *BaselineValidator) Validate(ctx context.Context, snapshot core.Workspac
 		})
 	}
 
+	if v != nil && v.guideRunner != nil {
+		guideResult, err := v.guideRunner.Run(ctx, snapshot)
+		if err != nil {
+			return core.ValidationResult{}, core.WrapError(core.KindUnknown, "validate.baseline.guide", err)
+		}
+
+		validation.Issues = append(validation.Issues, guideResult.Issues...)
+		validation.Evidence = append(validation.Evidence, guideResult.Evidence...)
+	}
+
 	if v != nil && v.harnessRunner != nil {
 		harnessResult, err := v.harnessRunner.Run(ctx, snapshot)
 		if err != nil {
@@ -76,6 +92,14 @@ func (v *BaselineValidator) Validate(ctx context.Context, snapshot core.Workspac
 
 func newBaselineValidatorWithHarness(runner harnessInvoker) *BaselineValidator {
 	return &BaselineValidator{
+		guideRunner:   NewGuideValidator(),
 		harnessRunner: runner,
+	}
+}
+
+func newBaselineValidatorWithGuideHarness(guide guideInvoker, harness harnessInvoker) *BaselineValidator {
+	return &BaselineValidator{
+		guideRunner:   guide,
+		harnessRunner: harness,
 	}
 }

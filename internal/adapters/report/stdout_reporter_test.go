@@ -2,6 +2,7 @@ package report
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -253,6 +254,65 @@ func TestReporterShowsManualGuidanceWhenExecutorCannotApplyFix(t *testing.T) {
 	}
 	if strings.Contains(output, "I can help with this step interactively and will ask before making any changes.") {
 		t.Fatalf("did not expect interactive-help claim when executor mode is stub, got %q", output)
+	}
+}
+
+func TestReporterShowsGuideValidationMilestoneAndRecommendation(t *testing.T) {
+	var sink strings.Builder
+	reporter := NewStdoutReporter(&sink)
+
+	summary := core.GuideValidationSummary{
+		Local: core.GuideLocalRunSummary{
+			Successful: true,
+			DefaultWarnings: []string{
+				"Parameter 'prediction_types' defaults to [] in the following functions: [load_model]. For more information, check docs",
+			},
+		},
+		Parser: core.GuideParserRunSummary{
+			Attempted: true,
+			Available: true,
+			IsValid:   true,
+		},
+		Recommendation: core.GuideRecommendation{
+			Stage:   "wider_sample_coverage",
+			Message: "Next recommended milestone: expand from first-sample success to a few training and validation samples.",
+		},
+	}
+	rawSummary, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+
+	err = reporter.Report(context.Background(), core.IterationReport{
+		SnapshotID: "snapshot-123",
+		Step:       core.EnsureStep{ID: core.EnsureStepComplete},
+		Checks: []core.VerifiedCheck{
+			{
+				StepID: core.EnsureStepRepositoryContext,
+				Label:  core.HumanEnsureStepLabel(core.EnsureStepRepositoryContext),
+				Status: core.CheckStatusPass,
+			},
+		},
+		Evidence: []core.EvidenceItem{
+			{Name: core.GuideEvidenceSummary, Value: string(rawSummary)},
+		},
+		Validation: core.ValidationResult{Passed: true},
+	})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	output := sink.String()
+	expectedSnippets := []string{
+		"Guide validation:",
+		"First-sample milestone: `Successful!` was reached.",
+		"Default warnings remain: Parameter 'prediction_types' defaults to [] in the following functions: [load_model].",
+		"Next recommended milestone: expand from first-sample success to a few training and validation samples.",
+	}
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(output, snippet) {
+			t.Fatalf("expected output to contain %q, got %q", snippet, output)
+		}
 	}
 }
 

@@ -9,7 +9,7 @@ This file now tracks only the remaining backlog. Completed work was intentionall
 Finish Concierge as an operational Tensorleap integration assistant that:
 
 1. resolves and records the correct local Python runtime before any Python-dependent action
-2. drives integrations toward the guide-native `leap_integration.py` workflow instead of legacy binder-first authoring
+2. drives integrations toward the guide-native `leap_integration.py` workflow as the only supported layout
 3. validates integrations through the same staged local signals described in `GUIDE.md`, then expands to higher-coverage Concierge checks
 4. proves the workflow on deterministic fixture repos, then ships guarded upload, CI, and release-ready docs
 
@@ -32,7 +32,7 @@ The remaining work starts from that baseline.
 - [x] `ENV2` `DONE` - Resolve and persist a Local Runtime Profile for the selected repo root.
 - [x] `ENV3` `DONE` - Model dependency readiness and Tensorleap-local package readiness as explicit runtime gates.
 - [x] `ENV4` `DONE` - Enforce runtime gating in planner/UX and route all local Python execution through the resolved Poetry boundary.
-- [ ] `GUIDE1` `PENDING` - Make `leap_integration.py` the canonical integration layout and migration target.
+- [ ] `GUIDE1` `PENDING` - Make `leap_integration.py` the canonical integration layout for fresh repos.
 - [ ] `GUIDE2` `PENDING` - Implement guide-native progressive validator orchestration and reporting.
 - [ ] `GUIDE3` `PENDING` - Enforce thin `integration_test` rules and targeted authoring for integration-test wiring failures.
 - [ ] `VAL1` `PENDING` - Replace the stub harness with multi-sample runtime validation plus issue mapping.
@@ -49,7 +49,7 @@ The remaining work starts from that baseline.
 - The human-oriented exit table appears only when the filename is exactly `leap_integration.py`.
 - `LeapLoader.check_dataset()` is the better machine interface than scraping local terminal output.
 - The current codebase still hard-codes binder-era names across inspector, scaffolding, agent scope, prompt/context packs, fixture helpers, and a wide slice of tests.
-- The old pending plan over-weighted historical step bookkeeping and under-weighted migration to the new integration model.
+- The old pending plan over-weighted historical step bookkeeping and under-weighted alignment to the new integration model.
 
 ## Decision Log
 
@@ -59,11 +59,11 @@ The remaining work starts from that baseline.
 - Decision: Put runtime and environment work first.
   Rationale: Every remaining Python-dependent step is unreliable until Concierge resolves and records the correct Poetry runtime.
   Date/Author: 2026-03-10 / user + assistant.
-- Decision: After runtime work, prioritize the `GUIDE.md` migration before harness, fixtures, upload, or release steps.
+- Decision: After runtime work, prioritize `GUIDE.md` alignment before harness, fixtures, upload, or release steps.
   Rationale: The design must converge on `leap_integration.py`, staged direct-call validation, and thin integration-test wiring before downstream validation can be trustworthy.
   Date/Author: 2026-03-10 / user + assistant.
 - Decision: Fold the old granular pending tail into a shorter phase-based backlog.
-  Rationale: The remaining work is easier to reason about as runtime phase -> guide migration phase -> hardening phase.
+  Rationale: The remaining work is easier to reason about as runtime phase -> guide-native phase -> hardening phase.
   Date/Author: 2026-03-10 / assistant.
 
 ## Backlog Compression Map
@@ -71,7 +71,7 @@ The remaining work starts from that baseline.
 This plan supersedes the old pending identifiers without keeping them inline:
 
 1. `ENV1-ENV4` replace the old runtime workstream (`10M2A-10M2E`).
-2. `GUIDE1-GUIDE3` replace the binder-to-guide migration and integration-test tail (`10N-10O` plus the remaining layout/reporting gaps).
+2. `GUIDE1-GUIDE3` replace the old layout/reporting tail and align the product to the guide-native integration model.
 3. `VAL1` replaces the old harness work (`11A-11B`).
 4. `FIX1-FIX2` replace the old fixture/bootstrap/capability-E2E tail (`12A0-12H`).
 5. `OPS1` replaces guarded upload work (`13A`).
@@ -214,7 +214,7 @@ No remaining Python-dependent feature can run until the correct runtime is resol
 
 Objective:
 
-Make `leap_integration.py` the canonical integration target and treat legacy binder artifacts as migration input rather than the preferred end state.
+Make `leap_integration.py` the only supported integration target for fresh repos.
 
 Primary files:
 
@@ -238,11 +238,11 @@ Primary files:
 Locked behavior:
 
 1. Concierge prefers root-level `leap_integration.py` plus `leap.yaml`.
-2. `leap.yaml.entryFile` is validated against the canonical entrypoint and migration issues are emitted when binder-first layouts remain.
+2. `leap.yaml.entryFile` is validated against the canonical entrypoint and blocking issues are emitted when non-canonical layouts remain.
 3. Scaffolds and deterministic repair paths create `leap_integration.py`, not `leap_binder.py`, `integration_test.py`, or `leap_custom_test.py`.
 4. Default editable scope, repo context packs, and agent prompt contracts include `leap_integration.py` as a first-class file.
 5. Contract discovery and authoring fallbacks start from `entryFile` plus decorators instead of hard-coded binder/test filenames.
-6. Legacy files such as `leap_binder.py` can still be mined for business logic and evidence.
+6. Binder-era filenames do not participate in discovery, scaffolding, or prompt generation.
 7. New scaffolds, repairs, and user guidance converge on the guide-native entrypoint.
 
 Validation:
@@ -516,7 +516,7 @@ The backlog is complete when:
 
 Current state:
 
-The remaining backlog is now explicitly ordered around runtime correctness first, then migration to the new Tensorleap authoring model from `GUIDE.md`, then the downstream validation, fixture, upload, CI, and release work.
+The remaining backlog is now explicitly ordered around runtime correctness first, then alignment to the Tensorleap authoring model from `GUIDE.md`, then the downstream validation, fixture, upload, CI, and release work.
 
 Primary residual risks:
 
@@ -526,7 +526,7 @@ Primary residual risks:
 
 Mitigations:
 
-1. Do not start any guide-migration or harness work before the runtime phase is complete.
+1. Do not start any guide-native authoring or harness work before the runtime phase is complete.
 2. Treat `GUIDE1-GUIDE3` as the new product center of gravity, not as doc polish.
 3. Keep the pending plan compressed so future sessions spend context on implementation, not on historical bookkeeping.
 

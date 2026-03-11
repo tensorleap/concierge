@@ -11,11 +11,11 @@ import (
 func TestModelDiscoveryFromRepoSearchSingleCandidate(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
-		"entryFile: leap_custom_test.py",
+		"entryFile: leap_integration.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", simpleIntegrationTestSource())
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_integration.py", simpleIntegrationTestSource())
 	writeFixtureFile(t, root, "model/demo.h5", "binary")
 
 	status := inspectStatus(t, root)
@@ -34,11 +34,11 @@ func TestModelDiscoveryFromRepoSearchSingleCandidate(t *testing.T) {
 func TestModelDiscoveryFromLoadModelDecorator(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
-		"entryFile: leap_custom_test.py",
+		"entryFile: leap_integration.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model, tensorleap_integration_test",
 		"",
 		"@tensorleap_load_model()",
@@ -73,11 +73,11 @@ func TestModelDiscoveryFromLoadModelDecorator(t *testing.T) {
 func TestModelDiscoveryReportsAmbiguousCandidates(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
-		"entryFile: leap_custom_test.py",
+		"entryFile: leap_integration.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_preprocess, tensorleap_integration_test",
 		"",
 		"@tensorleap_preprocess()",
@@ -105,11 +105,11 @@ func TestModelDiscoveryReportsAmbiguousCandidates(t *testing.T) {
 func TestModelDiscoveryRejectsUnsupportedFormat(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
-		"entryFile: leap_custom_test.py",
+		"entryFile: leap_integration.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model",
 		"",
 		"@tensorleap_load_model()",
@@ -132,11 +132,11 @@ func TestModelDiscoveryRejectsUnsupportedFormat(t *testing.T) {
 func TestModelDiscoveryRejectsOutsideRepoModelPath(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
-		"entryFile: leap_custom_test.py",
+		"entryFile: leap_integration.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model",
 		"",
 		"@tensorleap_load_model()",
@@ -156,11 +156,11 @@ func TestModelDiscoveryRejectsOutsideRepoModelPath(t *testing.T) {
 func TestModelDiscoveryDefersAmbiguityWhilePreprocessMissing(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
-		"entryFile: leap_binder.py",
+		"entryFile: leap_integration.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_binder.py", "def helper():\n    return None\n")
-	writeFixtureFile(t, root, "integration_test.py", "print('test')\n")
+	writeFixtureFile(t, root, "leap_integration.py", "def helper():\n    return None\n")
+	writeFixtureFile(t, root, "leap_integration.py", "print('test')\n")
 	writeFixtureFile(t, root, "model/a.h5", "binary")
 	writeFixtureFile(t, root, "model/b.onnx", "binary")
 
@@ -177,11 +177,11 @@ func TestModelDiscoveryDefersAmbiguityWhilePreprocessMissing(t *testing.T) {
 func TestModelDiscoveryResolvesSelectedModelPath(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
-		"entryFile: leap_custom_test.py",
+		"entryFile: leap_integration.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model",
 		"",
 		"@tensorleap_load_model()",
@@ -212,17 +212,17 @@ func TestModelDiscoveryResolvesSelectedModelPath(t *testing.T) {
 func TestModelDiscoveryIgnoresLeapYAMLIncludeExcludeForModelResolution(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
-		"entryFile: leap_custom_test.py",
+		"entryFile: leap_integration.py",
 		"include:",
 		"  - leap.yaml",
-		"  - leap_binder.py",
-		"  - leap_custom_test.py",
+		"  - leap_integration.py",
+		"  - leap_integration.py",
 		"exclude:",
 		"  - model/private/**",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_binder.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_custom_test.py", strings.Join([]string{
+	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
 		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model",
 		"",
 		"@tensorleap_load_model()",

@@ -38,7 +38,6 @@ func BuildAgentRepoContext(
 	context := core.AgentRepoContext{
 		RepoRoot:           repoRoot,
 		EntryFile:          normalizeRepoContextPath(resolveEntryFile(snapshot, status)),
-		BinderFile:         normalizeRepoContextPath(resolveBinderFile(snapshot, status)),
 		LeapYAMLBoundary:   leapYAMLBoundarySummary(snapshot),
 		SelectedModelPath:  normalizeRepoContextPath(resolveSelectedModelPath(snapshot, status)),
 		ModelCandidates:    truncateRepoContextValues(modelCandidatesForContext(snapshot, status), maxRepoContextModelCandidates),
@@ -55,13 +54,6 @@ func BuildAgentRepoContext(
 			issueSummariesForStep(step, validation.Issues, false),
 			maxRepoContextValidationFindings,
 		),
-	}
-
-	if context.EntryFile == "" {
-		context.EntryFile = context.BinderFile
-	}
-	if context.BinderFile == "" {
-		context.BinderFile = "leap_binder.py"
 	}
 
 	applyRepoContextStepSlice(step, &context)
@@ -98,29 +90,7 @@ func resolveEntryFile(snapshot core.WorkspaceSnapshot, status core.IntegrationSt
 			return entry
 		}
 	}
-	if hasSnapshotHash(snapshot, "leap_binder.py") {
-		return "leap_binder.py"
-	}
-	if hasSnapshotHash(snapshot, "leap_custom_test.py") {
-		return "leap_custom_test.py"
-	}
-	if hasSnapshotHash(snapshot, "integration_test.py") {
-		return "integration_test.py"
-	}
-	return ""
-}
-
-func resolveBinderFile(snapshot core.WorkspaceSnapshot, status core.IntegrationStatus) string {
-	if hasSnapshotHash(snapshot, "leap_binder.py") {
-		return "leap_binder.py"
-	}
-	if status.Contracts != nil {
-		entry := normalizeRepoContextPath(status.Contracts.EntryFile)
-		if strings.EqualFold(filepath.Base(entry), "leap_binder.py") {
-			return entry
-		}
-	}
-	return "leap_binder.py"
+	return core.CanonicalIntegrationEntryFile
 }
 
 func resolveSelectedModelPath(snapshot core.WorkspaceSnapshot, status core.IntegrationStatus) string {

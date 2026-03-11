@@ -223,9 +223,7 @@ func sha256Hex(data []byte) string {
 func captureFileHashes(repoRoot string) map[string]string {
 	files := []string{
 		"leap.yaml",
-		"leap_binder.py",
-		"leap_custom_test.py",
-		"integration_test.py",
+		core.CanonicalIntegrationEntryFile,
 		"requirements.txt",
 		"pyproject.toml",
 		"poetry.lock",

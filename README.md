@@ -43,7 +43,7 @@ Concierge must align with Tensorleap’s documented integration flow and runtime
 * `leap.yaml` — mandatory configuration, with `entryFile` pointing at `leap_integration.py`
 * decorated interfaces inside `leap_integration.py`, including preprocess, input encoders, GT encoders, model loading, and integration-test wiring
 
-Legacy `leap_binder.py` repositories still exist, but Concierge should treat them as migration input only. New authoring should converge on `leap_integration.py`, not continue extending binder-style registration as the primary API surface.
+Concierge v1 assumes a fresh guide-native layout rooted at `leap_integration.py`. Binder-style layouts are not a supported authoring target and should not shape planning, scaffolding, or validation behavior.
 
 ### 2.2 `leap.yaml` is mandatory and defines upload boundaries
 
@@ -369,9 +369,9 @@ Concierge must handle:
 * custom layers and external code requirements
 * secrets required for data access
 
-### 7.2 Canonical integration layout and migration stance
+### 7.2 Canonical integration layout
 
-Concierge should support repositories that still contain legacy binder-style code, but v1 should have one canonical authoring target:
+Concierge v1 has one canonical authoring target:
 
 * root-level `leap_integration.py`
 * root-level `leap.yaml`
@@ -379,10 +379,10 @@ Concierge should support repositories that still contain legacy binder-style cod
 
 Design stance:
 
-* detect legacy artifacts such as `leap_binder.py` and binder-style helper modules
-* treat legacy code as source material to port, not as the target shape for new edits
+* require the canonical root-level `leap_integration.py` entrypoint
+* treat non-canonical `entryFile` settings as blocking layout errors
 * normalize newly scaffolded or repaired integrations toward the guide-native `leap_integration.py` flow
-* preserve `.tensorleap/` or other repo-specific layouts only when there is a concrete reason not to converge on the canonical entrypoint
+* preserve repo-specific helper modules only when `leap_integration.py` remains the entrypoint
 
 ---
 
@@ -437,7 +437,7 @@ Every ensure-step:
 
 * `leap.yaml` exists, is parseable, and points `entryFile` at `leap_integration.py`
 * include/exclude covers all runtime-read files
-* legacy binder files are treated as migration input, not the preferred end state
+* binder-era filenames are not part of the supported authoring surface
 * initial integration nuance: don’t force populated IDs prematurely
 
 **E) Progressive authoring milestones**

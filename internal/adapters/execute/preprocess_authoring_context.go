@@ -90,12 +90,10 @@ func resolvePreprocessAuthoringEntryFile(repoRoot string, contracts *core.Integr
 		}
 	}
 
-	for _, candidate := range []string{"leap_binder.py", "leap_custom_test.py", "integration_test.py"} {
-		candidatePath := filepath.Join(repoRoot, filepath.FromSlash(candidate))
-		candidatePath = filepath.Clean(candidatePath)
-		if isPathWithinRepo(repoRoot, candidatePath) && fileExists(candidatePath) {
-			return candidatePath
-		}
+	candidatePath := filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile)
+	candidatePath = filepath.Clean(candidatePath)
+	if isPathWithinRepo(repoRoot, candidatePath) && fileExists(candidatePath) {
+		return candidatePath
 	}
 	return ""
 }

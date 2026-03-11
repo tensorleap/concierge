@@ -3,6 +3,7 @@ package inspect
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,20 @@ func (i *BaselineInspector) Inspect(ctx context.Context, snapshot core.Workspace
 
 	status := core.IntegrationStatus{}
 
+	canonicalEntryPath := filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile)
+	hasCanonicalEntry, err := fileExists(canonicalEntryPath)
+	if err != nil {
+		return core.IntegrationStatus{}, core.WrapError(core.KindUnknown, "inspect.baseline.integration_entry_exists", err)
+	}
+	if !hasCanonicalEntry {
+		status.Missing = append(status.Missing, core.CanonicalIntegrationEntryFile)
+		status.Issues = append(status.Issues, requiredArtifactIssue(
+			core.IssueCodeIntegrationScriptMissing,
+			fmt.Sprintf("%s is required at repository root", core.CanonicalIntegrationEntryFile),
+			core.IssueScopeIntegrationScript,
+		))
+	}
+
 	leapYAMLPath := filepath.Join(repoRoot, "leap.yaml")
 	hasLeapYAML, err := fileExists(leapYAMLPath)
 	if err != nil {
@@ -48,40 +63,10 @@ func (i *BaselineInspector) Inspect(ctx context.Context, snapshot core.Workspace
 		if err != nil {
 			return core.IntegrationStatus{}, err
 		}
+		inspectCanonicalIntegrationLayout(contract, &status)
 		if err := inspectIntegrationContracts(repoRoot, contract, &status); err != nil {
 			return core.IntegrationStatus{}, err
 		}
-	}
-
-	binderPath := filepath.Join(repoRoot, "leap_binder.py")
-	hasBinder, err := fileExists(binderPath)
-	if err != nil {
-		return core.IntegrationStatus{}, core.WrapError(core.KindUnknown, "inspect.baseline.binder_exists", err)
-	}
-	if !hasBinder {
-		status.Missing = append(status.Missing, "leap_binder.py")
-		status.Issues = append(status.Issues, requiredArtifactIssue(
-			core.IssueCodeIntegrationScriptMissing,
-			"leap_binder.py is required at repository root",
-			core.IssueScopeIntegrationScript,
-		))
-	}
-
-	hasCustomTest, err := fileExists(filepath.Join(repoRoot, "leap_custom_test.py"))
-	if err != nil {
-		return core.IntegrationStatus{}, core.WrapError(core.KindUnknown, "inspect.baseline.custom_test_exists", err)
-	}
-	hasIntegrationTest, err := fileExists(filepath.Join(repoRoot, "integration_test.py"))
-	if err != nil {
-		return core.IntegrationStatus{}, core.WrapError(core.KindUnknown, "inspect.baseline.integration_test_exists", err)
-	}
-	if !hasCustomTest && !hasIntegrationTest {
-		status.Missing = append(status.Missing, "integration_test")
-		status.Issues = append(status.Issues, requiredArtifactIssue(
-			core.IssueCodeIntegrationTestMissing,
-			"either leap_custom_test.py or integration_test.py is required at repository root",
-			core.IssueScopeIntegrationTest,
-		))
 	}
 
 	if err := inspectModelContract(repoRoot, contract, snapshot.SelectedModelPath, &status); err != nil {
@@ -108,6 +93,29 @@ func requiredArtifactIssue(code core.IssueCode, message string, scope core.Issue
 		Severity: core.SeverityError,
 		Scope:    scope,
 	}
+}
+
+func inspectCanonicalIntegrationLayout(contract *leapYAMLContract, status *core.IntegrationStatus) {
+	if contract == nil || status == nil {
+		return
+	}
+
+	entryFile := filepath.ToSlash(filepath.Clean(strings.TrimSpace(contract.EntryFile)))
+	entryFile = strings.TrimPrefix(entryFile, "./")
+	if entryFile == "" || entryFile == core.CanonicalIntegrationEntryFile {
+		return
+	}
+
+	status.Issues = append(status.Issues, core.Issue{
+		Code:     core.IssueCodeIntegrationScriptNonCanonical,
+		Message:  fmt.Sprintf("Concierge only supports %q as leap.yaml entryFile; found %q", core.CanonicalIntegrationEntryFile, entryFile),
+		Severity: core.SeverityError,
+		Scope:    core.IssueScopeIntegrationScript,
+		Location: &core.IssueLocation{
+			Path:   "leap.yaml",
+			Symbol: "entryFile",
+		},
+	})
 }
 
 func fileExists(path string) (bool, error) {

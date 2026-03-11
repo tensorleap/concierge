@@ -13,10 +13,9 @@ scope: mandatory onboarding contracts for Concierge v1
 - Expected minimal shape:
 
 ```yaml
-entryFile: leap_binder.py
+entryFile: leap_integration.py
 include:
   - leap.yaml
-  - leap_binder.py
   - leap_integration.py
 exclude:
   - .git/**

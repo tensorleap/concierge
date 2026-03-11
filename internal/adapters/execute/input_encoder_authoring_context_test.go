@@ -46,7 +46,7 @@ func TestInputEncoderRecommendationListsMissingSymbols(t *testing.T) {
 
 func TestInputEncoderRecommendationFallsBackToSourceDiscovery(t *testing.T) {
 	repoRoot := t.TempDir()
-	writeTextFile(t, filepath.Join(repoRoot, "leap_binder.py"), `from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_input_encoder, tensorleap_integration_test
+	writeTextFile(t, filepath.Join(repoRoot, "leap_integration.py"), `from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_input_encoder, tensorleap_integration_test
 
 @tensorleap_input_encoder("image")
 def encode_image():

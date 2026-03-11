@@ -58,6 +58,7 @@ var preferredEnsureStepByIssueCode = map[IssueCode]EnsureStepID{
 
 	// Integration files and decorators.
 	IssueCodeIntegrationScriptMissing:               EnsureStepIntegrationScript,
+	IssueCodeIntegrationScriptNonCanonical:          EnsureStepIntegrationScript,
 	IssueCodeIntegrationScriptImportFailed:          EnsureStepIntegrationScript,
 	IssueCodeIntegrationTestMissing:                 EnsureStepIntegrationTestContract,
 	IssueCodeIntegrationTestDecoratorMissing:        EnsureStepIntegrationTestContract,

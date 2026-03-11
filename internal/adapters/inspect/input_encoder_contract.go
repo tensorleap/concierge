@@ -125,38 +125,12 @@ func loadContractSources(repoRoot string, contracts *core.IntegrationContracts) 
 
 	entry := strings.TrimSpace(contracts.EntryFile)
 	appendSource(entry)
-	if !strings.EqualFold(filepath.Base(entry), "leap_binder.py") {
-		appendSource("leap_binder.py")
-	}
-
-	if len(sources) <= 1 {
-		return sources
-	}
-
-	seen := make(map[string]struct{}, len(sources))
-	unique := make([]contractSource, 0, len(sources))
-	for _, source := range sources {
-		key := strings.ToLower(strings.TrimSpace(source.Path))
-		if key == "" {
-			continue
-		}
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-		unique = append(unique, source)
-	}
-	return unique
+	return sources
 }
 
 func primaryContractSourcePath(sources []contractSource, registrations []encoderRegistration) string {
 	if len(sources) == 0 {
 		return ""
-	}
-	for _, source := range sources {
-		if strings.EqualFold(source.Path, "leap_binder.py") {
-			return source.Path
-		}
 	}
 	return sources[0].Path
 }

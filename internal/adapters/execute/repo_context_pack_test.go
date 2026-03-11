@@ -18,14 +18,14 @@ func TestBuildAgentRepoContextIncludesSelectedModelAndCandidates(t *testing.T) {
 			Repository: core.RepositoryState{Root: repoRoot},
 			FileHashes: map[string]string{
 				"leap.yaml":        "hash-leap",
-				"leap_binder.py":   "hash-binder",
+				"leap_integration.py": "hash-entry",
 				"requirements.txt": "hash-req",
 			},
 			SelectedModelPath: "models/selected.onnx",
 		},
 		core.IntegrationStatus{
 			Contracts: &core.IntegrationContracts{
-				EntryFile: "leap_binder.py",
+				EntryFile: "leap_integration.py",
 				ModelCandidates: []core.ModelCandidate{
 					{Path: "models/b.onnx", Source: "repo_search"},
 					{Path: "models/a.onnx", Source: "repo_search"},
@@ -47,11 +47,8 @@ func TestBuildAgentRepoContextIncludesSelectedModelAndCandidates(t *testing.T) {
 		t.Fatalf("expected model candidates %+v, got %+v", wantCandidates, context.ModelCandidates)
 	}
 
-	if context.EntryFile != "leap_binder.py" {
-		t.Fatalf("expected entry file %q, got %q", "leap_binder.py", context.EntryFile)
-	}
-	if context.BinderFile != "leap_binder.py" {
-		t.Fatalf("expected binder file %q, got %q", "leap_binder.py", context.BinderFile)
+	if context.EntryFile != "leap_integration.py" {
+		t.Fatalf("expected entry file %q, got %q", "leap_integration.py", context.EntryFile)
 	}
 	if !strings.Contains(context.LeapYAMLBoundary, "leap.yaml present") {
 		t.Fatalf("expected leap.yaml boundary summary, got %q", context.LeapYAMLBoundary)
@@ -76,14 +73,14 @@ func TestBuildAgentRepoContextDeterministicOrderingAndTruncation(t *testing.T) {
 
 	statusA := core.IntegrationStatus{
 		Contracts: &core.IntegrationContracts{
-			EntryFile:       "leap_binder.py",
+			EntryFile:       "leap_integration.py",
 			ModelCandidates: modelCandidates,
 		},
 		Issues: modelIssuesDescending(15),
 	}
 	statusB := core.IntegrationStatus{
 		Contracts: &core.IntegrationContracts{
-			EntryFile:       "leap_binder.py",
+			EntryFile:       "leap_integration.py",
 			ModelCandidates: reverseModelCandidates(modelCandidates),
 		},
 		Issues: reverseIssues(modelIssuesDescending(15)),
@@ -101,8 +98,8 @@ func TestBuildAgentRepoContextDeterministicOrderingAndTruncation(t *testing.T) {
 	snapshot := core.WorkspaceSnapshot{
 		Repository: core.RepositoryState{Root: repoRoot},
 		FileHashes: map[string]string{
-			"leap.yaml":      "hash-leap",
-			"leap_binder.py": "hash-binder",
+			"leap.yaml":            "hash-leap",
+			"leap_integration.py": "hash-entry",
 		},
 	}
 

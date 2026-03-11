@@ -50,7 +50,6 @@ func BuildClaudeTaskPrompt(task AgentTask) string {
 		"<unknown>",
 	)))
 	b.WriteString(fmt.Sprintf("- Entry file: %s\n", nonEmptyOrFallback(repoContextValue(task, "entry_file"), "<unknown>")))
-	b.WriteString(fmt.Sprintf("- Binder file: %s\n", nonEmptyOrFallback(repoContextValue(task, "binder_file"), "<unknown>")))
 	b.WriteString(fmt.Sprintf("- leap.yaml boundary: %s\n", nonEmptyOrFallback(repoContextValue(task, "leap_yaml_boundary"), "<unknown>")))
 	b.WriteString(fmt.Sprintf("- Selected model path: %s\n", nonEmptyOrFallback(repoContextValue(task, "selected_model_path"), "<none>")))
 	b.WriteString(fmt.Sprintf("- Model candidates: %s\n", renderInlineList(repoContextValues(task, "model_candidates"))))
@@ -121,8 +120,6 @@ func repoContextValue(task AgentTask, key string) string {
 		return task.RepoContext.RepoRoot
 	case "entry_file":
 		return task.RepoContext.EntryFile
-	case "binder_file":
-		return task.RepoContext.BinderFile
 	case "leap_yaml_boundary":
 		return task.RepoContext.LeapYAMLBoundary
 	case "selected_model_path":

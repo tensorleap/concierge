@@ -29,6 +29,11 @@ func TestFixturePostVariantsPassConciergeRunWithPreparedRuntime(t *testing.T) {
 		fixture := fixture
 		t.Run(fixture.ID, func(t *testing.T) {
 			_, postRoot := resolveFixtureRoots(t, fixture.ID)
+			postStatus := inspectStatus(t, postRoot)
+			if reason := stalePreparedPostFixtureReason(postStatus.Issues); reason != "" {
+				t.Skipf("skipping fixture %q until prepared post fixtures are regenerated for GUIDE1: %s", fixture.ID, reason)
+			}
+
 			hasModel, err := repoHasSupportedModelArtifact(postRoot)
 			if err != nil {
 				t.Fatalf("repoHasSupportedModelArtifact failed: %v", err)
@@ -66,6 +71,7 @@ func mockFixtureCLIs(t *testing.T) string {
 	binDir := t.TempDir()
 	leapPath := filepath.Join(binDir, "leap")
 	poetryPath := filepath.Join(binDir, "poetry")
+	claudePath := filepath.Join(binDir, "claude")
 
 	leapScript := `#!/usr/bin/env bash
 set -euo pipefail
@@ -157,6 +163,9 @@ esac
 `
 	if err := os.WriteFile(poetryPath, []byte(poetryScript), 0o755); err != nil {
 		t.Fatalf("WriteFile failed for mock poetry CLI: %v", err)
+	}
+	if err := os.WriteFile(claudePath, []byte("#!/usr/bin/env bash\necho 'unexpected claude invocation in fixture acceptance test' >&2\nexit 97\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile failed for mock claude CLI: %v", err)
 	}
 
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))

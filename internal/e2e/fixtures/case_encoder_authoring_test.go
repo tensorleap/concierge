@@ -21,7 +21,8 @@ func TestFixtureCaseMissingInputEncoders_Recovers(t *testing.T) {
 	_, postRoot := resolveFixtureRoots(t, "mnist")
 	postRoot = cloneFixtureRepoForTest(t, postRoot)
 	integrationPath := filepath.Join(postRoot, "leap_integration.py")
-	binderPath := filepath.Join(postRoot, "leap_binder.py")
+	restoreBaseline := ensureGuideNativeMNISTBaseline(t, integrationPath)
+	defer restoreBaseline()
 
 	restoreIntegration := replaceFirstInFile(
 		t,
@@ -57,14 +58,14 @@ func TestFixtureCaseMissingInputEncoders_Recovers(t *testing.T) {
 		t.Fatalf("expected recommendation candidates to include %q, got %v", "meta", recommendation.Candidates)
 	}
 
-	restoreBinder := appendToFile(t, binderPath, strings.Join([]string{
+	restoreEncoder := appendToFile(t, integrationPath, strings.Join([]string{
 		"",
 		"@tensorleap_input_encoder('meta', channel_dim=-1)",
 		"def encode_meta(idx: int, preprocess: PreprocessResponse) -> np.ndarray:",
 		"    return np.array([float(idx)], dtype='float32')",
 		"",
 	}, "\n"))
-	defer restoreBinder()
+	defer restoreEncoder()
 
 	statusAfter := inspectWithSnapshot(t, snapshotWithConfirmedMapping(t, postRoot, []string{"image", "meta"}, []string{"classes"}))
 	if hasIssueWithSymbol(statusAfter.Issues, "meta", core.IssueCodeInputEncoderCoverageIncomplete, core.IssueCodeInputEncoderMissing) {
@@ -79,7 +80,8 @@ func TestFixtureCaseMissingGTEncoders_Recovers(t *testing.T) {
 	_, postRoot := resolveFixtureRoots(t, "mnist")
 	postRoot = cloneFixtureRepoForTest(t, postRoot)
 	integrationPath := filepath.Join(postRoot, "leap_integration.py")
-	binderPath := filepath.Join(postRoot, "leap_binder.py")
+	restoreBaseline := ensureGuideNativeMNISTBaseline(t, integrationPath)
+	defer restoreBaseline()
 
 	restoreIntegration := replaceFirstInFile(
 		t,
@@ -115,14 +117,14 @@ func TestFixtureCaseMissingGTEncoders_Recovers(t *testing.T) {
 		t.Fatalf("expected recommendation candidates to include %q, got %v", "label", recommendation.Candidates)
 	}
 
-	restoreBinder := appendToFile(t, binderPath, strings.Join([]string{
+	restoreEncoder := appendToFile(t, integrationPath, strings.Join([]string{
 		"",
 		"@tensorleap_gt_encoder('label')",
 		"def encode_label(idx: int, preprocessing: PreprocessResponse) -> np.ndarray:",
 		"    return preprocessing.data['labels'][idx].astype('float32')",
 		"",
 	}, "\n"))
-	defer restoreBinder()
+	defer restoreEncoder()
 
 	statusAfter := inspectWithSnapshot(t, snapshotWithConfirmedMapping(t, postRoot, []string{"image"}, []string{"classes", "label"}))
 	if hasIssueWithSymbol(statusAfter.Issues, "label", core.IssueCodeGTEncoderCoverageIncomplete, core.IssueCodeGTEncoderMissing) {
@@ -223,6 +225,53 @@ func appendToFile(t *testing.T, filePath string, suffix string) func() {
 	}
 
 	if err := os.WriteFile(filePath, []byte(original+suffix), 0o644); err != nil {
+		t.Fatalf("WriteFile failed for %q: %v", filePath, err)
+	}
+
+	return func() {
+		if writeErr := os.WriteFile(filePath, []byte(original), 0o644); writeErr != nil {
+			t.Fatalf("restore WriteFile failed for %q: %v", filePath, writeErr)
+		}
+	}
+}
+
+func ensureGuideNativeMNISTBaseline(t *testing.T, filePath string) func() {
+	t.Helper()
+
+	raw, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("ReadFile failed for %q: %v", filePath, err)
+	}
+	original := string(raw)
+	if strings.Contains(original, "@tensorleap_preprocess()") &&
+		strings.Contains(original, "@tensorleap_input_encoder('image', channel_dim=-1)") &&
+		strings.Contains(original, "@tensorleap_gt_encoder('classes')") {
+		return func() {}
+	}
+
+	scaffold := strings.Join([]string{
+		"",
+		"import numpy as np",
+		"from code_loader.contract.datasetclasses import DataStateType, PreprocessResponse",
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_gt_encoder, tensorleap_input_encoder, tensorleap_preprocess",
+		"",
+		"@tensorleap_preprocess()",
+		"def preprocess_func_leap() -> list[PreprocessResponse]:",
+		"    train = PreprocessResponse(length=1, data={'images': [np.zeros((28, 28, 1), dtype='float32')], 'labels': [np.zeros((10,), dtype='float32')]}, state=DataStateType.training)",
+		"    val = PreprocessResponse(length=1, data={'images': [np.zeros((28, 28, 1), dtype='float32')], 'labels': [np.zeros((10,), dtype='float32')]}, state=DataStateType.validation)",
+		"    return [train, val]",
+		"",
+		"@tensorleap_input_encoder('image', channel_dim=-1)",
+		"def input_encoder(idx: int, preprocess: PreprocessResponse) -> np.ndarray:",
+		"    return preprocess.data['images'][idx]",
+		"",
+		"@tensorleap_gt_encoder('classes')",
+		"def gt_encoder(idx: int, preprocessing: PreprocessResponse) -> np.ndarray:",
+		"    return preprocessing.data['labels'][idx]",
+		"",
+	}, "\n")
+
+	if err := os.WriteFile(filePath, []byte(original+scaffold), 0o644); err != nil {
 		t.Fatalf("WriteFile failed for %q: %v", filePath, err)
 	}
 

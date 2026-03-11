@@ -242,6 +242,7 @@ func TestSnapshotResolveRootErrorIsTyped(t *testing.T) {
 
 func TestSnapshotIncludesEnvironmentFingerprints(t *testing.T) {
 	repo := initGitRepo(t)
+	writeFile(t, filepath.Join(repo, core.CanonicalIntegrationEntryFile), "print('hello')\n")
 	writeFile(t, filepath.Join(repo, "requirements.txt"), "numpy\n")
 	writeFile(t, filepath.Join(repo, "pyproject.toml"), strings.Join([]string{
 		"[tool.poetry]",
@@ -315,6 +316,9 @@ func TestSnapshotIncludesEnvironmentFingerprints(t *testing.T) {
 
 	if snapshotValue.FileHashes["requirements.txt"] == "" {
 		t.Fatalf("expected requirements.txt hash in snapshot, got %+v", snapshotValue.FileHashes)
+	}
+	if snapshotValue.FileHashes[core.CanonicalIntegrationEntryFile] == "" {
+		t.Fatalf("expected %s hash in snapshot, got %+v", core.CanonicalIntegrationEntryFile, snapshotValue.FileHashes)
 	}
 }
 

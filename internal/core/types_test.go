@@ -67,7 +67,7 @@ func TestIssueLocationIsOptional(t *testing.T) {
 	}
 
 	issue.Location = &IssueLocation{
-		Path:   "leap_binder.py",
+		Path:   "leap_integration.py",
 		Line:   42,
 		Column: 3,
 		Symbol: "preprocess",

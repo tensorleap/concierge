@@ -21,12 +21,15 @@ func HeuristicIssuesFromHarnessEvents(events []HarnessEvent) []core.Issue {
 
 	for _, event := range events {
 		switch strings.ToLower(strings.TrimSpace(event.Event)) {
-		case "input_fingerprint":
-			updateFingerprintStats(inputStats, defaultName(event.Name, "input"), event.Fingerprint)
-		case "label_fingerprint":
-			updateFingerprintStats(labelStats, defaultName(event.Name, "label"), event.Fingerprint)
+		case "handler_result":
+			switch normalizeHarnessKind(event.HandlerKind) {
+			case "input":
+				updateFingerprintStats(inputStats, defaultName(harnessEventSymbol(event), "input"), event.Fingerprint)
+			case "ground_truth":
+				updateFingerprintStats(labelStats, defaultName(harnessEventSymbol(event), "label"), event.Fingerprint)
+			}
 		case "subset_count":
-			subset := strings.ToLower(strings.TrimSpace(event.Subset))
+			subset := normalizeHarnessSubset(event.Subset)
 			if (subset == "train" || subset == "validation") && event.Count == 0 {
 				emptySubsetSet[subset] = struct{}{}
 			}

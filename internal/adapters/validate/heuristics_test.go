@@ -8,8 +8,8 @@ import (
 
 func TestHeuristicsDetectConstantInputs(t *testing.T) {
 	events := []HarnessEvent{
-		{Event: "input_fingerprint", Name: "image", Fingerprint: "abc"},
-		{Event: "input_fingerprint", Name: "image", Fingerprint: "abc"},
+		{Event: "handler_result", HandlerKind: "input", Symbol: "image", Fingerprint: "abc"},
+		{Event: "handler_result", HandlerKind: "input", Symbol: "image", Fingerprint: "abc"},
 	}
 
 	issues := HeuristicIssuesFromHarnessEvents(events)
@@ -20,8 +20,8 @@ func TestHeuristicsDetectConstantInputs(t *testing.T) {
 
 func TestHeuristicsDetectConstantLabels(t *testing.T) {
 	events := []HarnessEvent{
-		{Event: "label_fingerprint", Name: "target", Fingerprint: "zzz"},
-		{Event: "label_fingerprint", Name: "target", Fingerprint: "zzz"},
+		{Event: "handler_result", HandlerKind: "ground_truth", Symbol: "target", Fingerprint: "zzz"},
+		{Event: "handler_result", HandlerKind: "ground_truth", Symbol: "target", Fingerprint: "zzz"},
 	}
 
 	issues := HeuristicIssuesFromHarnessEvents(events)
@@ -45,10 +45,10 @@ func TestHeuristicsNoFalsePositiveOnVaryingData(t *testing.T) {
 	events := []HarnessEvent{
 		{Event: "subset_count", Subset: "train", Count: 10},
 		{Event: "subset_count", Subset: "validation", Count: 5},
-		{Event: "input_fingerprint", Name: "image", Fingerprint: "a"},
-		{Event: "input_fingerprint", Name: "image", Fingerprint: "b"},
-		{Event: "label_fingerprint", Name: "target", Fingerprint: "1"},
-		{Event: "label_fingerprint", Name: "target", Fingerprint: "2"},
+		{Event: "handler_result", HandlerKind: "input", Symbol: "image", Fingerprint: "a"},
+		{Event: "handler_result", HandlerKind: "input", Symbol: "image", Fingerprint: "b"},
+		{Event: "handler_result", HandlerKind: "ground_truth", Symbol: "target", Fingerprint: "1"},
+		{Event: "handler_result", HandlerKind: "ground_truth", Symbol: "target", Fingerprint: "2"},
 	}
 
 	issues := HeuristicIssuesFromHarnessEvents(events)

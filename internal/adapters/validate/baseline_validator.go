@@ -64,18 +64,24 @@ func (v *BaselineValidator) Validate(ctx context.Context, snapshot core.Workspac
 
 		validation.Issues = append(validation.Issues, guideResult.Issues...)
 		validation.Evidence = append(validation.Evidence, guideResult.Evidence...)
-	}
+		if v.harnessRunner != nil {
+			if runHarness, reason := shouldRunHarnessAfterGuide(guideResult.Summary); runHarness {
+				harnessResult, err := v.harnessRunner.Run(ctx, snapshot)
+				if err != nil {
+					return core.ValidationResult{}, core.WrapError(core.KindUnknown, "validate.baseline.harness", err)
+				}
 
-	if v != nil && v.harnessRunner != nil {
-		harnessResult, err := v.harnessRunner.Run(ctx, snapshot)
-		if err != nil {
-			return core.ValidationResult{}, core.WrapError(core.KindUnknown, "validate.baseline.harness", err)
-		}
-
-		if harnessResult.Enabled {
-			validation.Issues = append(validation.Issues, harnessResult.Issues...)
-			validation.Evidence = append(validation.Evidence, harnessResult.Evidence...)
-			validation.Issues = append(validation.Issues, HeuristicIssuesFromHarnessEvents(harnessResult.Events)...)
+				if harnessResult.Enabled {
+					validation.Issues = append(validation.Issues, harnessResult.Issues...)
+					validation.Evidence = append(validation.Evidence, harnessResult.Evidence...)
+					validation.Issues = append(validation.Issues, HeuristicIssuesFromHarnessEvents(harnessResult.Events)...)
+				}
+			} else if reason != "" {
+				validation.Evidence = append(validation.Evidence, core.EvidenceItem{
+					Name:  "harness.skip_reason",
+					Value: reason,
+				})
+			}
 		}
 	}
 
@@ -92,7 +98,7 @@ func (v *BaselineValidator) Validate(ctx context.Context, snapshot core.Workspac
 
 func newBaselineValidatorWithHarness(runner harnessInvoker) *BaselineValidator {
 	return &BaselineValidator{
-		guideRunner:   NewGuideValidator(),
+		guideRunner:   readyGuideInvoker{},
 		harnessRunner: runner,
 	}
 }
@@ -102,4 +108,29 @@ func newBaselineValidatorWithGuideHarness(guide guideInvoker, harness harnessInv
 		guideRunner:   guide,
 		harnessRunner: harness,
 	}
+}
+
+func shouldRunHarnessAfterGuide(summary core.GuideValidationSummary) (bool, string) {
+	if summary.Skipped {
+		return false, messageOrDefault(strings.TrimSpace(summary.SkipReason), "guide validation skipped")
+	}
+	if summary.Local.Successful {
+		return true, ""
+	}
+	if summary.Parser.Attempted && summary.Parser.Available && summary.Parser.IsValid {
+		return true, ""
+	}
+	return false, "guide first-sample validation is not ready for multi-sample runtime checks"
+}
+
+type readyGuideInvoker struct{}
+
+func (readyGuideInvoker) Run(ctx context.Context, snapshot core.WorkspaceSnapshot) (GuideValidationResult, error) {
+	_ = ctx
+	_ = snapshot
+	return GuideValidationResult{
+		Summary: core.GuideValidationSummary{
+			Local: core.GuideLocalRunSummary{Successful: true},
+		},
+	}, nil
 }

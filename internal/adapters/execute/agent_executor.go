@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tensorleap/concierge/internal/adapters/inspect"
 	"github.com/tensorleap/concierge/internal/agent"
 	agentcontext "github.com/tensorleap/concierge/internal/agent/context"
 	"github.com/tensorleap/concierge/internal/core"
@@ -56,6 +57,19 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 	taskSnapshot := snapshot
 	taskStatus := core.IntegrationStatus{}
 	recommendations := make([]core.AuthoringRecommendation, 0, 1)
+	if canonicalStep.ID == core.EnsureStepIntegrationTestContract {
+		inspector := inspect.NewBaselineInspector()
+		status, err := inspector.Inspect(ctx, taskSnapshot)
+		if err != nil {
+			return core.ExecutionResult{}, err
+		}
+		taskStatus = status
+		recommendation, err := BuildIntegrationTestAuthoringRecommendation(taskSnapshot, taskStatus)
+		if err != nil {
+			return core.ExecutionResult{}, err
+		}
+		recommendations = append(recommendations, recommendation)
+	}
 	if canonicalStep.ID == core.EnsureStepModelContract {
 		recommendation, err := BuildModelAuthoringRecommendation(snapshot, taskStatus)
 		if err != nil {
@@ -201,7 +215,8 @@ func recommendationEvidence(recommendations []core.AuthoringRecommendation) []co
 		if recommendation.StepID != core.EnsureStepModelContract &&
 			recommendation.StepID != core.EnsureStepPreprocessContract &&
 			recommendation.StepID != core.EnsureStepInputEncoders &&
-			recommendation.StepID != core.EnsureStepGroundTruthEncoders {
+			recommendation.StepID != core.EnsureStepGroundTruthEncoders &&
+			recommendation.StepID != core.EnsureStepIntegrationTestContract {
 			continue
 		}
 		switch recommendation.StepID {
@@ -231,6 +246,13 @@ func recommendationEvidence(recommendations []core.AuthoringRecommendation) []co
 				core.EvidenceItem{Name: "authoring.recommendation.gt_encoder.rationale", Value: strings.TrimSpace(recommendation.Rationale)},
 				core.EvidenceItem{Name: "authoring.recommendation.gt_encoder.target_symbols", Value: strings.Join(recommendation.Candidates, ",")},
 				core.EvidenceItem{Name: "authoring.recommendation.gt_encoder.constraints", Value: strings.Join(recommendation.Constraints, " | ")},
+			)
+		case core.EnsureStepIntegrationTestContract:
+			evidence = append(evidence,
+				core.EvidenceItem{Name: "authoring.recommendation.integration_test.target", Value: strings.TrimSpace(recommendation.Target)},
+				core.EvidenceItem{Name: "authoring.recommendation.integration_test.rationale", Value: strings.TrimSpace(recommendation.Rationale)},
+				core.EvidenceItem{Name: "authoring.recommendation.integration_test.candidates", Value: strings.Join(recommendation.Candidates, ",")},
+				core.EvidenceItem{Name: "authoring.recommendation.integration_test.constraints", Value: strings.Join(recommendation.Constraints, " | ")},
 			)
 		}
 	}
@@ -445,6 +467,26 @@ func objectiveForStep(
 			constraints = append(constraints, fmt.Sprintf("Use model path %q as output/label alignment contract unless repository code proves this path is invalid", selectedModelPath))
 		}
 		return "Implement and repair Tensorleap ground-truth encoders with labeled-subset constraints", constraints, true
+	case core.EnsureStepIntegrationTestContract:
+		constraints := []string{
+			"Repair only @tensorleap_integration_test wiring and body shape.",
+			"Keep integration_test thin and declarative so mapping-mode re-execution succeeds.",
+			"Do not modify preprocess subset semantics, encoder implementations, or unrelated project logic.",
+		}
+		for _, recommendation := range recommendations {
+			if recommendation.StepID != core.EnsureStepIntegrationTestContract {
+				continue
+			}
+			if target := strings.TrimSpace(recommendation.Target); target != "" {
+				constraints = append(constraints, fmt.Sprintf("Primary repair target: %q (%s)", target, recommendation.Rationale))
+			}
+			if len(recommendation.Candidates) > 0 {
+				constraints = append(constraints, fmt.Sprintf("Repair focus areas: %s", strings.Join(recommendation.Candidates, ", ")))
+			}
+			constraints = append(constraints, recommendation.Constraints...)
+			break
+		}
+		return "Repair Tensorleap integration-test wiring and remove illegal integration-test body logic", constraints, true
 	case core.EnsureStepHarnessValidation:
 		return "Resolve runtime harness and anti-stub validation findings", []string{
 			"Address root-cause failures and keep generated integration artifacts consistent",

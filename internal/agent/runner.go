@@ -433,6 +433,7 @@ type claudeStream struct {
 	observer   observe.Sink
 
 	mu             sync.Mutex
+	writeMu        sync.Mutex
 	lastActivity   time.Time
 	currentTool    string
 	currentDetail  string
@@ -584,6 +585,8 @@ func (s *claudeStream) writeRaw(line string) {
 	if s.raw == nil {
 		return
 	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	_, _ = io.WriteString(s.raw, strings.TrimRight(line, "\n")+"\n")
 }
 
@@ -591,6 +594,8 @@ func (s *claudeStream) writeTranscriptLine(line string) {
 	if s.transcript == nil {
 		return
 	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	_, _ = io.WriteString(s.transcript, strings.TrimRight(line, "\n")+"\n")
 }
 

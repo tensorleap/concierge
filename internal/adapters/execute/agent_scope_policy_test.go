@@ -49,6 +49,17 @@ func TestScopePolicyForModelContractUsesLoadModelSection(t *testing.T) {
 	assertContainsSubstring(t, policy.ForbiddenAreas, "training/business logic")
 }
 
+func TestScopePolicyForIntegrationTestUsesNarrowWiringSection(t *testing.T) {
+	policy, err := PolicyForStep(core.EnsureStepIntegrationTestContract, core.WorkspaceSnapshot{}, core.IntegrationStatus{})
+	if err != nil {
+		t.Fatalf("PolicyForStep returned error: %v", err)
+	}
+
+	assertContains(t, policy.DomainSections, "integration_test_wiring_contract")
+	assertContainsSubstring(t, policy.ForbiddenAreas, "@tensorleap_input_encoder")
+	assertContainsSubstring(t, policy.RequiredOutcomes, "Repair @tensorleap_integration_test")
+}
+
 func TestScopePolicyForStepReturnsErrorWhenScopeCannotBeResolved(t *testing.T) {
 	_, err := PolicyForStep(core.EnsureStepUploadPush, core.WorkspaceSnapshot{}, core.IntegrationStatus{})
 	if err == nil {

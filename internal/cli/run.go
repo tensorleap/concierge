@@ -851,7 +851,7 @@ func approvalGuidanceForStep(stepID core.EnsureStepID) stepApprovalGuidance {
 		}
 	case core.EnsureStepIntegrationTestContract:
 		return stepApprovalGuidance{
-			Explanation: "The integration test defines which interfaces Tensorleap actually executes during analysis.",
+			Explanation: "The integration test defines which interfaces Tensorleap actually executes during analysis, so it must stay thin and only wire decorated calls plus model inference.",
 			DocsURL:     stepGuideIntegrationTestURL,
 		}
 	case core.EnsureStepHarnessValidation:

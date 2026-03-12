@@ -16,7 +16,10 @@ func TestGuideValidatorSkipsWhenInterpreterIsMissing(t *testing.T) {
 	writeGuideFixtureFile(t, repoRoot, "leap.yaml", "entryFile: leap_integration.py\n")
 	writeGuideFixtureFile(t, repoRoot, "leap_integration.py", "print('hello')\n")
 
-	validator := &GuideValidator{runtimeRunner: &fakeGuideRuntimeRunner{}}
+	validator := &GuideValidator{
+		runtimeRunner: &fakeGuideRuntimeRunner{},
+		astAnalyzer:   fakeIntegrationTestASTAnalyzer{},
+	}
 	result, err := validator.Run(context.Background(), core.WorkspaceSnapshot{
 		Repository: core.RepositoryState{Root: repoRoot},
 		RuntimeProfile: &core.LocalRuntimeProfile{
@@ -69,6 +72,7 @@ func TestGuideValidatorParsesStatusTableAndTreatsMissingParserAsBestEffort(t *te
 				errors.New("exit status 1"),
 			},
 		},
+		astAnalyzer: fakeIntegrationTestASTAnalyzer{},
 	}
 
 	result, err := validator.Run(context.Background(), guideValidationSnapshot(t, repoRoot))
@@ -132,6 +136,7 @@ func TestGuideValidatorMapsLeapLoaderPayloadFailures(t *testing.T) {
 			},
 			errs: []error{nil, nil},
 		},
+		astAnalyzer: fakeIntegrationTestASTAnalyzer{},
 	}
 
 	result, err := validator.Run(context.Background(), guideValidationSnapshot(t, repoRoot))
@@ -149,6 +154,56 @@ func TestGuideValidatorMapsLeapLoaderPayloadFailures(t *testing.T) {
 	}
 	if !containsIssueCode(result.Issues, core.IssueCodeGTEncoderExecutionFailed) {
 		t.Fatalf("expected ground-truth issue, got %+v", result.Issues)
+	}
+}
+
+func TestGuideValidatorPrefersASTIntegrationTestIssuesOverGenericMappingFailure(t *testing.T) {
+	repoRoot := buildGuideValidationRepo(t)
+	validator := &GuideValidator{
+		runtimeRunner: &fakeGuideRuntimeRunner{
+			results: []PythonRuntimeCommandResult{
+				{
+					Command: "poetry run python leap_integration.py",
+					Stdout: strings.Join([]string{
+						"Tensorleap_integration_test code flow failed",
+						"Decorator Name                     | Added to integration",
+						"-------------------------------------------------------",
+						"tensorleap_preprocess              | ✅",
+						"tensorleap_input_encoder           | ✅",
+						"tensorleap_load_model              | ✅",
+						"tensorleap_integration_test        | ❌",
+					}, "\n"),
+				},
+				{
+					Command: "poetry run python -c ...",
+					Stdout:  `{"available":false}`,
+				},
+			},
+			errs: []error{nil, nil},
+		},
+		astAnalyzer: fakeIntegrationTestASTAnalyzer{
+			result: IntegrationTestASTResult{
+				Issues: []core.Issue{
+					{
+						Code:     core.IssueCodeIntegrationTestIllegalBodyLogic,
+						Message:  "integration_test should stay declarative",
+						Severity: core.SeverityError,
+						Scope:    core.IssueScopeIntegrationTest,
+					},
+				},
+			},
+		},
+	}
+
+	result, err := validator.Run(context.Background(), guideValidationSnapshot(t, repoRoot))
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !containsIssueCode(result.Issues, core.IssueCodeIntegrationTestIllegalBodyLogic) {
+		t.Fatalf("expected AST issue, got %+v", result.Issues)
+	}
+	if containsIssueCode(result.Issues, core.IssueCodeIntegrationTestExecutionFailed) {
+		t.Fatalf("did not expect generic mapping-failure issue when AST issue exists, got %+v", result.Issues)
 	}
 }
 
@@ -178,6 +233,7 @@ func TestGuideValidatorDoesNotAssumePreprocessFailureWhenLegacyCodeLoaderOmitsSt
 			},
 			errs: []error{nil, nil},
 		},
+		astAnalyzer: fakeIntegrationTestASTAnalyzer{},
 	}
 
 	snapshot := guideValidationSnapshot(t, repoRoot)
@@ -204,6 +260,17 @@ type fakeGuideRuntimeRunner struct {
 	results []PythonRuntimeCommandResult
 	errs    []error
 	calls   int
+}
+
+type fakeIntegrationTestASTAnalyzer struct {
+	result IntegrationTestASTResult
+	err    error
+}
+
+func (f fakeIntegrationTestASTAnalyzer) Analyze(ctx context.Context, snapshot core.WorkspaceSnapshot) (IntegrationTestASTResult, error) {
+	_ = ctx
+	_ = snapshot
+	return f.result, f.err
 }
 
 func (f *fakeGuideRuntimeRunner) RunPython(ctx context.Context, snapshot core.WorkspaceSnapshot, args ...string) (PythonRuntimeCommandResult, error) {

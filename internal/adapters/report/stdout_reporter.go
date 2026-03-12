@@ -425,6 +425,25 @@ func stepGuidanceLines(stepID core.EnsureStepID, issues []core.Issue) []string {
 		return []string{
 			"Next step: verify `poetry env info --executable`, `poetry check`, and `poetry run python --version`, then rerun `concierge run`.",
 		}
+	case core.EnsureStepIntegrationTestContract:
+		if hasIssueCode(issues, core.IssueCodeIntegrationTestMissingRequiredCalls) {
+			return []string{
+				"Next step: wire the missing decorated input/load-model/ground-truth calls into `@tensorleap_integration_test`, then rerun `concierge run`.",
+				"Keep the integration test limited to calling Tensorleap decorators plus the model inference path.",
+			}
+		}
+		if hasIssueCode(issues, core.IssueCodeIntegrationTestCallsUnknownInterfaces) ||
+			hasIssueCode(issues, core.IssueCodeIntegrationTestDirectDatasetAccess) ||
+			hasIssueCode(issues, core.IssueCodeIntegrationTestIllegalBodyLogic) ||
+			hasIssueCode(issues, core.IssueCodeIntegrationTestManualBatchManipulation) {
+			return []string{
+				"Next step: keep `@tensorleap_integration_test` thin and declarative by moving Python logic into decorated interfaces, then rerun `concierge run`.",
+				"Do not read sample/preprocess data directly or add batch dimensions manually inside the integration test body.",
+			}
+		}
+		return []string{
+			"Next step: repair `@tensorleap_integration_test` wiring so only Tensorleap decorators and model inference remain in the body, then rerun `concierge run`.",
+		}
 	default:
 		return []string{
 			"Resolve the warning and rerun `concierge run` to verify it is cleared.",

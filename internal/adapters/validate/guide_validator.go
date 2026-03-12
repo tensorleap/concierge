@@ -155,6 +155,10 @@ type guideRuntimeRunner interface {
 	RunPython(ctx context.Context, snapshot core.WorkspaceSnapshot, args ...string) (PythonRuntimeCommandResult, error)
 }
 
+type integrationTestASTInvoker interface {
+	Analyze(ctx context.Context, snapshot core.WorkspaceSnapshot) (IntegrationTestASTResult, error)
+}
+
 type guideHandlerKind string
 
 const (
@@ -166,6 +170,7 @@ const (
 // GuideValidator runs the guide-native local validator and parser through the resolved Poetry runtime.
 type GuideValidator struct {
 	runtimeRunner guideRuntimeRunner
+	astAnalyzer   integrationTestASTInvoker
 }
 
 // GuideValidationResult captures guide-native issues, evidence, and summary data.
@@ -177,7 +182,10 @@ type GuideValidationResult struct {
 
 // NewGuideValidator creates a guide validator backed by the shared Poetry runtime runner.
 func NewGuideValidator() *GuideValidator {
-	return &GuideValidator{runtimeRunner: NewPythonRuntimeRunner()}
+	return &GuideValidator{
+		runtimeRunner: NewPythonRuntimeRunner(),
+		astAnalyzer:   NewIntegrationTestASTAnalyzer(),
+	}
 }
 
 // Run executes guide-native validation without mutating repository state.
@@ -187,6 +195,9 @@ func (v *GuideValidator) Run(ctx context.Context, snapshot core.WorkspaceSnapsho
 	}
 	if v.runtimeRunner == nil {
 		v.runtimeRunner = NewPythonRuntimeRunner()
+	}
+	if v.astAnalyzer == nil {
+		v.astAnalyzer = NewIntegrationTestASTAnalyzer()
 	}
 
 	summary := core.GuideValidationSummary{}
@@ -230,7 +241,13 @@ func (v *GuideValidator) Run(ctx context.Context, snapshot core.WorkspaceSnapsho
 	evidence = append(evidence, marshalGuideEvidence(core.GuideEvidenceParserRaw, summary.Parser))
 	evidence = append(evidence, marshalGuideEvidence(core.GuideEvidenceSummary, summary))
 
-	issues := collectGuideIssues(summary, localOutput, parserOutput, handlerKinds)
+	astResult, err := v.astAnalyzer.Analyze(ctx, snapshot)
+	if err != nil {
+		return GuideValidationResult{}, err
+	}
+	evidence = append(evidence, astResult.Evidence...)
+
+	issues := collectGuideIssues(summary, localOutput, parserOutput, handlerKinds, astResult.Issues)
 	return GuideValidationResult{
 		Issues:   dedupeIssues(issues),
 		Evidence: evidence,
@@ -735,8 +752,10 @@ func collectGuideIssues(
 	localResult PythonRuntimeCommandResult,
 	parserResult PythonRuntimeCommandResult,
 	handlerKinds map[string]guideHandlerKind,
+	astIssues []core.Issue,
 ) []core.Issue {
 	issues := make([]core.Issue, 0, 8)
+	issues = append(issues, astIssues...)
 
 	if summary.Parser.Available {
 		if issue, ok := issueFromGuideParserGeneralError(summary.Parser.GeneralError); ok {
@@ -754,7 +773,7 @@ func collectGuideIssues(
 		return issues
 	}
 
-	if summary.Local.MappingFailure {
+	if summary.Local.MappingFailure && !hasSpecificIntegrationTestIssue(astIssues) {
 		issues = append(issues, core.Issue{
 			Code:     core.IssueCodeIntegrationTestExecutionFailed,
 			Message:  "the local validator reported that @tensorleap_integration_test failed in mapping mode",
@@ -769,6 +788,23 @@ func collectGuideIssues(
 	}
 
 	return issues
+}
+
+func hasSpecificIntegrationTestIssue(issues []core.Issue) bool {
+	for _, issue := range issues {
+		if issue.Severity != core.SeverityError || issue.Scope != core.IssueScopeIntegrationTest {
+			continue
+		}
+		switch issue.Code {
+		case core.IssueCodeIntegrationTestMissingRequiredCalls,
+			core.IssueCodeIntegrationTestCallsUnknownInterfaces,
+			core.IssueCodeIntegrationTestDirectDatasetAccess,
+			core.IssueCodeIntegrationTestIllegalBodyLogic,
+			core.IssueCodeIntegrationTestManualBatchManipulation:
+			return true
+		}
+	}
+	return false
 }
 
 func issueFromGuideParserGeneralError(message string) (core.Issue, bool) {

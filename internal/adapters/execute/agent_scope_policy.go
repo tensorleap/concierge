@@ -100,6 +100,26 @@ func PolicyForStep(step core.EnsureStepID, snapshot core.WorkspaceSnapshot, stat
 				"ground_truth_encoder_contract",
 			},
 		}, nil
+	case core.EnsureStepIntegrationTestContract:
+		return agent.AgentScopePolicy{
+			AllowedFiles: allowedFiles,
+			ForbiddenAreas: []string{
+				"Do not modify @tensorleap_preprocess subset semantics in this step",
+				"Do not modify @tensorleap_input_encoder or @tensorleap_gt_encoder implementations in this step",
+				"Do not modify unrelated training/business logic",
+			},
+			RequiredOutcomes: []string{
+				"Repair @tensorleap_integration_test so required Tensorleap decorators are called",
+				"Keep integration_test thin and declarative so mapping-mode re-execution succeeds",
+			},
+			StopAndAskTriggers: []string{
+				"The repair requires moving logic outside leap_integration.py into unrelated project code",
+				"The repair requires changing preprocess subset semantics or encoder implementations",
+			},
+			DomainSections: []string{
+				"integration_test_wiring_contract",
+			},
+		}, nil
 	case core.EnsureStepHarnessValidation:
 		return agent.AgentScopePolicy{
 			AllowedFiles: allowedFiles,

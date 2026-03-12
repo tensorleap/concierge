@@ -6,9 +6,22 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 MANIFEST_PATH="${REPO_ROOT}/fixtures/manifest.json"
 FIXTURES_ROOT="${REPO_ROOT}/.fixtures"
 RESET_LIB_PATH="${REPO_ROOT}/scripts/fixtures_reset_lib.sh"
+BOOTSTRAP_SCRIPT_PATH="${REPO_ROOT}/scripts/fixtures_bootstrap_poetry.sh"
 
 # shellcheck source=./fixtures_reset_lib.sh
 source "${RESET_LIB_PATH}"
+
+usage() {
+  cat <<'EOF'
+Usage: bash scripts/fixtures_prepare.sh [--bootstrap-poetry]
+
+Prepare the pinned pre/post fixture repositories in .fixtures/.
+
+Options:
+  --bootstrap-poetry   After preparing fixtures, bootstrap Poetry environments explicitly.
+  --help               Show this help text.
+EOF
+}
 
 fail() {
   echo "error: $*" >&2
@@ -27,6 +40,23 @@ require_cmd() {
   local cmd="$1"
   command -v "${cmd}" >/dev/null 2>&1 || fail "required command '${cmd}' not found"
 }
+
+bootstrap_poetry=0
+while (($# > 0)); do
+  case "$1" in
+    --bootstrap-poetry)
+      bootstrap_poetry=1
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      fail "unknown argument: $1"
+      ;;
+  esac
+  shift
+done
 
 is_lfs_pointer_file() {
   local path="$1"
@@ -108,8 +138,6 @@ ensure_relevant_model_lfs_hydrated() {
     fi
     warn "${label}: model file(s) remained as LFS pointers after pull (best-effort mode): ${unresolved_lfs[*]}"
   fi
-
-  return 0
 }
 
 strip_entry_covers_path() {
@@ -170,6 +198,19 @@ assert_clean_git_tree() {
   fi
 }
 
+assert_guide_native_post_variant() {
+  local repo_dir="$1"
+  local label="$2"
+  local leap_yaml_path="${repo_dir}/leap.yaml"
+  local entry_file
+
+  [[ -f "${leap_yaml_path}" ]] || fail "${label} is missing leap.yaml"
+  entry_file="$(fixture_extract_leap_yaml_entry_file "${leap_yaml_path}")"
+  [[ "${entry_file}" == "leap_integration.py" ]] \
+    || fail "${label} must use leap_integration.py as leap.yaml entryFile, found '${entry_file:-<empty>}'"
+  [[ -f "${repo_dir}/leap_integration.py" ]] || fail "${label} is missing leap_integration.py"
+}
+
 write_fixture_reset_script() {
   local repo_dir="$1"
   local variant_kind="$2"
@@ -219,9 +260,12 @@ reset_fixture_dir() {
 
 require_cmd git
 require_cmd jq
+require_cmd poetry
 require_cmd rg
+require_cmd python3
 [[ -f "${MANIFEST_PATH}" ]] || fail "manifest not found: ${MANIFEST_PATH}"
 [[ -f "${RESET_LIB_PATH}" ]] || fail "fixture reset library not found: ${RESET_LIB_PATH}"
+[[ -f "${BOOTSTRAP_SCRIPT_PATH}" ]] || fail "fixture bootstrap script not found: ${BOOTSTRAP_SCRIPT_PATH}"
 
 jq -e '.fixtures and (.fixtures | type == "array")' "${MANIFEST_PATH}" >/dev/null \
   || fail "invalid manifest schema in ${MANIFEST_PATH}"
@@ -249,6 +293,12 @@ while IFS= read -r fixture_json; do
   done < <(jq -r '.strip_for_pre[]?' <<<"${fixture_json}")
   ((${#strip_files[@]} > 0)) || fail "fixture '${id}' has empty strip_for_pre list"
 
+  stripped_py_basenames=()
+  while IFS= read -r base_name; do
+    [[ -n "${base_name}" ]] || continue
+    stripped_py_basenames+=("${base_name}")
+  done < <(fixture_list_stripped_python_basenames "${strip_files[@]}")
+
   fixture_root="${FIXTURES_ROOT}/${id}"
   post_dir="${fixture_root}/post"
   pre_dir="${fixture_root}/pre"
@@ -256,7 +306,6 @@ while IFS= read -r fixture_json; do
   log "Preparing fixture '${id}'"
   log "  Source repository: ${repo}"
   log "  Pinned post_ref: ${post_ref}"
-
   log "  Resetting existing fixture directories"
   reset_fixture_dir "${post_dir}"
   reset_fixture_dir "${pre_dir}"
@@ -265,8 +314,17 @@ while IFS= read -r fixture_json; do
   log "  Cloning post variant and checking out pinned commit"
   git_fixture clone --quiet --no-checkout --filter=blob:none "${repo}" "${post_dir}"
   git_fixture -C "${post_dir}" checkout --quiet "${post_ref}"
-  write_fixture_reset_script "${post_dir}" post "${post_ref}"
   ensure_relevant_model_lfs_hydrated "${post_dir}" "post variant for fixture '${id}'"
+  assert_guide_native_post_variant "${post_dir}" "post variant for fixture '${id}'"
+  post_pin_info="$(fixture_detect_code_loader_pin "${post_dir}")"
+  post_pin_version="${post_pin_info#*|}"
+  if ! fixture_version_at_least "${post_pin_version}" "$(fixture_min_code_loader_version)"; then
+    log "  Refreshing local code-loader pin for post variant"
+    fixture_prepare_local_code_loader_pin "${post_dir}" "post variant for fixture '${id}'"
+  fi
+  fixture_assert_min_code_loader_pin "${post_dir}" "post variant for fixture '${id}'"
+  prepared_post_ref="$(git -C "${post_dir}" rev-parse HEAD)"
+  write_fixture_reset_script "${post_dir}" post "${prepared_post_ref}"
 
   log "  Verifying required integration files exist in post variant"
   for rel_path in "${strip_files[@]}"; do
@@ -277,7 +335,6 @@ while IFS= read -r fixture_json; do
   while IFS= read -r rel_path; do
     [[ -n "${rel_path}" ]] && post_root_leap_files+=("${rel_path}")
   done < <(find "${post_dir}" -maxdepth 1 -type f -name 'leap*' -exec basename {} \; | sort)
-
   for rel_path in "${post_root_leap_files[@]}"; do
     strip_entry_covers_path "${rel_path}" "${strip_files[@]}" \
       || fail "fixture '${id}': root leap file '${rel_path}' is present in post but missing from strip_for_pre"
@@ -326,10 +383,13 @@ while IFS= read -r fixture_json; do
   assert_clean_git_tree "${post_dir}" "post variant for fixture '${id}'"
 
   log "  Creating pre variant from source repository"
-  reset_fixture_dir "${pre_dir}"
   git_fixture clone --quiet --no-checkout --filter=blob:none "${repo}" "${pre_dir}"
   git_fixture -C "${pre_dir}" checkout --quiet "${post_ref}"
-  write_fixture_reset_script "${pre_dir}" pre "${post_ref}" "${strip_files[@]}"
+  fixture_prepare_local_code_loader_pin "${pre_dir}" "pre variant source for fixture '${id}'"
+  pre_source_ref="$(git -C "${pre_dir}" rev-parse HEAD)"
+  [[ "${pre_source_ref}" == "${prepared_post_ref}" ]] \
+    || fail "fixture '${id}': prepared pre source ref '${pre_source_ref}' does not match prepared post ref '${prepared_post_ref}'"
+  write_fixture_reset_script "${pre_dir}" pre "${prepared_post_ref}" "${strip_files[@]}"
 
   log "  Stripping pre-integration files from pre variant"
   "${pre_dir}/.fixture_reset.sh"
@@ -338,7 +398,6 @@ while IFS= read -r fixture_json; do
   while IFS= read -r rel_path; do
     [[ -n "${rel_path}" ]] && remaining_pre_root_leap_files+=("${rel_path}")
   done < <(find "${pre_dir}" -maxdepth 1 -type f -name 'leap*' -exec basename {} \; | sort)
-
   ((${#remaining_pre_root_leap_files[@]} == 0)) \
     || fail "fixture '${id}': pre variant still has root leap files after stripping: ${remaining_pre_root_leap_files[*]}"
 
@@ -350,14 +409,15 @@ while IFS= read -r fixture_json; do
   ((${#pre_leap_pyc_files[@]} == 0)) \
     || fail "fixture '${id}': pre variant still has compiled leap artifacts after stripping: ${pre_leap_pyc_files[*]}"
 
-  for base_name in "${stripped_py_basenames[@]}"; do
+  local_base_name=""
+  for local_base_name in "${stripped_py_basenames[@]}"; do
     pre_compiled_matches=()
     while IFS= read -r abs_path; do
       [[ -n "${abs_path}" ]] || continue
       pre_compiled_matches+=("${abs_path#"${pre_dir}/"}")
-    done < <(find "${pre_dir}" -type f -path "*/__pycache__/${base_name}*.pyc" | sort)
+    done < <(find "${pre_dir}" -type f -path "*/__pycache__/${local_base_name}*.pyc" | sort)
     ((${#pre_compiled_matches[@]} == 0)) \
-      || fail "fixture '${id}': pre variant still has compiled artifacts for stripped '${base_name}.py': ${pre_compiled_matches[*]}"
+      || fail "fixture '${id}': pre variant still has compiled artifacts for stripped '${local_base_name}.py': ${pre_compiled_matches[*]}"
   done
 
   pre_code_loader_python_files=()
@@ -393,8 +453,12 @@ while IFS= read -r fixture_json; do
     || fail "fixture '${id}': pre variant still contains files with 'tensorleap': ${pre_tensorleap_files[*]}"
 
   assert_clean_git_tree "${pre_dir}" "pre variant for fixture '${id}'"
-
   log "Prepared fixture '${id}' at ${fixture_root}"
 done < <(jq -c '.fixtures[]' "${MANIFEST_PATH}")
+
+if [[ "${bootstrap_poetry}" == "1" ]]; then
+  log "Bootstrapping Poetry environments for prepared fixtures"
+  bash "${BOOTSTRAP_SCRIPT_PATH}" --variant all
+fi
 
 log "Fixture preparation complete"

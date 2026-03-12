@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tensorleap.local/fixtures/cases/schema.json",
+  "title": "Concierge Fixture Cases",
+  "type": "object",
+  "required": ["cases"],
+  "properties": {
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "source_fixture_id",
+          "source_variant",
+          "family",
+          "patch",
+          "expected_primary_step",
+          "expected_issue_codes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$"
+          },
+          "source_fixture_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$"
+          },
+          "source_variant": {
+            "type": "string",
+            "enum": ["post"]
+          },
+          "family": {
+            "type": "string",
+            "enum": [
+              "canonical_layout",
+              "missing_preprocess",
+              "minimum_inputs",
+              "load_model",
+              "integration_test_wiring",
+              "gt_encoders",
+              "composite_recovery"
+            ]
+          },
+          "patch": {
+            "type": "string",
+            "pattern": "^fixtures/cases/patches/.+\\.patch$"
+          },
+          "expected_primary_step": {
+            "type": "string",
+            "pattern": "^ensure\\.[a-z_]+$"
+          },
+          "expected_issue_codes": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9_]+$"
+            }
+          },
+          "confirmed_mapping": {
+            "type": "object",
+            "properties": {
+              "input_symbols": {
+                "type": "array",
+                "items": {"type": "string"}
+              },
+              "ground_truth_symbols": {
+                "type": "array",
+                "items": {"type": "string"}
+              }
+            },
+            "additionalProperties": false
+          },
+          "expected_missing_model_path": {
+            "type": "string"
+          },
+          "expected_missing_integration_call": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

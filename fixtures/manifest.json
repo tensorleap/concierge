@@ -3,14 +3,14 @@
     {
       "id": "ultralytics",
       "repo": "https://github.com/Tensorleap-hub/ultralytics.git",
-      "post_ref": "01ad3aadbe3b0c86b90d1c0fb3731a4e24c1e88c",
+      "post_ref": "9234712fe214a806d43f298b60984d2eb03a0e74",
       "strip_for_pre": [
         "README.md",
         "dvclive/params.yaml",
         "export_model_to_tf.py",
         "leap.yaml",
         "leap_binder.py",
-        "leap_custom_test.py",
+        "leap_integration.py",
         "ultralytics/cfg/default.yaml",
         "ultralytics/tensorleap_folder",
         "ultralytics/utils/__init__.py"
@@ -50,7 +50,7 @@
     {
       "id": "mnist",
       "repo": "https://github.com/tensorleap-hub/mnist.git",
-      "post_ref": "1c4c6f0d5c4254cc4ae5c2df5ae8ef9f0a61212b",
+      "post_ref": "945b3c09892ad1c2cc4e29d7b8b47d3439c63129",
       "strip_for_pre": [
         "LICENSE",
         "README.md",
@@ -64,7 +64,7 @@
     {
       "id": "cifar10_resnet",
       "repo": "https://github.com/tensorleap-hub/cifar10_resnet.git",
-      "post_ref": "5dd3611ca9efdf34c28279e036a7bb90638dda4d",
+      "post_ref": "bfa4c6e421254113f6bf0fdcc2dd3ff2d6fed74f",
       "strip_for_pre": [
         "LICENSE",
         "README.md",

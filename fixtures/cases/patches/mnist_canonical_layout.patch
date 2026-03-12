@@ -1,0 +1,222 @@
+diff --git a/leap.yaml b/leap.yaml
+index 361fdbc..f40fb1e 100644
+--- a/leap.yaml
++++ b/leap.yaml
+@@ -1,7 +1,7 @@
+ codeIntegrationId: 6906fdf1fcfae1a75a5fd1c9
+ projectId: 6906fdeafcfae1a75a5fd1c2
+ secretId: ""
+-entryFile: leap_integration.py
++entryFile: legacy_entry.py
+ include:
+     - leap_binder.py
+     - leap_integration.py
+diff --git a/leap_integration.py b/leap_integration.py
+index e1316ae..152c63c 100644
+--- a/leap_integration.py
++++ b/leap_integration.py
+@@ -1,59 +1,80 @@
+ import os
+-from code_loader.contract.datasetclasses import PredictionTypeHandler
+-from code_loader.plot_functions.visualize import visualize
+ 
+-from mnist.config import CONFIG
+-from leap_binder import (input_encoder, preprocess_func_leap, gt_encoder,
+-                         combined_bar, metrics, image_visualizer, categorical_crossentropy_loss,
+-                         metadata_sample_index, metadata_one_hot_digit, metadata_euclidean_distance_from_class_centroid)
++import numpy as np
+ import tensorflow as tf
+-from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model, tensorleap_integration_test
+-
+-prediction_type1 = PredictionTypeHandler('classes', CONFIG['LABELS'])
+-
+-@tensorleap_load_model([prediction_type1])
+-def load_model():
+-    dir_path = os.path.dirname(os.path.abspath(__file__))
+-    model_path = 'model/model.h5'
+-    cnn = tf.keras.models.load_model(os.path.join(dir_path, model_path))
+-    return cnn
+-
+-
+-@tensorleap_integration_test()
+-def check_custom_test_mapping(idx, subset):
+-    image = input_encoder(idx, subset)
+-    gt = gt_encoder(idx, subset)
+-
+-    cnn = load_model()
+-    y_pred = cnn([image])
+-    both_vis = combined_bar(y_pred, gt)
+-    img_vis = image_visualizer(image)
++from code_loader.contract.datasetclasses import PredictionTypeHandler, PreprocessResponse
++from code_loader.contract.enums import DataStateType
++from code_loader.inner_leap_binder.leapbinder_decorators import (
++    tensorleap_gt_encoder,
++    tensorleap_input_encoder,
++    tensorleap_integration_test,
++    tensorleap_load_model,
++    tensorleap_preprocess,
++)
+ 
+-    visualize(img_vis)
+-
+-    metric_result = metrics(y_pred)
++from mnist.config import CONFIG
++from mnist.data.preprocess import preprocess_func
+ 
+-    loss_ret = categorical_crossentropy_loss(gt, y_pred)
++prediction_type = PredictionTypeHandler("classes", CONFIG["LABELS"])
+ 
+-    m1 = metadata_sample_index(idx, subset)
+-    print(m1)
+-    m2 = metadata_one_hot_digit(idx, subset)
+-    m3 = metadata_euclidean_distance_from_class_centroid(idx, subset)
+ 
+-    # here the user can return whatever he wants
++@tensorleap_preprocess()
++def preprocess() -> list[PreprocessResponse]:
++    train_x, val_x, train_y, val_y = preprocess_func(CONFIG["local_file_path"])
++    train_ids = np.arange(len(train_x))
++    val_ids = np.arange(len(val_x))
++    train_labels = np.argmax(train_y, axis=-1)
++    val_labels = np.argmax(val_y, axis=-1)
++    return [
++        PreprocessResponse(
++            length=len(train_x),
++            data={"images": train_x, "labels": train_y, "meta": train_ids, "label": train_labels},
++            state=DataStateType.training,
++        ),
++        PreprocessResponse(
++            length=len(val_x),
++            data={"images": val_x, "labels": val_y, "meta": val_ids, "label": val_labels},
++            state=DataStateType.validation,
++        ),
++    ]
+ 
+ 
+-if __name__ == '__main__':
+-    check_custom_test_mapping(0, preprocess_func_leap()[0])
++@tensorleap_input_encoder("image")
++def input_encoder(idx: int, preprocess: PreprocessResponse) -> np.ndarray:
++    return preprocess.data["images"][idx].astype("float32")
+ 
+ 
++@tensorleap_input_encoder("meta")
++def encode_meta(idx: int, preprocess: PreprocessResponse) -> np.ndarray:
++    return np.array([preprocess.data["meta"][idx]], dtype="float32")
+ 
+ 
++@tensorleap_gt_encoder("classes")
++def gt_encoder(idx: int, preprocessing: PreprocessResponse) -> np.ndarray:
++    return preprocessing.data["labels"][idx].astype("float32")
+ 
+ 
++@tensorleap_gt_encoder("label")
++def encode_label(idx: int, preprocessing: PreprocessResponse) -> np.ndarray:
++    return np.array([preprocessing.data["label"][idx]], dtype="float32")
+ 
+ 
++@tensorleap_load_model([prediction_type])
++def load_model():
++    model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model", "model.h5")
++    return tf.keras.models.load_model(model_path)
+ 
+ 
++@tensorleap_integration_test()
++def integration_test(idx: int, subset: PreprocessResponse):
++    image = input_encoder(idx, subset)
++    meta = encode_meta(idx, subset)
++    classes = gt_encoder(idx, subset)
++    label = encode_label(idx, subset)
++    model = load_model()
++    _ = meta, label, model
++    return image, classes
+ 
+ 
++if __name__ == "__main__":
++    integration_test(0, preprocess()[0])
+diff --git a/legacy_entry.py b/legacy_entry.py
+new file mode 100644
+index 0000000..152c63c
+--- /dev/null
++++ b/legacy_entry.py
+@@ -0,0 +1,80 @@
++import os
++
++import numpy as np
++import tensorflow as tf
++from code_loader.contract.datasetclasses import PredictionTypeHandler, PreprocessResponse
++from code_loader.contract.enums import DataStateType
++from code_loader.inner_leap_binder.leapbinder_decorators import (
++    tensorleap_gt_encoder,
++    tensorleap_input_encoder,
++    tensorleap_integration_test,
++    tensorleap_load_model,
++    tensorleap_preprocess,
++)
++
++from mnist.config import CONFIG
++from mnist.data.preprocess import preprocess_func
++
++prediction_type = PredictionTypeHandler("classes", CONFIG["LABELS"])
++
++
++@tensorleap_preprocess()
++def preprocess() -> list[PreprocessResponse]:
++    train_x, val_x, train_y, val_y = preprocess_func(CONFIG["local_file_path"])
++    train_ids = np.arange(len(train_x))
++    val_ids = np.arange(len(val_x))
++    train_labels = np.argmax(train_y, axis=-1)
++    val_labels = np.argmax(val_y, axis=-1)
++    return [
++        PreprocessResponse(
++            length=len(train_x),
++            data={"images": train_x, "labels": train_y, "meta": train_ids, "label": train_labels},
++            state=DataStateType.training,
++        ),
++        PreprocessResponse(
++            length=len(val_x),
++            data={"images": val_x, "labels": val_y, "meta": val_ids, "label": val_labels},
++            state=DataStateType.validation,
++        ),
++    ]
++
++
++@tensorleap_input_encoder("image")
++def input_encoder(idx: int, preprocess: PreprocessResponse) -> np.ndarray:
++    return preprocess.data["images"][idx].astype("float32")
++
++
++@tensorleap_input_encoder("meta")
++def encode_meta(idx: int, preprocess: PreprocessResponse) -> np.ndarray:
++    return np.array([preprocess.data["meta"][idx]], dtype="float32")
++
++
++@tensorleap_gt_encoder("classes")
++def gt_encoder(idx: int, preprocessing: PreprocessResponse) -> np.ndarray:
++    return preprocessing.data["labels"][idx].astype("float32")
++
++
++@tensorleap_gt_encoder("label")
++def encode_label(idx: int, preprocessing: PreprocessResponse) -> np.ndarray:
++    return np.array([preprocessing.data["label"][idx]], dtype="float32")
++
++
++@tensorleap_load_model([prediction_type])
++def load_model():
++    model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model", "model.h5")
++    return tf.keras.models.load_model(model_path)
++
++
++@tensorleap_integration_test()
++def integration_test(idx: int, subset: PreprocessResponse):
++    image = input_encoder(idx, subset)
++    meta = encode_meta(idx, subset)
++    classes = gt_encoder(idx, subset)
++    label = encode_label(idx, subset)
++    model = load_model()
++    _ = meta, label, model
++    return image, classes
++
++
++if __name__ == "__main__":
++    integration_test(0, preprocess()[0])

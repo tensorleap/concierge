@@ -12,7 +12,7 @@ LDFLAGS := -s -w \
 
 UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v '/internal/e2e/fixtures$$')
 
-.PHONY: build test test-fixtures test-live-claude clean fixtures-prepare fixtures-verify fixtures-reset fixtures-checks
+.PHONY: build test test-fixtures test-live-claude clean fixtures-prepare fixtures-mutate-cases fixtures-verify fixtures-reset fixtures-checks
 
 build:
 	@mkdir -p $(BIN_DIR)
@@ -33,7 +33,10 @@ clean:
 fixtures-prepare:
 	bash scripts/fixtures_prepare.sh
 
-fixtures-verify:
+fixtures-mutate-cases: fixtures-prepare
+	bash scripts/fixtures_mutate_cases.sh
+
+fixtures-verify: fixtures-mutate-cases
 	bash scripts/fixtures_verify.sh
 
 fixtures-reset: fixtures-prepare fixtures-verify

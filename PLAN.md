@@ -36,7 +36,7 @@ The remaining work starts from that baseline.
 - [x] `GUIDE2` `ACCEPTED` - Implement guide-native progressive validator orchestration and reporting.
 - [x] `GUIDE3` `ACCEPTED` - Enforce thin `integration_test` rules and targeted authoring for integration-test wiring failures.
 - [ ] `VAL1` `PENDING` - Replace the stub harness with multi-sample runtime validation plus issue mapping.
-- [ ] `FIX1` `PENDING` - Separate fixture bootstrap from product runtime and generate guide-native mutation cases.
+- [x] `FIX1` `DONE` - Separate fixture bootstrap from product runtime and generate guide-native mutation cases.
 - [ ] `FIX2` `PENDING` - Add capability and composite fixture E2E coverage, including agent-context quality assertions.
 - [ ] `OPS1` `PENDING` - Implement upload readiness checks and guarded `leap push`.
 - [ ] `SHIP1` `PENDING` - Finish CI, docs, and release-readiness hardening.

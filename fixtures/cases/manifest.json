@@ -1,0 +1,83 @@
+{
+  "cases": [
+    {
+      "id": "mnist_canonical_layout",
+      "source_fixture_id": "mnist",
+      "source_variant": "post",
+      "family": "canonical_layout",
+      "patch": "fixtures/cases/patches/mnist_canonical_layout.patch",
+      "expected_primary_step": "ensure.integration_script",
+      "expected_issue_codes": ["integration_script_non_canonical"],
+      "notes": "Switch leap.yaml to a legacy entrypoint while keeping leap_integration.py in the repo."
+    },
+    {
+      "id": "mnist_missing_preprocess",
+      "source_fixture_id": "mnist",
+      "source_variant": "post",
+      "family": "missing_preprocess",
+      "patch": "fixtures/cases/patches/mnist_missing_preprocess.patch",
+      "expected_primary_step": "ensure.preprocess_contract",
+      "expected_issue_codes": ["preprocess_function_missing"]
+    },
+    {
+      "id": "mnist_minimum_inputs",
+      "source_fixture_id": "mnist",
+      "source_variant": "post",
+      "family": "minimum_inputs",
+      "patch": "fixtures/cases/patches/mnist_minimum_inputs.patch",
+      "expected_primary_step": "ensure.input_encoders",
+      "expected_issue_codes": ["input_encoder_missing", "input_encoder_coverage_incomplete"],
+      "confirmed_mapping": {
+        "input_symbols": ["image", "meta"],
+        "ground_truth_symbols": ["classes", "label"]
+      }
+    },
+    {
+      "id": "mnist_load_model",
+      "source_fixture_id": "mnist",
+      "source_variant": "post",
+      "family": "load_model",
+      "patch": "fixtures/cases/patches/mnist_load_model.patch",
+      "expected_primary_step": "ensure.model_contract",
+      "expected_issue_codes": ["model_file_missing"],
+      "expected_missing_model_path": "model/missing_model.h5"
+    },
+    {
+      "id": "mnist_integration_test_wiring",
+      "source_fixture_id": "mnist",
+      "source_variant": "post",
+      "family": "integration_test_wiring",
+      "patch": "fixtures/cases/patches/mnist_integration_test_wiring.patch",
+      "expected_primary_step": "ensure.integration_test_contract",
+      "expected_issue_codes": ["integration_test_missing_required_calls"],
+      "expected_missing_integration_call": "encode_meta"
+    },
+    {
+      "id": "mnist_gt_encoders",
+      "source_fixture_id": "mnist",
+      "source_variant": "post",
+      "family": "gt_encoders",
+      "patch": "fixtures/cases/patches/mnist_gt_encoders.patch",
+      "expected_primary_step": "ensure.ground_truth_encoders",
+      "expected_issue_codes": ["gt_encoder_missing", "gt_encoder_coverage_incomplete"],
+      "confirmed_mapping": {
+        "input_symbols": ["image", "meta"],
+        "ground_truth_symbols": ["classes", "label"]
+      }
+    },
+    {
+      "id": "mnist_composite_recovery",
+      "source_fixture_id": "mnist",
+      "source_variant": "post",
+      "family": "composite_recovery",
+      "patch": "fixtures/cases/patches/mnist_composite_recovery.patch",
+      "expected_primary_step": "ensure.integration_script",
+      "expected_issue_codes": ["integration_script_non_canonical"],
+      "confirmed_mapping": {
+        "input_symbols": ["image", "meta"],
+        "ground_truth_symbols": ["classes", "label"]
+      },
+      "notes": "Composite case starts non-canonical and hides downstream guide-native defects until the entrypoint is restored."
+    }
+  ]
+}

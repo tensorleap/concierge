@@ -76,6 +76,14 @@ func inspectRuntimeContract(snapshot core.WorkspaceSnapshot, status *core.Integr
 			Scope:    core.IssueScopeEnvironment,
 		})
 	}
+	if shouldWarnOnLegacyCodeLoader(snapshot.RuntimeProfile) {
+		status.Issues = append(status.Issues, core.Issue{
+			Code:     core.IssueCodeCodeLoaderLegacy,
+			Message:  legacyCodeLoaderMessage(snapshot.RuntimeProfile),
+			Severity: core.SeverityWarning,
+			Scope:    core.IssueScopeEnvironment,
+		})
+	}
 
 	versionString := strings.TrimSpace(snapshot.RuntimeProfile.PythonVersion)
 	if versionString == "" {
@@ -104,6 +112,32 @@ func inspectRuntimeContract(snapshot core.WorkspaceSnapshot, status *core.Integr
 			Scope:    core.IssueScopeEnvironment,
 		})
 	}
+}
+
+func shouldWarnOnLegacyCodeLoader(profile *core.LocalRuntimeProfile) bool {
+	if profile == nil || !profile.CodeLoaderReady {
+		return false
+	}
+	if !profile.CodeLoader.ProbeSucceeded {
+		return false
+	}
+	return !profile.CodeLoader.SupportsGuideLocalStatusTable
+}
+
+func legacyCodeLoaderMessage(profile *core.LocalRuntimeProfile) string {
+	if profile == nil {
+		return "This project's Poetry environment has an older `code_loader` build that does not emit Concierge's expected local guide validator output."
+	}
+
+	version := strings.TrimSpace(profile.CodeLoader.Version)
+	if version == "" {
+		return "This project's Poetry environment has a `code_loader` build that does not emit Concierge's expected local guide validator output."
+	}
+
+	return fmt.Sprintf(
+		"This project's Poetry environment has `code_loader` %s, which does not emit Concierge's expected local guide validator output. Concierge can still use parser-based checks, but the staged local guide table is unavailable in this environment.",
+		version,
+	)
 }
 
 func parsePythonMajorMinor(versionString string) (int, int, bool) {

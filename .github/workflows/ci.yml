@@ -82,6 +82,9 @@ jobs:
             sleep 5
           done
 
+      - name: Generate fixture mutation cases
+        run: bash scripts/fixtures_mutate_cases.sh
+
       - name: Verify prepared fixtures
         run: bash scripts/fixtures_verify.sh
 

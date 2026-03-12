@@ -178,6 +178,52 @@ func TestAgentTranscriptPersistedAsEvidence(t *testing.T) {
 	assertEvidence(t, result.Evidence, "agent.transcript_path", transcriptPath)
 }
 
+func TestAgentExecutorSupportsIntegrationTestContractStep(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeTestFile(t, filepath.Join(repoRoot, "leap.yaml"))
+	writeTestFile(t, filepath.Join(repoRoot, "model", "model.h5"))
+	if err := os.WriteFile(filepath.Join(repoRoot, "leap.yaml"), []byte("entryFile: leap_integration.py\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "leap_integration.py"), []byte(strings.Join([]string{
+		"@tensorleap_input_encoder(name='image')",
+		"def image_input(sample_id, preprocess_response):",
+		"    return sample_id",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    return None",
+		"",
+		"@tensorleap_integration_test()",
+		"def integration_test(sample_id, preprocess_response):",
+		"    return None",
+	}, "\n")), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	runner := &fakeAgentRunner{
+		result: agent.AgentResult{Applied: true, Summary: "integration-test repaired"},
+	}
+	executor := NewAgentExecutor(runner)
+	step, ok := core.EnsureStepByID(core.EnsureStepIntegrationTestContract)
+	if !ok {
+		t.Fatalf("expected step %q to exist", core.EnsureStepIntegrationTestContract)
+	}
+
+	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		ID:         "snapshot-integration-test",
+		Repository: core.RepositoryState{Root: repoRoot},
+	}, step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if runner.lastTask.Objective == "" {
+		t.Fatal("expected non-empty task objective")
+	}
+	assertEvidencePresent(t, result.Evidence, "authoring.recommendation.integration_test.rationale")
+	assertEvidencePresent(t, result.Evidence, "agent.scope_policy.domain_sections")
+}
+
 func TestAgentExecutorRejectsRemovedOptionalStepsInV1(t *testing.T) {
 	executor := NewAgentExecutor(&fakeAgentRunner{})
 

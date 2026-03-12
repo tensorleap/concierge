@@ -139,12 +139,6 @@ func TestRunnerRunWritesTranscript(t *testing.T) {
 	if !strings.Contains(contents, "planning fix") {
 		t.Fatalf("expected message text in transcript, got: %q", contents)
 	}
-	if !strings.Contains(contents, "final answer") {
-		t.Fatalf("expected assistant text in transcript, got: %q", contents)
-	}
-	if !strings.Contains(contents, "stderr line") {
-		t.Fatalf("expected stderr in transcript, got: %q", contents)
-	}
 	if result.RawStreamPath == "" {
 		t.Fatal("expected raw stream path on successful streaming run")
 	}
@@ -152,8 +146,12 @@ func TestRunnerRunWritesTranscript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile failed for raw stream: %v", err)
 	}
-	if !strings.Contains(string(rawStream), "\"type\":\"assistant\"") {
-		t.Fatalf("expected assistant event in raw stream, got: %q", string(rawStream))
+	rawStreamContents := string(rawStream)
+	if !strings.Contains(rawStreamContents, "\"type\":\"assistant\"") {
+		t.Fatalf("expected assistant event in raw stream, got: %q", rawStreamContents)
+	}
+	if !strings.Contains(rawStreamContents, "\"type\":\"result\"") {
+		t.Fatalf("expected result event in raw stream, got: %q", rawStreamContents)
 	}
 }
 

@@ -316,6 +316,59 @@ func TestReporterShowsGuideValidationMilestoneAndRecommendation(t *testing.T) {
 	}
 }
 
+func TestReporterShowsIntegrationTestRepairGuidance(t *testing.T) {
+	var sink strings.Builder
+	reporter := NewStdoutReporter(&sink)
+
+	err := reporter.Report(context.Background(), core.IterationReport{
+		SnapshotID: "snapshot-ast",
+		Step:       core.EnsureStep{ID: core.EnsureStepComplete},
+		Checks: []core.VerifiedCheck{
+			{
+				StepID:   core.EnsureStepIntegrationTestContract,
+				Label:    core.HumanEnsureStepRequirementLabel(core.EnsureStepIntegrationTestContract),
+				Status:   core.CheckStatusFail,
+				Blocking: true,
+				Issues: []core.Issue{
+					{
+						Code:     core.IssueCodeIntegrationTestIllegalBodyLogic,
+						Message:  "integration_test should stay declarative",
+						Severity: core.SeverityError,
+						Scope:    core.IssueScopeIntegrationTest,
+					},
+				},
+			},
+		},
+		Validation: core.ValidationResult{
+			Passed: false,
+			Issues: []core.Issue{
+				{
+					Code:     core.IssueCodeIntegrationTestIllegalBodyLogic,
+					Message:  "integration_test should stay declarative",
+					Severity: core.SeverityError,
+					Scope:    core.IssueScopeIntegrationTest,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	output := sink.String()
+	expectedSnippets := []string{
+		"Missing integration step: Integration test wiring should be complete",
+		"integration_test should stay declarative",
+		"keep `@tensorleap_integration_test` thin and declarative",
+		"Do not read sample/preprocess data directly or add batch dimensions manually inside the integration test body.",
+	}
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(output, snippet) {
+			t.Fatalf("expected output to contain %q, got %q", snippet, output)
+		}
+	}
+}
+
 func TestReporterShowsPoetryInstallGuidanceWhenRuntimeNeedsManualSetup(t *testing.T) {
 	var sink strings.Builder
 	reporter := NewStdoutReporter(&sink)

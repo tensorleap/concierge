@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	validateadapter "github.com/tensorleap/concierge/internal/adapters/validate"
 	"github.com/tensorleap/concierge/internal/core"
 )
 
@@ -66,6 +67,47 @@ func TestInspectorNoIssuesWhenArtifactsExist(t *testing.T) {
 	}
 	if len(status.Issues) != 0 {
 		t.Fatalf("expected no issues, got %+v", status.Issues)
+	}
+}
+
+func TestInspectorIncludesIntegrationTestASTIssuesWhenRuntimeIsResolved(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", minimalIntegrationSource())
+
+	interpreterPath := filepath.Join(root, ".venv", "bin", "python")
+	if err := os.MkdirAll(filepath.Dir(interpreterPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	if err := os.WriteFile(interpreterPath, []byte("#!/usr/bin/env python3\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	inspector := &BaselineInspector{
+		integrationTestAnalyzer: fakeInspectIntegrationTestAnalyzer{
+			result: validateadapter.IntegrationTestASTResult{
+				Issues: []core.Issue{
+					{
+						Code:     core.IssueCodeIntegrationTestIllegalBodyLogic,
+						Message:  "integration_test should stay declarative",
+						Severity: core.SeverityError,
+						Scope:    core.IssueScopeIntegrationTest,
+					},
+				},
+			},
+		},
+	}
+	status, err := inspector.Inspect(context.Background(), core.WorkspaceSnapshot{
+		Repository: core.RepositoryState{Root: root},
+		RuntimeProfile: &core.LocalRuntimeProfile{
+			InterpreterPath: interpreterPath,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if !hasIssueCode(status.Issues, core.IssueCodeIntegrationTestIllegalBodyLogic) {
+		t.Fatalf("expected AST-derived integration-test issue, got %+v", status.Issues)
 	}
 }
 
@@ -332,6 +374,17 @@ func writeFixtureFile(t *testing.T, root, relativePath, contents string) {
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("WriteFile failed for %q: %v", path, err)
 	}
+}
+
+type fakeInspectIntegrationTestAnalyzer struct {
+	result validateadapter.IntegrationTestASTResult
+	err    error
+}
+
+func (f fakeInspectIntegrationTestAnalyzer) Analyze(ctx context.Context, snapshot core.WorkspaceSnapshot) (validateadapter.IntegrationTestASTResult, error) {
+	_ = ctx
+	_ = snapshot
+	return f.result, f.err
 }
 
 func issueCodes(issues []core.Issue) []core.IssueCode {

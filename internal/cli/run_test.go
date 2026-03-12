@@ -454,6 +454,32 @@ func TestStepApprovalPromptDoesNotExposeGTRecommendationDetails(t *testing.T) {
 	}
 }
 
+func TestStepApprovalPromptUsesThinIntegrationTestLanguage(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeFile(t, filepath.Join(repoRoot, "leap_integration.py"), strings.Join([]string{
+		"@tensorleap_integration_test()",
+		"def integration_test(sample_id, preprocess_response):",
+		"    return None",
+	}, "\n"))
+
+	step, ok := core.EnsureStepByID(core.EnsureStepIntegrationTestContract)
+	if !ok {
+		t.Fatal("expected integration-test ensure-step in catalog")
+	}
+
+	snapshot := core.WorkspaceSnapshot{
+		Repository: core.RepositoryState{Root: repoRoot},
+	}
+	status := core.IntegrationStatus{}
+	message := stepApprovalMessage(step, snapshot, true, status, true, false)
+	if !strings.Contains(message, "Current step: Integration test wiring is complete") {
+		t.Fatalf("expected integration-test heading, got message: %q", message)
+	}
+	if !strings.Contains(message, "must stay thin and only wire decorated calls plus model inference") {
+		t.Fatalf("expected thin-integration-test explanation, got message: %q", message)
+	}
+}
+
 func TestRunDeclineStepApprovalLeavesRepoUnchanged(t *testing.T) {
 	disableHarness(t)
 	repo := initRunTestRepo(t, false)

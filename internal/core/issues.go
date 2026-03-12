@@ -70,6 +70,8 @@ const (
 	IssueCodeIntegrationTestExecutionFailed         IssueCode = "integration_test_execution_failed"
 	IssueCodeIntegrationTestMissingRequiredCalls    IssueCode = "integration_test_missing_required_calls"
 	IssueCodeIntegrationTestCallsUnknownInterfaces  IssueCode = "integration_test_calls_unknown_interfaces"
+	IssueCodeIntegrationTestDirectDatasetAccess     IssueCode = "integration_test_direct_dataset_access"
+	IssueCodeIntegrationTestIllegalBodyLogic        IssueCode = "integration_test_illegal_body_logic"
 	IssueCodeIntegrationTestManualBatchManipulation IssueCode = "integration_test_manual_batch_manipulation"
 
 	// Preprocess contract.
@@ -191,6 +193,8 @@ var knownIssueCodes = []IssueCode{
 	IssueCodeIntegrationTestExecutionFailed,
 	IssueCodeIntegrationTestMissingRequiredCalls,
 	IssueCodeIntegrationTestCallsUnknownInterfaces,
+	IssueCodeIntegrationTestDirectDatasetAccess,
+	IssueCodeIntegrationTestIllegalBodyLogic,
 	IssueCodeIntegrationTestManualBatchManipulation,
 	IssueCodePreprocessFunctionMissing,
 	IssueCodePreprocessExecutionFailed,

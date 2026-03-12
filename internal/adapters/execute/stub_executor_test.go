@@ -2,8 +2,11 @@ package execute
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/tensorleap/concierge/internal/agent"
 	"github.com/tensorleap/concierge/internal/core"
 )
 
@@ -95,5 +98,60 @@ func TestDispatcherRequiresAgentForModelContract(t *testing.T) {
 	}
 	if got := core.KindOf(err); got != core.KindMissingDependency {
 		t.Fatalf("expected error kind %q, got %q (err=%v)", core.KindMissingDependency, got, err)
+	}
+}
+
+func TestDispatcherUsesFilesystemForMissingIntegrationTestDecorator(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeDispatcherFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), "def helper():\n    return None\n")
+
+	executor := NewDispatcherExecutorWithAgent(&AgentExecutor{runner: &fakeAgentRunner{
+		result: agent.AgentResult{Applied: true, Summary: "unexpected"},
+	}})
+	step, ok := core.EnsureStepByID(core.EnsureStepIntegrationTestContract)
+	if !ok {
+		t.Fatalf("expected step %q to be registered", core.EnsureStepIntegrationTestContract)
+	}
+
+	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		Repository: core.RepositoryState{Root: repoRoot},
+	}, step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	assertEvidence(t, result.Evidence, "executor.mode", "filesystem")
+}
+
+func TestDispatcherRequiresAgentForIntegrationTestRepair(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeDispatcherFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), `@tensorleap_integration_test()
+def integration_test(sample_id, preprocess_response):
+    return None
+`)
+
+	executor := NewDispatcherExecutor()
+	step, ok := core.EnsureStepByID(core.EnsureStepIntegrationTestContract)
+	if !ok {
+		t.Fatalf("expected step %q to be registered", core.EnsureStepIntegrationTestContract)
+	}
+
+	_, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		Repository: core.RepositoryState{Root: repoRoot},
+	}, step)
+	if err == nil {
+		t.Fatal("expected missing dependency error for integration-test repair without agent")
+	}
+	if got := core.KindOf(err); got != core.KindMissingDependency {
+		t.Fatalf("expected error kind %q, got %q (err=%v)", core.KindMissingDependency, got, err)
+	}
+}
+
+func writeDispatcherFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed for %q: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile failed for %q: %v", path, err)
 	}
 }

@@ -85,7 +85,17 @@ type LocalRuntimeProfile struct {
 	ConfirmationMode  string                    `json:"confirmationMode,omitempty"`
 	DependenciesReady bool                      `json:"dependenciesReady,omitempty"`
 	CodeLoaderReady   bool                      `json:"codeLoaderReady,omitempty"`
+	CodeLoader        CodeLoaderCapabilityState `json:"codeLoader,omitempty"`
 	Fingerprint       RuntimeProfileFingerprint `json:"fingerprint"`
+}
+
+// CodeLoaderCapabilityState captures the installed code-loader version and the
+// validator surfaces it exposes in the resolved Poetry environment.
+type CodeLoaderCapabilityState struct {
+	ProbeSucceeded                bool   `json:"probeSucceeded,omitempty"`
+	Version                       string `json:"version,omitempty"`
+	SupportsGuideLocalStatusTable bool   `json:"supportsGuideLocalStatusTable,omitempty"`
+	SupportsCheckDataset          bool   `json:"supportsCheckDataset,omitempty"`
 }
 
 // RuntimeProfileFingerprint captures the inputs that invalidate a persisted runtime profile.

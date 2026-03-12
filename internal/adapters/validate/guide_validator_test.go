@@ -152,6 +152,54 @@ func TestGuideValidatorMapsLeapLoaderPayloadFailures(t *testing.T) {
 	}
 }
 
+func TestGuideValidatorDoesNotAssumePreprocessFailureWhenLegacyCodeLoaderOmitsStatusTable(t *testing.T) {
+	repoRoot := buildGuideValidationRepo(t)
+	validator := &GuideValidator{
+		runtimeRunner: &fakeGuideRuntimeRunner{
+			results: []PythonRuntimeCommandResult{
+				{
+					Command: "poetry run python leap_integration.py",
+					Stdout:  "",
+				},
+				{
+					Command: "poetry run python -c ...",
+					Stdout: strings.Join([]string{
+						"{",
+						`  "available": true,`,
+						`  "isValid": false,`,
+						`  "payloads": [`,
+						`    {"name":"preprocess","passed":true},`,
+						`    {"name":"image","passed":false,"display":{"training":"ValueError: image path is missing"}}`,
+						`  ],`,
+						`  "setup": {"preprocess":{"trainingLength":4,"validationLength":2},"inputs":[{"name":"image","shape":[224,224,3],"channelDim":-1}]}`,
+						"}",
+					}, "\n"),
+				},
+			},
+			errs: []error{nil, nil},
+		},
+	}
+
+	snapshot := guideValidationSnapshot(t, repoRoot)
+	snapshot.RuntimeProfile.CodeLoader = core.CodeLoaderCapabilityState{
+		ProbeSucceeded:                true,
+		Version:                       "1.0.138",
+		SupportsGuideLocalStatusTable: false,
+		SupportsCheckDataset:          true,
+	}
+
+	result, err := validator.Run(context.Background(), snapshot)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if got := result.Summary.Recommendation.Stage; got != "remaining_inputs" {
+		t.Fatalf("expected remaining inputs recommendation, got %q", got)
+	}
+	if result.Summary.LocalStatusTableSupported {
+		t.Fatalf("did not expect local status table support, got %+v", result.Summary)
+	}
+}
+
 type fakeGuideRuntimeRunner struct {
 	results []PythonRuntimeCommandResult
 	errs    []error

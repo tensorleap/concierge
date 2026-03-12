@@ -255,6 +255,47 @@ func TestInspectorDetectsMissingLeapCLI(t *testing.T) {
 	}
 }
 
+func TestInspectorWarnsWhenCodeLoaderLacksGuideLocalStatusTable(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", minimalIntegrationSource())
+	writeFixtureFile(t, root, "model/model.h5", "binary\n")
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), core.WorkspaceSnapshot{
+		Repository: core.RepositoryState{Root: root},
+		Runtime: core.RuntimeState{
+			ProbeRan:         true,
+			PyProjectPresent: true,
+			SupportedProject: true,
+			PoetryFound:      true,
+			PoetryExecutable: "poetry",
+			PoetryVersion:    "Poetry 2.0.0",
+		},
+		RuntimeProfile: &core.LocalRuntimeProfile{
+			Kind:              "poetry",
+			PoetryExecutable:  "poetry",
+			PoetryVersion:     "Poetry 2.0.0",
+			InterpreterPath:   "/repo/.venv/bin/python",
+			PythonVersion:     "Python 3.10.16",
+			DependenciesReady: true,
+			CodeLoaderReady:   true,
+			CodeLoader: core.CodeLoaderCapabilityState{
+				ProbeSucceeded:                true,
+				Version:                       "1.0.138",
+				SupportsGuideLocalStatusTable: false,
+				SupportsCheckDataset:          true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if !hasIssueCode(status.Issues, core.IssueCodeCodeLoaderLegacy) {
+		t.Fatalf("expected %q issue, got %+v", core.IssueCodeCodeLoaderLegacy, status.Issues)
+	}
+}
+
 func TestInspectorDetectsServerInfoFailures(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")

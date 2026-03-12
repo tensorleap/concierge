@@ -22,6 +22,7 @@ const (
 	IssueCodeRuntimeProfileDrifted       IssueCode = "runtime_profile_drifted"
 	IssueCodePoetryCheckFailed           IssueCode = "poetry_check_failed"
 	IssueCodeCodeLoaderMissing           IssueCode = "code_loader_missing"
+	IssueCodeCodeLoaderLegacy            IssueCode = "code_loader_legacy"
 	IssueCodePythonVersionUnsupported    IssueCode = "python_version_unsupported"
 	IssueCodeRequirementsMissing         IssueCode = "requirements_missing"
 	IssueCodeRequirementsParseFailed     IssueCode = "requirements_parse_failed"
@@ -153,6 +154,7 @@ var knownIssueCodes = []IssueCode{
 	IssueCodeRuntimeProfileDrifted,
 	IssueCodePoetryCheckFailed,
 	IssueCodeCodeLoaderMissing,
+	IssueCodeCodeLoaderLegacy,
 	IssueCodePythonVersionUnsupported,
 	IssueCodeRequirementsMissing,
 	IssueCodeRequirementsParseFailed,

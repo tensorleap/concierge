@@ -202,6 +202,10 @@ func (v *GuideValidator) Run(ctx context.Context, snapshot core.WorkspaceSnapsho
 
 	summary := core.GuideValidationSummary{}
 	evidence := make([]core.EvidenceItem, 0, 8)
+	if snapshot.RuntimeProfile != nil {
+		summary.CodeLoaderVersion = strings.TrimSpace(snapshot.RuntimeProfile.CodeLoader.Version)
+		summary.LocalStatusTableSupported = snapshot.RuntimeProfile.CodeLoader.SupportsGuideLocalStatusTable
+	}
 
 	repoRoot := strings.TrimSpace(snapshot.Repository.Root)
 	skipReason, entryName, err := guideValidationSkipReason(snapshot)
@@ -506,48 +510,57 @@ func deriveGuideRecommendation(summary core.GuideValidationSummary) core.GuideRe
 		return core.GuideRecommendation{}
 	}
 
-	preprocessStatus := guideStatus(summary.Local, "tensorleap_preprocess")
-	inputStatus := guideStatus(summary.Local, "tensorleap_input_encoder")
-	loadModelStatus := guideStatus(summary.Local, "tensorleap_load_model")
-	integrationStatus := guideStatus(summary.Local, "tensorleap_integration_test")
-	gtStatus := guideStatus(summary.Local, "tensorleap_gt_encoder")
+	hasLocalStatusTable := len(summary.Local.StatusRows) > 0 || summary.LocalStatusTableSupported
 
-	if preprocessStatus != "pass" || payloadFailed(summary.Parser, "preprocess") {
+	preprocessStatus := "unknown"
+	inputStatus := "unknown"
+	loadModelStatus := "unknown"
+	integrationStatus := "unknown"
+	gtStatus := "unknown"
+	if hasLocalStatusTable {
+		preprocessStatus = guideStatus(summary.Local, "tensorleap_preprocess")
+		inputStatus = guideStatus(summary.Local, "tensorleap_input_encoder")
+		loadModelStatus = guideStatus(summary.Local, "tensorleap_load_model")
+		integrationStatus = guideStatus(summary.Local, "tensorleap_integration_test")
+		gtStatus = guideStatus(summary.Local, "tensorleap_gt_encoder")
+	}
+
+	if payloadFailed(summary.Parser, "preprocess") || (hasLocalStatusTable && preprocessStatus != "pass") {
 		return core.GuideRecommendation{
 			Stage:   "preprocess",
 			Message: "Next recommended interface: make preprocess run directly and return training and validation subsets.",
 		}
 	}
 
-	if inputStatus != "pass" && loadModelStatus != "pass" {
+	if hasLocalStatusTable && inputStatus != "pass" && loadModelStatus != "pass" {
 		return core.GuideRecommendation{
 			Stage:   "minimum_inputs",
 			Message: "Next recommended interface: add the minimum required input encoders so a real sample can reach the model.",
 		}
 	}
 
-	if loadModelStatus != "pass" {
+	if hasLocalStatusTable && loadModelStatus != "pass" {
 		return core.GuideRecommendation{
 			Stage:   "load_model",
 			Message: "Next recommended interface: add @tensorleap_load_model after the minimum input path runs locally.",
 		}
 	}
 
-	if integrationStatus != "pass" || summary.Local.MappingFailure || parserHasGeneralFailure(summary.Parser) {
+	if summary.Local.MappingFailure || parserHasGeneralFailure(summary.Parser) || (hasLocalStatusTable && integrationStatus != "pass") {
 		return core.GuideRecommendation{
 			Stage:   "thin_integration_test",
 			Message: "Next recommended interface: add or repair a thin @tensorleap_integration_test that only calls Tensorleap decorators.",
 		}
 	}
 
-	if inputStatus != "pass" || payloadFailedByKinds(summary.Parser, guideHandlerInput) {
+	if payloadFailedByKinds(summary.Parser, guideHandlerInput) || (hasLocalStatusTable && inputStatus != "pass") {
 		return core.GuideRecommendation{
 			Stage:   "remaining_inputs",
 			Message: "Next recommended interface: add the remaining required input encoders and rerun the thin integration test.",
 		}
 	}
 
-	if gtStatus != "pass" || payloadFailedByKinds(summary.Parser, guideHandlerGT) {
+	if payloadFailedByKinds(summary.Parser, guideHandlerGT) || (hasLocalStatusTable && gtStatus != "pass") {
 		return core.GuideRecommendation{
 			Stage:   "ground_truth",
 			Message: "Next recommended interface: add the required GT encoders and rerun the integration test.",

@@ -416,6 +416,12 @@ func stepGuidanceLines(stepID core.EnsureStepID, issues []core.Issue) []string {
 				"Next step: add or install `code-loader` in the resolved Poetry environment, then rerun `concierge run`.",
 			}
 		}
+		if hasIssueCode(issues, core.IssueCodeCodeLoaderLegacy) {
+			return []string{
+				"Next step: review the pinned `code-loader` version in this Poetry project.",
+				"If you want the newer staged local guide validator output, upgrade `code-loader`, then rerun `concierge run`.",
+			}
+		}
 		return []string{
 			"Next step: verify `poetry env info --executable`, `poetry check`, and `poetry run python --version`, then rerun `concierge run`.",
 		}
@@ -486,6 +492,9 @@ func guideSummaryLines(report core.IterationReport) []string {
 	}
 
 	lines := make([]string, 0, 4)
+	if summary.CodeLoaderVersion != "" && !summary.LocalStatusTableSupported {
+		lines = append(lines, fmt.Sprintf("Legacy local validator mode: installed `code-loader` %s does not emit the newer staged status table. Concierge is relying on parser-based checks and direct-run errors only.", summary.CodeLoaderVersion))
+	}
 	if summary.Local.Successful {
 		lines = append(lines, "First-sample milestone: `Successful!` was reached. This only proves the first-sample path, not the whole dataset.")
 	} else if summary.Parser.Attempted && summary.Parser.Available && summary.Parser.IsValid {

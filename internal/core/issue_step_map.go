@@ -18,6 +18,7 @@ var preferredEnsureStepByIssueCode = map[IssueCode]EnsureStepID{
 	IssueCodeRuntimeProfileDrifted:       EnsureStepPythonRuntime,
 	IssueCodePoetryCheckFailed:           EnsureStepPythonRuntime,
 	IssueCodeCodeLoaderMissing:           EnsureStepPythonRuntime,
+	IssueCodeCodeLoaderLegacy:            EnsureStepPythonRuntime,
 	IssueCodePythonVersionUnsupported:    EnsureStepPythonRuntime,
 	IssueCodeRequirementsMissing:         EnsureStepPythonRuntime,
 	IssueCodeRequirementsParseFailed:     EnsureStepPythonRuntime,

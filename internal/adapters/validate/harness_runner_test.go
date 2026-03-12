@@ -46,17 +46,21 @@ func TestHarnessRunnerSuccessPath(t *testing.T) {
 			if dir != root {
 				t.Fatalf("expected run dir %q, got %q", root, dir)
 			}
-			return []byte("{\"event\":\"validation\",\"status\":\"failed\",\"message\":\"bad\"}\n"), nil, nil
+			return []byte("{\"event\":\"runtime_failed\",\"status\":\"failed\",\"message\":\"bad\"}\n"), nil, nil
 		},
 	}
 
 	result, err := runner.Run(context.Background(), core.WorkspaceSnapshot{
-		Repository:     core.RepositoryState{Root: root},
-		RuntimeProfile: &core.LocalRuntimeProfile{InterpreterPath: "/tmp/venv/bin/python"},
+		Repository: core.RepositoryState{Root: root},
+		RuntimeProfile: &core.LocalRuntimeProfile{
+			InterpreterPath: "/tmp/profile/bin/python",
+			PoetryVersion:   "Poetry 2.1.0",
+			PythonVersion:   "Python 3.12.1",
+		},
 		Runtime: core.RuntimeState{
-			PoetryVersion:         "Poetry 2.0.0",
-			ResolvedInterpreter:   "/tmp/venv/bin/python",
-			ResolvedPythonVersion: "Python 3.11.8",
+			PoetryVersion:         "Poetry runtime fallback",
+			ResolvedInterpreter:   "/tmp/runtime/bin/python",
+			ResolvedPythonVersion: "Python runtime fallback",
 		},
 	})
 	if err != nil {
@@ -68,11 +72,42 @@ func TestHarnessRunnerSuccessPath(t *testing.T) {
 	if len(result.Events) != 1 {
 		t.Fatalf("expected one parsed event, got %d", len(result.Events))
 	}
-	if len(result.Issues) != 1 {
-		t.Fatalf("expected one issue, got %d", len(result.Issues))
+	if !hasIssueCode(result.Issues, core.IssueCodeHarnessValidationFailed) {
+		t.Fatalf("expected issue code %q in %+v", core.IssueCodeHarnessValidationFailed, result.Issues)
 	}
-	if result.Issues[0].Code != core.IssueCodeHarnessValidationFailed {
-		t.Fatalf("expected issue code %q, got %q", core.IssueCodeHarnessValidationFailed, result.Issues[0].Code)
+	if got := evidenceValue(result.Evidence, "runtime.interpreter_path"); got != "/tmp/profile/bin/python" {
+		t.Fatalf("expected runtime profile interpreter path, got %q", got)
+	}
+	if got := evidenceValue(result.Evidence, "runtime.python_version"); got != "Python 3.12.1" {
+		t.Fatalf("expected runtime profile python version, got %q", got)
+	}
+	if got := evidenceValue(result.Evidence, "runtime.poetry_version"); got != "Poetry 2.1.0" {
+		t.Fatalf("expected runtime profile poetry version, got %q", got)
+	}
+}
+
+func TestHarnessRunnerDefaultsToEnabledWhenUnset(t *testing.T) {
+	root := t.TempDir()
+	runner := NewHarnessRunner()
+	runner.scriptPath = writeHarnessStubScript(t)
+	runner.getEnv = func(key string) string {
+		return ""
+	}
+	runner.runtimeRunner = &PythonRuntimeRunner{
+		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
+			return []byte("{\"event\":\"summary\",\"status\":\"ok\",\"message\":\"done\"}\n"), nil, nil
+		},
+	}
+
+	result, err := runner.Run(context.Background(), core.WorkspaceSnapshot{
+		Repository:     core.RepositoryState{Root: root},
+		RuntimeProfile: &core.LocalRuntimeProfile{InterpreterPath: "/tmp/venv/bin/python"},
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !result.Enabled {
+		t.Fatal("expected harness to default to enabled when env var is unset")
 	}
 }
 
@@ -111,4 +146,13 @@ func writeHarnessStubScript(t *testing.T) string {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 	return path
+}
+
+func evidenceValue(evidence []core.EvidenceItem, name string) string {
+	for _, item := range evidence {
+		if item.Name == name {
+			return item.Value
+		}
+	}
+	return ""
 }

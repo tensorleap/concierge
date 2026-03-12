@@ -81,8 +81,8 @@ func TestValidatorIngestsHarnessIssuesAndHeuristics(t *testing.T) {
 		result: HarnessRunResult{
 			Enabled: true,
 			Events: []HarnessEvent{
-				{Event: "input_fingerprint", Name: "image", Fingerprint: "same"},
-				{Event: "input_fingerprint", Name: "image", Fingerprint: "same"},
+				{Event: "handler_result", HandlerKind: "input", Symbol: "image", Fingerprint: "same"},
+				{Event: "handler_result", HandlerKind: "input", Symbol: "image", Fingerprint: "same"},
 			},
 			Issues: []core.Issue{
 				{
@@ -109,6 +109,37 @@ func TestValidatorIngestsHarnessIssuesAndHeuristics(t *testing.T) {
 	}
 	if !containsIssueCode(validation.Issues, core.IssueCodeSuspiciousConstantInputs) {
 		t.Fatalf("expected heuristic issue in %+v", validation.Issues)
+	}
+}
+
+func TestValidatorSkipsHarnessUntilGuideFirstSamplePasses(t *testing.T) {
+	validator := newBaselineValidatorWithGuideHarness(fakeGuideRunner{
+		result: GuideValidationResult{
+			Summary: core.GuideValidationSummary{},
+		},
+	}, fakeHarnessRunner{
+		result: HarnessRunResult{
+			Enabled: true,
+			Issues: []core.Issue{{
+				Code:     core.IssueCodeHarnessValidationFailed,
+				Message:  "should not run",
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopeValidation,
+			}},
+		},
+	})
+
+	validation, err := validator.Validate(context.Background(), core.WorkspaceSnapshot{}, core.ExecutionResult{
+		Step: core.EnsureStep{ID: core.EnsureStepHarnessValidation},
+	})
+	if err != nil {
+		t.Fatalf("Validate returned error: %v", err)
+	}
+	if containsIssueCode(validation.Issues, core.IssueCodeHarnessValidationFailed) {
+		t.Fatalf("did not expect harness issue when guide gate is not ready: %+v", validation.Issues)
+	}
+	if !hasEvidenceName(validation.Evidence, "harness.skip_reason") {
+		t.Fatalf("expected harness skip evidence in %+v", validation.Evidence)
 	}
 }
 

@@ -34,7 +34,7 @@ The remaining work starts from that baseline.
 - [x] `ENV4` `ACCEPTED` - Enforce runtime gating in planner/UX and route all local Python execution through the resolved Poetry boundary.
 - [x] `GUIDE1` `ACCEPTED` - Make `leap_integration.py` the canonical integration layout for fresh repos.
 - [x] `GUIDE2` `ACCEPTED` - Implement guide-native progressive validator orchestration and reporting.
-- [ ] `GUIDE3` `PENDING` - Enforce thin `integration_test` rules and targeted authoring for integration-test wiring failures.
+- [x] `GUIDE3` `ACCEPTED` - Enforce thin `integration_test` rules and targeted authoring for integration-test wiring failures.
 - [ ] `VAL1` `PENDING` - Replace the stub harness with multi-sample runtime validation plus issue mapping.
 - [ ] `FIX1` `PENDING` - Separate fixture bootstrap from product runtime and generate guide-native mutation cases.
 - [ ] `FIX2` `PENDING` - Add capability and composite fixture E2E coverage, including agent-context quality assertions.

@@ -22,6 +22,7 @@ const (
 	IssueCodeRuntimeProfileDrifted       IssueCode = "runtime_profile_drifted"
 	IssueCodePoetryCheckFailed           IssueCode = "poetry_check_failed"
 	IssueCodeCodeLoaderMissing           IssueCode = "code_loader_missing"
+	IssueCodeCodeLoaderLegacy            IssueCode = "code_loader_legacy"
 	IssueCodePythonVersionUnsupported    IssueCode = "python_version_unsupported"
 	IssueCodeRequirementsMissing         IssueCode = "requirements_missing"
 	IssueCodeRequirementsParseFailed     IssueCode = "requirements_parse_failed"
@@ -70,6 +71,8 @@ const (
 	IssueCodeIntegrationTestExecutionFailed         IssueCode = "integration_test_execution_failed"
 	IssueCodeIntegrationTestMissingRequiredCalls    IssueCode = "integration_test_missing_required_calls"
 	IssueCodeIntegrationTestCallsUnknownInterfaces  IssueCode = "integration_test_calls_unknown_interfaces"
+	IssueCodeIntegrationTestDirectDatasetAccess     IssueCode = "integration_test_direct_dataset_access"
+	IssueCodeIntegrationTestIllegalBodyLogic        IssueCode = "integration_test_illegal_body_logic"
 	IssueCodeIntegrationTestManualBatchManipulation IssueCode = "integration_test_manual_batch_manipulation"
 
 	// Preprocess contract.
@@ -151,6 +154,7 @@ var knownIssueCodes = []IssueCode{
 	IssueCodeRuntimeProfileDrifted,
 	IssueCodePoetryCheckFailed,
 	IssueCodeCodeLoaderMissing,
+	IssueCodeCodeLoaderLegacy,
 	IssueCodePythonVersionUnsupported,
 	IssueCodeRequirementsMissing,
 	IssueCodeRequirementsParseFailed,
@@ -191,6 +195,8 @@ var knownIssueCodes = []IssueCode{
 	IssueCodeIntegrationTestExecutionFailed,
 	IssueCodeIntegrationTestMissingRequiredCalls,
 	IssueCodeIntegrationTestCallsUnknownInterfaces,
+	IssueCodeIntegrationTestDirectDatasetAccess,
+	IssueCodeIntegrationTestIllegalBodyLogic,
 	IssueCodeIntegrationTestManualBatchManipulation,
 	IssueCodePreprocessFunctionMissing,
 	IssueCodePreprocessExecutionFailed,

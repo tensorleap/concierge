@@ -3,6 +3,7 @@ package inspect
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,52 @@ import (
 type poetryRuntimeCommandRunner func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error)
 
 const poetryRuntimeProbeTimeout = 3 * time.Second
+
+const codeLoaderCapabilityProbeScript = `
+import json
+
+result = {
+    "probeSucceeded": True,
+    "version": "",
+    "supportsGuideLocalStatusTable": False,
+    "supportsCheckDataset": False,
+}
+
+try:
+    try:
+        from importlib import metadata as importlib_metadata
+    except ImportError:
+        import importlib_metadata  # type: ignore
+    for package_name in ("code-loader", "code_loader"):
+        try:
+            result["version"] = importlib_metadata.version(package_name)
+            break
+        except Exception:
+            continue
+except Exception:
+    pass
+
+try:
+    from code_loader import LeapLoader
+    result["supportsCheckDataset"] = hasattr(LeapLoader, "check_dataset")
+except Exception:
+    result["probeSucceeded"] = False
+
+try:
+    from code_loader.inner_leap_binder import leapbinder_decorators as decorators
+    result["supportsGuideLocalStatusTable"] = hasattr(decorators, "tensorleap_status_table")
+except Exception:
+    result["probeSucceeded"] = False
+
+print(json.dumps(result))
+`
+
+type codeLoaderCapabilityProbe struct {
+	ProbeSucceeded                bool   `json:"probeSucceeded"`
+	Version                       string `json:"version"`
+	SupportsGuideLocalStatusTable bool   `json:"supportsGuideLocalStatusTable"`
+	SupportsCheckDataset          bool   `json:"supportsCheckDataset"`
+}
 
 // PoetryRuntimeResolution captures a resolved runtime profile plus any confirmation-worthy signals.
 type PoetryRuntimeResolution struct {
@@ -85,6 +132,9 @@ func (r *PoetryRuntimeResolver) Resolve(
 		"-c",
 		"import code_loader",
 	)
+	if profile.CodeLoaderReady {
+		profile.CodeLoader = probeCodeLoaderCapabilities(ctx, r.runCommand, repoRoot)
+	}
 
 	return PoetryRuntimeResolution{
 		Profile:           profile,
@@ -172,6 +222,38 @@ func runPoetryCommandText(
 		return "", err
 	}
 	return strings.TrimSpace(text), nil
+}
+
+func probeCodeLoaderCapabilities(
+	ctx context.Context,
+	runner poetryRuntimeCommandRunner,
+	dir string,
+) core.CodeLoaderCapabilityState {
+	output, err := runPoetryCommandText(
+		ctx,
+		runner,
+		dir,
+		"poetry",
+		"run",
+		"python",
+		"-c",
+		codeLoaderCapabilityProbeScript,
+	)
+	if err != nil || strings.TrimSpace(output) == "" {
+		return core.CodeLoaderCapabilityState{}
+	}
+
+	var probe codeLoaderCapabilityProbe
+	if err := json.Unmarshal([]byte(output), &probe); err != nil {
+		return core.CodeLoaderCapabilityState{}
+	}
+
+	return core.CodeLoaderCapabilityState{
+		ProbeSucceeded:                probe.ProbeSucceeded,
+		Version:                       strings.TrimSpace(probe.Version),
+		SupportsGuideLocalStatusTable: probe.SupportsGuideLocalStatusTable,
+		SupportsCheckDataset:          probe.SupportsCheckDataset,
+	}
 }
 
 func runPoetryReadinessCheck(

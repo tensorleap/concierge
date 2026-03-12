@@ -19,11 +19,13 @@ const (
 
 // GuideValidationSummary captures guide-native validation milestones for one iteration.
 type GuideValidationSummary struct {
-	Skipped        bool                  `json:"skipped,omitempty"`
-	SkipReason     string                `json:"skipReason,omitempty"`
-	Local          GuideLocalRunSummary  `json:"local,omitempty"`
-	Parser         GuideParserRunSummary `json:"parser,omitempty"`
-	Recommendation GuideRecommendation   `json:"recommendation,omitempty"`
+	Skipped                   bool                  `json:"skipped,omitempty"`
+	SkipReason                string                `json:"skipReason,omitempty"`
+	CodeLoaderVersion         string                `json:"codeLoaderVersion,omitempty"`
+	LocalStatusTableSupported bool                  `json:"localStatusTableSupported,omitempty"`
+	Local                     GuideLocalRunSummary  `json:"local,omitempty"`
+	Parser                    GuideParserRunSummary `json:"parser,omitempty"`
+	Recommendation            GuideRecommendation   `json:"recommendation,omitempty"`
 }
 
 // GuideLocalRunSummary captures author-facing local validator signals from running leap_integration.py directly.

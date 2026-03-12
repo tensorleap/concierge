@@ -316,6 +316,59 @@ func TestReporterShowsGuideValidationMilestoneAndRecommendation(t *testing.T) {
 	}
 }
 
+func TestReporterShowsIntegrationTestRepairGuidance(t *testing.T) {
+	var sink strings.Builder
+	reporter := NewStdoutReporter(&sink)
+
+	err := reporter.Report(context.Background(), core.IterationReport{
+		SnapshotID: "snapshot-ast",
+		Step:       core.EnsureStep{ID: core.EnsureStepComplete},
+		Checks: []core.VerifiedCheck{
+			{
+				StepID:   core.EnsureStepIntegrationTestContract,
+				Label:    core.HumanEnsureStepRequirementLabel(core.EnsureStepIntegrationTestContract),
+				Status:   core.CheckStatusFail,
+				Blocking: true,
+				Issues: []core.Issue{
+					{
+						Code:     core.IssueCodeIntegrationTestIllegalBodyLogic,
+						Message:  "integration_test should stay declarative",
+						Severity: core.SeverityError,
+						Scope:    core.IssueScopeIntegrationTest,
+					},
+				},
+			},
+		},
+		Validation: core.ValidationResult{
+			Passed: false,
+			Issues: []core.Issue{
+				{
+					Code:     core.IssueCodeIntegrationTestIllegalBodyLogic,
+					Message:  "integration_test should stay declarative",
+					Severity: core.SeverityError,
+					Scope:    core.IssueScopeIntegrationTest,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	output := sink.String()
+	expectedSnippets := []string{
+		"Missing integration step: Integration test wiring should be complete",
+		"integration_test should stay declarative",
+		"keep `@tensorleap_integration_test` thin and declarative",
+		"Do not read sample/preprocess data directly or add batch dimensions manually inside the integration test body.",
+	}
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(output, snippet) {
+			t.Fatalf("expected output to contain %q, got %q", snippet, output)
+		}
+	}
+}
+
 func TestReporterShowsPoetryInstallGuidanceWhenRuntimeNeedsManualSetup(t *testing.T) {
 	var sink strings.Builder
 	reporter := NewStdoutReporter(&sink)
@@ -364,6 +417,111 @@ func TestReporterShowsPoetryInstallGuidanceWhenRuntimeNeedsManualSetup(t *testin
 	}
 	if strings.Contains(output, "I can help with this step interactively and will ask before making any changes.") {
 		t.Fatalf("did not expect interactive-help claim for self-service runtime setup, got %q", output)
+	}
+}
+
+func TestReporterShowsLegacyCodeLoaderGuidance(t *testing.T) {
+	var sink strings.Builder
+	reporter := NewStdoutReporter(&sink)
+
+	err := reporter.Report(context.Background(), core.IterationReport{
+		SnapshotID: "snapshot-123",
+		Step:       core.EnsureStep{ID: core.EnsureStepPythonRuntime},
+		Evidence: []core.EvidenceItem{
+			{Name: "executor.mode", Value: "self_service"},
+		},
+		Checks: []core.VerifiedCheck{
+			{
+				StepID: core.EnsureStepRepositoryContext,
+				Label:  core.HumanEnsureStepLabel(core.EnsureStepRepositoryContext),
+				Status: core.CheckStatusPass,
+			},
+			{
+				StepID: core.EnsureStepPythonRuntime,
+				Label:  core.HumanEnsureStepLabel(core.EnsureStepPythonRuntime),
+				Status: core.CheckStatusWarning,
+				Issues: []core.Issue{
+					{
+						Code:     core.IssueCodeCodeLoaderLegacy,
+						Message:  "This project's Poetry environment has `code_loader` 1.0.138, which does not emit Concierge's expected local guide validator output.",
+						Severity: core.SeverityWarning,
+						Scope:    core.IssueScopeEnvironment,
+					},
+				},
+			},
+		},
+		Validation: core.ValidationResult{Passed: true},
+	})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	output := sink.String()
+	expectedSnippets := []string{
+		"Warning: Poetry environment should be available and have the required packages",
+		"code_loader` 1.0.138",
+		"I cannot apply an automated fix for this check in the current run.",
+		"Next step: review the pinned `code-loader` version in this Poetry project.",
+		"If you want the newer staged local guide validator output, upgrade `code-loader`, then rerun `concierge run`.",
+	}
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(output, snippet) {
+			t.Fatalf("expected output to contain %q, got %q", snippet, output)
+		}
+	}
+}
+
+func TestReporterShowsGuideValidationLegacyLocalMode(t *testing.T) {
+	var sink strings.Builder
+	reporter := NewStdoutReporter(&sink)
+
+	summary := core.GuideValidationSummary{
+		CodeLoaderVersion:         "1.0.138",
+		LocalStatusTableSupported: false,
+		Parser: core.GuideParserRunSummary{
+			Attempted: true,
+			Available: true,
+			IsValid:   true,
+		},
+		Recommendation: core.GuideRecommendation{
+			Stage:   "wider_sample_coverage",
+			Message: "Next recommended milestone: expand from first-sample success to a few training and validation samples.",
+		},
+	}
+	rawSummary, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+
+	err = reporter.Report(context.Background(), core.IterationReport{
+		SnapshotID: "snapshot-123",
+		Step:       core.EnsureStep{ID: core.EnsureStepComplete},
+		Checks: []core.VerifiedCheck{
+			{
+				StepID: core.EnsureStepRepositoryContext,
+				Label:  core.HumanEnsureStepLabel(core.EnsureStepRepositoryContext),
+				Status: core.CheckStatusPass,
+			},
+		},
+		Evidence: []core.EvidenceItem{
+			{Name: core.GuideEvidenceSummary, Value: string(rawSummary)},
+		},
+		Validation: core.ValidationResult{Passed: true},
+	})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	output := sink.String()
+	expectedSnippets := []string{
+		"Guide validation:",
+		"Legacy local validator mode: installed `code-loader` 1.0.138 does not emit the newer staged status table.",
+		"First-sample milestone: `LeapLoader.check_dataset()` returned a valid first-sample parse.",
+	}
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(output, snippet) {
+			t.Fatalf("expected output to contain %q, got %q", snippet, output)
+		}
 	}
 }
 

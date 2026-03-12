@@ -416,8 +416,33 @@ func stepGuidanceLines(stepID core.EnsureStepID, issues []core.Issue) []string {
 				"Next step: add or install `code-loader` in the resolved Poetry environment, then rerun `concierge run`.",
 			}
 		}
+		if hasIssueCode(issues, core.IssueCodeCodeLoaderLegacy) {
+			return []string{
+				"Next step: review the pinned `code-loader` version in this Poetry project.",
+				"If you want the newer staged local guide validator output, upgrade `code-loader`, then rerun `concierge run`.",
+			}
+		}
 		return []string{
 			"Next step: verify `poetry env info --executable`, `poetry check`, and `poetry run python --version`, then rerun `concierge run`.",
+		}
+	case core.EnsureStepIntegrationTestContract:
+		if hasIssueCode(issues, core.IssueCodeIntegrationTestMissingRequiredCalls) {
+			return []string{
+				"Next step: wire the missing decorated input/load-model/ground-truth calls into `@tensorleap_integration_test`, then rerun `concierge run`.",
+				"Keep the integration test limited to calling Tensorleap decorators plus the model inference path.",
+			}
+		}
+		if hasIssueCode(issues, core.IssueCodeIntegrationTestCallsUnknownInterfaces) ||
+			hasIssueCode(issues, core.IssueCodeIntegrationTestDirectDatasetAccess) ||
+			hasIssueCode(issues, core.IssueCodeIntegrationTestIllegalBodyLogic) ||
+			hasIssueCode(issues, core.IssueCodeIntegrationTestManualBatchManipulation) {
+			return []string{
+				"Next step: keep `@tensorleap_integration_test` thin and declarative by moving Python logic into decorated interfaces, then rerun `concierge run`.",
+				"Do not read sample/preprocess data directly or add batch dimensions manually inside the integration test body.",
+			}
+		}
+		return []string{
+			"Next step: repair `@tensorleap_integration_test` wiring so only Tensorleap decorators and model inference remain in the body, then rerun `concierge run`.",
 		}
 	default:
 		return []string{
@@ -467,6 +492,9 @@ func guideSummaryLines(report core.IterationReport) []string {
 	}
 
 	lines := make([]string, 0, 4)
+	if summary.CodeLoaderVersion != "" && !summary.LocalStatusTableSupported {
+		lines = append(lines, fmt.Sprintf("Legacy local validator mode: installed `code-loader` %s does not emit the newer staged status table. Concierge is relying on parser-based checks and direct-run errors only.", summary.CodeLoaderVersion))
+	}
 	if summary.Local.Successful {
 		lines = append(lines, "First-sample milestone: `Successful!` was reached. This only proves the first-sample path, not the whole dataset.")
 	} else if summary.Parser.Attempted && summary.Parser.Available && summary.Parser.IsValid {

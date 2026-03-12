@@ -155,6 +155,10 @@ type guideRuntimeRunner interface {
 	RunPython(ctx context.Context, snapshot core.WorkspaceSnapshot, args ...string) (PythonRuntimeCommandResult, error)
 }
 
+type integrationTestASTInvoker interface {
+	Analyze(ctx context.Context, snapshot core.WorkspaceSnapshot) (IntegrationTestASTResult, error)
+}
+
 type guideHandlerKind string
 
 const (
@@ -166,6 +170,7 @@ const (
 // GuideValidator runs the guide-native local validator and parser through the resolved Poetry runtime.
 type GuideValidator struct {
 	runtimeRunner guideRuntimeRunner
+	astAnalyzer   integrationTestASTInvoker
 }
 
 // GuideValidationResult captures guide-native issues, evidence, and summary data.
@@ -177,7 +182,10 @@ type GuideValidationResult struct {
 
 // NewGuideValidator creates a guide validator backed by the shared Poetry runtime runner.
 func NewGuideValidator() *GuideValidator {
-	return &GuideValidator{runtimeRunner: NewPythonRuntimeRunner()}
+	return &GuideValidator{
+		runtimeRunner: NewPythonRuntimeRunner(),
+		astAnalyzer:   NewIntegrationTestASTAnalyzer(),
+	}
 }
 
 // Run executes guide-native validation without mutating repository state.
@@ -188,9 +196,16 @@ func (v *GuideValidator) Run(ctx context.Context, snapshot core.WorkspaceSnapsho
 	if v.runtimeRunner == nil {
 		v.runtimeRunner = NewPythonRuntimeRunner()
 	}
+	if v.astAnalyzer == nil {
+		v.astAnalyzer = NewIntegrationTestASTAnalyzer()
+	}
 
 	summary := core.GuideValidationSummary{}
 	evidence := make([]core.EvidenceItem, 0, 8)
+	if snapshot.RuntimeProfile != nil {
+		summary.CodeLoaderVersion = strings.TrimSpace(snapshot.RuntimeProfile.CodeLoader.Version)
+		summary.LocalStatusTableSupported = snapshot.RuntimeProfile.CodeLoader.SupportsGuideLocalStatusTable
+	}
 
 	repoRoot := strings.TrimSpace(snapshot.Repository.Root)
 	skipReason, entryName, err := guideValidationSkipReason(snapshot)
@@ -226,7 +241,13 @@ func (v *GuideValidator) Run(ctx context.Context, snapshot core.WorkspaceSnapsho
 	evidence = append(evidence, marshalGuideEvidence(core.GuideEvidenceParserRaw, summary.Parser))
 	evidence = append(evidence, marshalGuideEvidence(core.GuideEvidenceSummary, summary))
 
-	issues := collectGuideIssues(summary, localOutput, parserOutput, handlerKinds)
+	astResult, err := v.astAnalyzer.Analyze(ctx, snapshot)
+	if err != nil {
+		return GuideValidationResult{}, err
+	}
+	evidence = append(evidence, astResult.Evidence...)
+
+	issues := collectGuideIssues(summary, localOutput, parserOutput, handlerKinds, astResult.Issues)
 	return GuideValidationResult{
 		Issues:   dedupeIssues(issues),
 		Evidence: evidence,
@@ -489,48 +510,57 @@ func deriveGuideRecommendation(summary core.GuideValidationSummary) core.GuideRe
 		return core.GuideRecommendation{}
 	}
 
-	preprocessStatus := guideStatus(summary.Local, "tensorleap_preprocess")
-	inputStatus := guideStatus(summary.Local, "tensorleap_input_encoder")
-	loadModelStatus := guideStatus(summary.Local, "tensorleap_load_model")
-	integrationStatus := guideStatus(summary.Local, "tensorleap_integration_test")
-	gtStatus := guideStatus(summary.Local, "tensorleap_gt_encoder")
+	hasLocalStatusTable := len(summary.Local.StatusRows) > 0 || summary.LocalStatusTableSupported
 
-	if preprocessStatus != "pass" || payloadFailed(summary.Parser, "preprocess") {
+	preprocessStatus := "unknown"
+	inputStatus := "unknown"
+	loadModelStatus := "unknown"
+	integrationStatus := "unknown"
+	gtStatus := "unknown"
+	if hasLocalStatusTable {
+		preprocessStatus = guideStatus(summary.Local, "tensorleap_preprocess")
+		inputStatus = guideStatus(summary.Local, "tensorleap_input_encoder")
+		loadModelStatus = guideStatus(summary.Local, "tensorleap_load_model")
+		integrationStatus = guideStatus(summary.Local, "tensorleap_integration_test")
+		gtStatus = guideStatus(summary.Local, "tensorleap_gt_encoder")
+	}
+
+	if payloadFailed(summary.Parser, "preprocess") || (hasLocalStatusTable && preprocessStatus != "pass") {
 		return core.GuideRecommendation{
 			Stage:   "preprocess",
 			Message: "Next recommended interface: make preprocess run directly and return training and validation subsets.",
 		}
 	}
 
-	if inputStatus != "pass" && loadModelStatus != "pass" {
+	if hasLocalStatusTable && inputStatus != "pass" && loadModelStatus != "pass" {
 		return core.GuideRecommendation{
 			Stage:   "minimum_inputs",
 			Message: "Next recommended interface: add the minimum required input encoders so a real sample can reach the model.",
 		}
 	}
 
-	if loadModelStatus != "pass" {
+	if hasLocalStatusTable && loadModelStatus != "pass" {
 		return core.GuideRecommendation{
 			Stage:   "load_model",
 			Message: "Next recommended interface: add @tensorleap_load_model after the minimum input path runs locally.",
 		}
 	}
 
-	if integrationStatus != "pass" || summary.Local.MappingFailure || parserHasGeneralFailure(summary.Parser) {
+	if summary.Local.MappingFailure || parserHasGeneralFailure(summary.Parser) || (hasLocalStatusTable && integrationStatus != "pass") {
 		return core.GuideRecommendation{
 			Stage:   "thin_integration_test",
 			Message: "Next recommended interface: add or repair a thin @tensorleap_integration_test that only calls Tensorleap decorators.",
 		}
 	}
 
-	if inputStatus != "pass" || payloadFailedByKinds(summary.Parser, guideHandlerInput) {
+	if payloadFailedByKinds(summary.Parser, guideHandlerInput) || (hasLocalStatusTable && inputStatus != "pass") {
 		return core.GuideRecommendation{
 			Stage:   "remaining_inputs",
 			Message: "Next recommended interface: add the remaining required input encoders and rerun the thin integration test.",
 		}
 	}
 
-	if gtStatus != "pass" || payloadFailedByKinds(summary.Parser, guideHandlerGT) {
+	if payloadFailedByKinds(summary.Parser, guideHandlerGT) || (hasLocalStatusTable && gtStatus != "pass") {
 		return core.GuideRecommendation{
 			Stage:   "ground_truth",
 			Message: "Next recommended interface: add the required GT encoders and rerun the integration test.",
@@ -722,8 +752,10 @@ func collectGuideIssues(
 	localResult PythonRuntimeCommandResult,
 	parserResult PythonRuntimeCommandResult,
 	handlerKinds map[string]guideHandlerKind,
+	astIssues []core.Issue,
 ) []core.Issue {
 	issues := make([]core.Issue, 0, 8)
+	issues = append(issues, astIssues...)
 
 	if summary.Parser.Available {
 		if issue, ok := issueFromGuideParserGeneralError(summary.Parser.GeneralError); ok {
@@ -741,7 +773,7 @@ func collectGuideIssues(
 		return issues
 	}
 
-	if summary.Local.MappingFailure {
+	if summary.Local.MappingFailure && !hasSpecificIntegrationTestIssue(astIssues) {
 		issues = append(issues, core.Issue{
 			Code:     core.IssueCodeIntegrationTestExecutionFailed,
 			Message:  "the local validator reported that @tensorleap_integration_test failed in mapping mode",
@@ -756,6 +788,23 @@ func collectGuideIssues(
 	}
 
 	return issues
+}
+
+func hasSpecificIntegrationTestIssue(issues []core.Issue) bool {
+	for _, issue := range issues {
+		if issue.Severity != core.SeverityError || issue.Scope != core.IssueScopeIntegrationTest {
+			continue
+		}
+		switch issue.Code {
+		case core.IssueCodeIntegrationTestMissingRequiredCalls,
+			core.IssueCodeIntegrationTestCallsUnknownInterfaces,
+			core.IssueCodeIntegrationTestDirectDatasetAccess,
+			core.IssueCodeIntegrationTestIllegalBodyLogic,
+			core.IssueCodeIntegrationTestManualBatchManipulation:
+			return true
+		}
+	}
+	return false
 }
 
 func issueFromGuideParserGeneralError(message string) (core.Issue, bool) {

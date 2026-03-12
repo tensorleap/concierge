@@ -8,15 +8,24 @@ import (
 	"path/filepath"
 	"strings"
 
+	validateadapter "github.com/tensorleap/concierge/internal/adapters/validate"
 	"github.com/tensorleap/concierge/internal/core"
 )
 
 // BaselineInspector performs deterministic Layer 1 artifact inventory checks.
-type BaselineInspector struct{}
+type BaselineInspector struct {
+	integrationTestAnalyzer integrationTestAnalyzer
+}
+
+type integrationTestAnalyzer interface {
+	Analyze(ctx context.Context, snapshot core.WorkspaceSnapshot) (validateadapter.IntegrationTestASTResult, error)
+}
 
 // NewBaselineInspector creates a baseline inspector adapter.
 func NewBaselineInspector() *BaselineInspector {
-	return &BaselineInspector{}
+	return &BaselineInspector{
+		integrationTestAnalyzer: validateadapter.NewIntegrationTestASTAnalyzer(),
+	}
 }
 
 // Inspect validates baseline integration artifacts and readiness probes for the given snapshot.
@@ -67,6 +76,9 @@ func (i *BaselineInspector) Inspect(ctx context.Context, snapshot core.Workspace
 		if err := inspectIntegrationContracts(repoRoot, contract, &status); err != nil {
 			return core.IntegrationStatus{}, err
 		}
+	}
+	if err := i.inspectIntegrationTestWiring(ctx, snapshot, &status); err != nil {
+		return core.IntegrationStatus{}, err
 	}
 
 	if err := inspectModelContract(repoRoot, contract, snapshot.SelectedModelPath, &status); err != nil {
@@ -127,4 +139,33 @@ func fileExists(path string) (bool, error) {
 		return false, nil
 	}
 	return false, err
+}
+
+func (i *BaselineInspector) inspectIntegrationTestWiring(
+	ctx context.Context,
+	snapshot core.WorkspaceSnapshot,
+	status *core.IntegrationStatus,
+) error {
+	if status == nil || status.Contracts == nil || len(status.Contracts.IntegrationTestFunctions) == 0 {
+		return nil
+	}
+	if snapshot.RuntimeProfile == nil || strings.TrimSpace(snapshot.RuntimeProfile.InterpreterPath) == "" {
+		return nil
+	}
+	if i == nil || i.integrationTestAnalyzer == nil {
+		return nil
+	}
+	if _, err := os.Stat(strings.TrimSpace(snapshot.RuntimeProfile.InterpreterPath)); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return core.WrapError(core.KindUnknown, "inspect.baseline.integration_test_ast.interpreter", err)
+	}
+
+	result, err := i.integrationTestAnalyzer.Analyze(ctx, snapshot)
+	if err != nil {
+		return core.WrapError(core.KindUnknown, "inspect.baseline.integration_test_ast", err)
+	}
+	status.Issues = append(status.Issues, result.Issues...)
+	return nil
 }

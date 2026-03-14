@@ -11,8 +11,11 @@ LDFLAGS := -s -w \
 	-X github.com/tensorleap/concierge/internal/buildinfo.Date=$(DATE)
 
 UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v '/internal/e2e/fixtures$$')
+PYTHON ?= python3
+QA_DIR ?= QA
+QA_TEST_DIR ?= $(QA_DIR)/tests
 
-.PHONY: build test test-fixtures test-live-claude clean fixtures-prepare fixtures-verify fixtures-reset fixtures-checks
+.PHONY: build test test-qa-loop test-fixtures test-live-claude clean fixtures-prepare fixtures-verify fixtures-reset fixtures-checks
 
 build:
 	@mkdir -p $(BIN_DIR)
@@ -20,6 +23,10 @@ build:
 
 test:
 	go test $(UNIT_TEST_PACKAGES)
+	$(PYTHON) -m unittest discover -s $(QA_TEST_DIR) -p 'test_*.py' -v
+
+test-qa-loop:
+	$(PYTHON) -m unittest discover -s $(QA_TEST_DIR) -p 'test_*.py' -v
 
 test-live-claude:
 	CONCIERGE_LIVE_CLAUDE=1 go test ./internal/agent ./internal/cli -run 'LiveClaude' -v

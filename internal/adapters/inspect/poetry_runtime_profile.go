@@ -14,7 +14,10 @@ import (
 
 type poetryRuntimeCommandRunner func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error)
 
-const poetryRuntimeProbeTimeout = 3 * time.Second
+const (
+	poetryRuntimeProbeTimeout         = 5 * time.Second
+	poetryRuntimeFallbackProbeTimeout = 10 * time.Second
+)
 
 const codeLoaderCapabilityProbeScript = `
 import json
@@ -95,13 +98,13 @@ func (r *PoetryRuntimeResolver) Resolve(
 		return PoetryRuntimeResolution{}, nil
 	}
 
-	interpreterPath, err := runPoetryCommandText(ctx, r.runCommand, repoRoot, "poetry", "env", "info", "--executable")
+	interpreterPath, err := resolvePoetryInterpreterPath(ctx, r.runCommand, repoRoot)
 	if err != nil || strings.TrimSpace(interpreterPath) == "" {
 		return PoetryRuntimeResolution{}, nil
 	}
 	interpreterPath = normalizeRuntimePath(interpreterPath)
 
-	pythonVersion, versionErr := runPoetryCommandText(ctx, r.runCommand, repoRoot, "poetry", "run", "python", "--version")
+	pythonVersion, versionErr := runPoetryCommandText(ctx, r.runCommand, repoRoot, interpreterPath, "--version")
 	if versionErr != nil {
 		pythonVersion = ""
 	}
@@ -126,14 +129,12 @@ func (r *PoetryRuntimeResolver) Resolve(
 		ctx,
 		r.runCommand,
 		repoRoot,
-		"poetry",
-		"run",
-		"python",
+		interpreterPath,
 		"-c",
 		"import code_loader",
 	)
 	if profile.CodeLoaderReady {
-		profile.CodeLoader = probeCodeLoaderCapabilities(ctx, r.runCommand, repoRoot)
+		profile.CodeLoader = probeCodeLoaderCapabilities(ctx, r.runCommand, repoRoot, interpreterPath)
 	}
 
 	return PoetryRuntimeResolution{
@@ -213,29 +214,94 @@ func runPoetryCommandText(
 	name string,
 	args ...string,
 ) (string, error) {
-	commandCtx, cancel := context.WithTimeout(ctx, poetryRuntimeProbeTimeout)
+	return runCommandTextWithTimeout(ctx, runner, poetryRuntimeProbeTimeout, dir, name, args...)
+}
+
+func runCommandTextWithTimeout(
+	ctx context.Context,
+	runner poetryRuntimeCommandRunner,
+	timeout time.Duration,
+	dir string,
+	name string,
+	args ...string,
+) (string, error) {
+	commandCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	stdout, stderr, err := runner(commandCtx, dir, name, args...)
-	text := strings.TrimSpace(strings.TrimSpace(string(stdout)) + "\n" + strings.TrimSpace(string(stderr)))
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(text), nil
+	if text := strings.TrimSpace(string(stdout)); text != "" {
+		return text, nil
+	}
+	return strings.TrimSpace(string(stderr)), nil
+}
+
+func resolvePoetryInterpreterPath(
+	ctx context.Context,
+	runner poetryRuntimeCommandRunner,
+	dir string,
+) (string, error) {
+	interpreterPath, err := runCommandTextWithTimeout(
+		ctx,
+		runner,
+		poetryRuntimeProbeTimeout,
+		dir,
+		"poetry",
+		"env",
+		"info",
+		"--executable",
+	)
+	if err == nil && isUsableInterpreterPath(interpreterPath) {
+		return interpreterPath, nil
+	}
+
+	fallbackPath, fallbackErr := runCommandTextWithTimeout(
+		ctx,
+		runner,
+		poetryRuntimeFallbackProbeTimeout,
+		dir,
+		"poetry",
+		"run",
+		"python",
+		"-c",
+		"import sys; print(sys.executable)",
+	)
+	if fallbackErr != nil {
+		if err != nil {
+			return "", err
+		}
+		return "", fallbackErr
+	}
+	if !isUsableInterpreterPath(fallbackPath) {
+		if err != nil {
+			return "", err
+		}
+		return "", nil
+	}
+	return fallbackPath, nil
+}
+
+func isUsableInterpreterPath(path string) bool {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return false
+	}
+	return !strings.EqualFold(trimmed, "NA")
 }
 
 func probeCodeLoaderCapabilities(
 	ctx context.Context,
 	runner poetryRuntimeCommandRunner,
 	dir string,
+	interpreterPath string,
 ) core.CodeLoaderCapabilityState {
 	output, err := runPoetryCommandText(
 		ctx,
 		runner,
 		dir,
-		"poetry",
-		"run",
-		"python",
+		interpreterPath,
 		"-c",
 		codeLoaderCapabilityProbeScript,
 	)

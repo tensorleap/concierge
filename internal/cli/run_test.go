@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -720,12 +721,13 @@ func initRunTestRepoAtPath(t *testing.T, repo string, complete bool) {
 	runGit(t, repo, "checkout", "-B", "feature/test")
 
 	pyprojectHash := hashFileForTest(t, filepath.Join(repo, "pyproject.toml"))
+	interpreterPath := mockRuntimeInterpreterPath()
 	runtimeState := state.DefaultRunState(repo)
 	runtimeState.RuntimeProfile = &core.LocalRuntimeProfile{
 		Kind:              "poetry",
 		PoetryExecutable:  "/usr/local/bin/poetry",
 		PoetryVersion:     "Poetry 2.0.0",
-		InterpreterPath:   "/tmp/concierge-test/.venv/bin/python",
+		InterpreterPath:   interpreterPath,
 		PythonVersion:     "Python 3.11.8",
 		ConfirmationMode:  "auto",
 		DependenciesReady: true,
@@ -734,7 +736,7 @@ func initRunTestRepoAtPath(t *testing.T, repo string, complete bool) {
 			ProjectRoot:     repo,
 			PyProjectHash:   pyprojectHash,
 			PoetryLockHash:  "",
-			InterpreterPath: "/tmp/concierge-test/.venv/bin/python",
+			InterpreterPath: interpreterPath,
 			PythonVersion:   "Python 3.11.8",
 		},
 	}
@@ -759,6 +761,13 @@ func withWorkingDir(t *testing.T, dir string) {
 			t.Fatalf("failed to restore cwd %q: %v", original, err)
 		}
 	})
+}
+
+func mockRuntimeInterpreterPath() string {
+	if path := strings.TrimSpace(os.Getenv("CONCIERGE_TEST_MOCK_PYTHON_PATH")); path != "" {
+		return path
+	}
+	return "/tmp/concierge-test/.venv/bin/python"
 }
 
 func runGit(t *testing.T, repo string, args ...string) string {
@@ -827,6 +836,7 @@ func mockLeapCLIInstalled(t *testing.T) string {
 	binDir := t.TempDir()
 	leapPath := filepath.Join(binDir, "leap")
 	poetryPath := filepath.Join(binDir, "poetry")
+	mockPythonPath := filepath.Join(binDir, "poetry-python")
 	script := `#!/usr/bin/env bash
 set -euo pipefail
 
@@ -861,9 +871,63 @@ esac
 	if err := os.WriteFile(leapPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("WriteFile failed for mock leap CLI: %v", err)
 	}
-	poetryScript := `#!/usr/bin/env bash
+
+	mockPythonScript := fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
 
+self_path=%q
+cmd="${1:-}"
+case "$cmd" in
+  --version)
+    echo "Python 3.11.8"
+    ;;
+  -c)
+    code="${2:-}"
+    if [[ "$code" == "import code_loader" ]]; then
+      exit 0
+    fi
+    if [[ "$code" == "import sys; print(sys.executable)" ]]; then
+      echo "$self_path"
+      exit 0
+    fi
+    if [[ "$code" == *"probeSucceeded"* && "$code" == *"supportsGuideLocalStatusTable"* ]]; then
+      echo '{"probeSucceeded":true,"version":"1.0.165","supportsGuideLocalStatusTable":true,"supportsCheckDataset":true}'
+      exit 0
+    fi
+    if [[ "$code" == *"LeapLoader"* && "$code" == *"check_dataset"* ]]; then
+      echo '{"available":true,"isValid":true,"isValidForModel":true,"generalError":"","printLog":"","payloads":[],"setup":{"preprocess":{"trainingLength":1,"validationLength":1,"testLength":0,"unlabeledLength":0,"additionalLength":0},"inputs":[],"metadata":[],"outputs":[],"visualizers":[],"predictionTypes":[],"customLosses":[],"metrics":[]}}'
+      exit 0
+    fi
+    if [[ "$code" == *"import onnx"* || "$code" == *"from tensorflow import keras"* ]]; then
+      echo '{"inputs":[]}'
+      exit 0
+    fi
+    python3 "$@"
+    ;;
+  leap_integration.py|*/leap_integration.py)
+    cat <<'EOF'
+tensorleap_preprocess        | ✅
+tensorleap_input_encoder     | ✅
+tensorleap_load_model        | ✅
+tensorleap_integration_test  | ✅
+tensorleap_gt_encoder        | ✅
+All parts have been successfully set.
+Successful!
+EOF
+    ;;
+  *)
+    python3 "$@"
+    ;;
+esac
+`, mockPythonPath)
+	if err := os.WriteFile(mockPythonPath, []byte(mockPythonScript), 0o755); err != nil {
+		t.Fatalf("WriteFile failed for mock poetry runtime python: %v", err)
+	}
+
+	poetryScript := fmt.Sprintf(`#!/usr/bin/env bash
+set -euo pipefail
+
+mock_python=%q
 cmd="${1:-}"
 case "$cmd" in
   --version)
@@ -874,7 +938,7 @@ case "$cmd" in
       echo "unsupported poetry env command" >&2
       exit 1
     fi
-    echo "/tmp/concierge-test/.venv/bin/python"
+    echo "$mock_python"
     ;;
   check)
     echo "All set!"
@@ -890,34 +954,19 @@ case "$cmd" in
       echo "unsupported poetry run command" >&2
       exit 1
     fi
-    if [[ "${3:-}" == "--version" ]]; then
-      echo "Python 3.11.8"
-      exit 0
-    fi
-    if [[ "${3:-}" == "-c" ]]; then
-      code="${4:-}"
-      if [[ "$code" == "import code_loader" ]]; then
-        exit 0
-      fi
-      if [[ "$code" == *"import onnx"* || "$code" == *"from tensorflow import keras"* ]]; then
-        echo '{"inputs":[]}'
-        exit 0
-      fi
-      echo "{}"
-      exit 0
-    fi
-    python3 "${@:3}"
+    "$mock_python" "${@:3}"
     ;;
   *)
     echo "unsupported poetry command" >&2
     exit 1
     ;;
 esac
-`
+`, mockPythonPath)
 	if err := os.WriteFile(poetryPath, []byte(poetryScript), 0o755); err != nil {
 		t.Fatalf("WriteFile failed for mock poetry CLI: %v", err)
 	}
 
+	t.Setenv("CONCIERGE_TEST_MOCK_PYTHON_PATH", mockPythonPath)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return binDir
 }

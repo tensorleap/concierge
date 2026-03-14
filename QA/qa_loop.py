@@ -23,9 +23,15 @@ DEFAULT_MAX_IDLE_TURNS = 5
 DEFAULT_MAX_RUNTIME_SECONDS = 60 * 60
 DEFAULT_READ_QUIET_SECONDS = 0.35
 DEFAULT_READ_TIMEOUT_SECONDS = 2.0
+DEFAULT_SETTLE_TIMEOUT_SECONDS = 20.0
 DEFAULT_TRANSCRIPT_TAIL_CHARS = 16000
 DEFAULT_LATEST_OUTPUT_CHARS = 6000
+DEFAULT_CODEX_TIMEOUT_SECONDS = 300.0
 ANSI_ESCAPE_RE = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
+PROMPT_LINE_RE = re.compile(
+    r"(\[[^\]]+\]\s*:?\s*$|(?:continue|apply|type|enter|select|choose|confirm|approve|input).*[?:]\s*$|you\s*>\s*.*$)",
+    re.IGNORECASE,
+)
 QA_DIR = Path(__file__).resolve().parent
 REPO_ROOT = QA_DIR.parent
 PROMPTS_DIR = QA_DIR / "prompts"
@@ -72,11 +78,13 @@ class LoopConfig:
     command_cwd: Path
     codex_command: str
     codex_model: str | None
+    codex_timeout_seconds: float
     max_iterations: int
     max_idle_turns: int
     max_runtime_seconds: int
     read_quiet_seconds: float
     read_timeout_seconds: float
+    settle_timeout_seconds: float
     transcript_tail_chars: int
     latest_output_chars: int
     fixture_post_path: Path | None
@@ -101,11 +109,20 @@ class CodexInvocationError(RuntimeError):
 
 
 class CodexClient:
-    def __init__(self, *, workspace_root: Path, artifacts_root: Path, command: str = "codex", model: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        workspace_root: Path,
+        artifacts_root: Path,
+        command: str = "codex",
+        model: str | None = None,
+        timeout_seconds: float = DEFAULT_CODEX_TIMEOUT_SECONDS,
+    ) -> None:
         self.workspace_root = workspace_root
         self.artifacts_root = artifacts_root
         self.command = command
         self.model = model
+        self.timeout_seconds = timeout_seconds
 
     def run_structured(
         self,
@@ -140,21 +157,36 @@ class CodexClient:
             cmd.extend(["--add-dir", str(path)])
         cmd.append("-")
 
-        completed = subprocess.run(
-            cmd,
-            input=prompt,
-            text=True,
-            capture_output=True,
-            cwd=str(self.workspace_root),
-            check=False,
-        )
+        try:
+            completed = subprocess.run(
+                cmd,
+                input=prompt,
+                text=True,
+                capture_output=True,
+                cwd=str(self.workspace_root),
+                check=False,
+                timeout=self.timeout_seconds,
+            )
+            stdout = completed.stdout
+            stderr = completed.stderr
+            returncode = completed.returncode
+        except subprocess.TimeoutExpired as exc:
+            stdout = exc.stdout or ""
+            stderr = exc.stderr or ""
+            returncode = None
+        stdout = coerce_text(stdout)
+        stderr = coerce_text(stderr)
         event_log_path.parent.mkdir(parents=True, exist_ok=True)
-        event_log_path.write_text(completed.stdout, encoding="utf-8")
-        stderr_log_path.write_text(completed.stderr, encoding="utf-8")
+        event_log_path.write_text(stdout, encoding="utf-8")
+        stderr_log_path.write_text(stderr, encoding="utf-8")
 
-        if completed.returncode != 0:
+        if returncode is None:
             raise CodexInvocationError(
-                f"codex exec failed with exit code {completed.returncode}; see {stderr_log_path}"
+                f"codex exec timed out after {self.timeout_seconds:.1f}s; see {stderr_log_path}"
+            )
+        if returncode != 0:
+            raise CodexInvocationError(
+                f"codex exec failed with exit code {returncode}; see {stderr_log_path}"
             )
         try:
             return json.loads(output_path.read_text(encoding="utf-8"))
@@ -191,10 +223,7 @@ class SupervisorLoop:
         transcript_clean = ""
         turns: list[dict[str, Any]] = []
         ensure_run_artifact_files(paths)
-        latest_output = self.driver.read_until_quiet(
-            quiet_period=self.config.read_quiet_seconds,
-            hard_timeout=self.config.read_timeout_seconds,
-        )
+        latest_output = visible_terminal_output(self._read_until_actionable(patience=True))
         transcript_raw, transcript_clean = append_terminal_output(paths, transcript_raw, transcript_clean, latest_output)
 
         loop_state = "CONTINUE"
@@ -206,32 +235,112 @@ class SupervisorLoop:
             for iteration in range(1, self.config.max_iterations + 1):
                 buffered_output = self.driver.drain(max_bytes=262144)
                 if buffered_output:
-                    latest_output = buffered_output
+                    latest_output = visible_terminal_output(
+                        self._read_until_actionable(initial_output=buffered_output, patience=True)
+                    )
                     transcript_raw, transcript_clean = append_terminal_output(
                         paths,
                         transcript_raw,
                         transcript_clean,
-                        buffered_output,
+                        latest_output,
                     )
+                else:
+                    latest_output = ""
 
                 elapsed = int(time.monotonic() - started_monotonic)
                 released_blind_first = not blind_first_active
-                stalled = idle_turns > 0
+                stalled = idle_turns >= 2
                 if blind_first_active and stalled and self.config.fixture_post_path is not None and transcript_clean.strip():
                     blind_first_active = False
                     released_blind_first = True
+                last_action = ""
+                if turns:
+                    last_action = str(turns[-1].get("directive", {}).get("action", "")).strip()
+                if (
+                    not latest_output
+                    and self.driver.is_running()
+                    and last_action == "WAIT"
+                    and not terminal_requires_input(transcript_clean)
+                ):
+                    latest_output = visible_terminal_output(self._read_until_actionable(patience=True))
+                    transcript_raw, transcript_clean = append_terminal_output(
+                        paths,
+                        transcript_raw,
+                        transcript_clean,
+                        latest_output,
+                    )
+                    if latest_output:
+                        idle_turns = 0
+                    else:
+                        idle_turns += 1
+                    if int(time.monotonic() - started_monotonic) >= self.config.max_runtime_seconds:
+                        loop_state = "STOP_DEADEND"
+                        stop_reason = "runtime_limit"
+                        break
+                    if idle_turns >= self.config.max_idle_turns:
+                        loop_state = "STOP_DEADEND"
+                        stop_reason = "idle_limit"
+                        break
+                    continue
 
-                directive = self._request_control(
-                    iteration=iteration,
-                    paths=paths,
-                    transcript_clean=transcript_clean,
-                    latest_output=latest_output,
-                    idle_turns=idle_turns,
-                    elapsed_seconds=elapsed,
-                    turns=turns,
-                    blind_first_active=blind_first_active,
-                    released_blind_first=released_blind_first,
-                )
+                try:
+                    directive = self._request_control(
+                        iteration=iteration,
+                        paths=paths,
+                        transcript_clean=transcript_clean,
+                        latest_output=latest_output,
+                        idle_turns=idle_turns,
+                        elapsed_seconds=elapsed,
+                        turns=turns,
+                        blind_first_active=blind_first_active,
+                        released_blind_first=released_blind_first,
+                    )
+                except CodexInvocationError as exc:
+                    prompt_visible = terminal_requires_input(latest_output)
+                    if last_action != "SEND_INPUT":
+                        prompt_visible = prompt_visible or terminal_requires_input(transcript_clean)
+                    if self.driver.is_running() and not prompt_visible:
+                        append_jsonl(
+                            paths.interaction_log,
+                            {
+                                "time": utc_now(),
+                                "iteration": iteration,
+                                "kind": "control_timeout_autowait",
+                                "reason": str(exc),
+                            },
+                        )
+                        latest_output = visible_terminal_output(self._read_until_actionable(patience=True))
+                        transcript_raw, transcript_clean = append_terminal_output(
+                            paths,
+                            transcript_raw,
+                            transcript_clean,
+                            latest_output,
+                        )
+                        if latest_output:
+                            idle_turns = 0
+                        else:
+                            idle_turns += 1
+                        if int(time.monotonic() - started_monotonic) >= self.config.max_runtime_seconds:
+                            loop_state = "STOP_DEADEND"
+                            stop_reason = "runtime_limit"
+                            break
+                        if idle_turns >= self.config.max_idle_turns:
+                            loop_state = "STOP_DEADEND"
+                            stop_reason = "idle_limit"
+                            break
+                        continue
+                    append_jsonl(
+                        paths.interaction_log,
+                        {
+                            "time": utc_now(),
+                            "iteration": iteration,
+                            "kind": "control_error",
+                            "reason": str(exc),
+                        },
+                    )
+                    loop_state = "STOP_DEADEND"
+                    stop_reason = "codex_control_error"
+                    break
                 turn_record = {
                     "iteration": iteration,
                     "time": utc_now(),
@@ -295,9 +404,8 @@ class SupervisorLoop:
                 else:
                     idle_turns += 1
 
-                latest_output = self.driver.read_until_quiet(
-                    quiet_period=self.config.read_quiet_seconds,
-                    hard_timeout=self.config.read_timeout_seconds,
+                latest_output = visible_terminal_output(
+                    self._read_until_actionable(patience=directive.action == "SEND_INPUT")
                 )
                 transcript_raw, transcript_clean = append_terminal_output(paths, transcript_raw, transcript_clean, latest_output)
 
@@ -371,7 +479,19 @@ class SupervisorLoop:
         }
         paths.summary_json.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 
-        report = self._request_report(paths=paths, summary=summary, loop_state=loop_state)
+        try:
+            report = self._request_report(paths=paths, summary=summary, loop_state=loop_state)
+        except CodexInvocationError as exc:
+            append_jsonl(
+                paths.interaction_log,
+                {
+                    "time": utc_now(),
+                    "iteration": len(turns),
+                    "kind": "report_fallback",
+                    "reason": str(exc),
+                },
+            )
+            report = fallback_report(summary=summary, turns=turns, error=str(exc))
         paths.report_json.write_text(json.dumps(asdict(report), indent=2) + "\n", encoding="utf-8")
         paths.report_markdown.write_text(render_markdown_report(run_id, summary, report), encoding="utf-8")
 
@@ -384,6 +504,30 @@ class SupervisorLoop:
             "terminal_clean_path": str(paths.terminal_clean),
             "turns_path": str(paths.turns_jsonl),
         }
+
+    def _read_until_actionable(self, *, initial_output: str = "", patience: bool = False) -> str:
+        chunks: list[str] = [initial_output] if initial_output else []
+        deadline = time.monotonic() + (
+            self.config.settle_timeout_seconds if patience else self.config.read_timeout_seconds
+        )
+        while time.monotonic() < deadline:
+            if terminal_requires_input("".join(chunks)):
+                break
+            if not self.driver.is_running() and chunks:
+                break
+            remaining = max(deadline - time.monotonic(), 0.0)
+            if remaining <= 0:
+                break
+            chunk = self.driver.read_until_quiet(
+                quiet_period=self.config.read_quiet_seconds,
+                hard_timeout=min(self.config.read_timeout_seconds, remaining),
+            )
+            if chunk:
+                chunks.append(chunk)
+                continue
+            if not patience or not self.driver.is_running():
+                break
+        return "".join(chunks)
 
     def _request_control(
         self,
@@ -439,7 +583,7 @@ class SupervisorLoop:
             output_path=turn_base.with_suffix(".output.json"),
             event_log_path=turn_base.with_suffix(".jsonl"),
             stderr_log_path=turn_base.with_suffix(".stderr.log"),
-            add_dirs=control_add_dirs(self.config.command_cwd, self.config.fixture_post_path if not blind_first_active else None),
+            add_dirs=codex_add_dirs(self.config.fixture_post_path if not blind_first_active else None),
         )
         return LoopDirective.from_dict(payload)
 
@@ -474,10 +618,7 @@ class SupervisorLoop:
             output_path=report_base.with_suffix(".output.json"),
             event_log_path=report_base.with_suffix(".jsonl"),
             stderr_log_path=report_base.with_suffix(".stderr.log"),
-            add_dirs=control_add_dirs(
-                self.config.command_cwd,
-                self.config.fixture_post_path if summary.get("blind_first_released") else None,
-            ),
+            add_dirs=codex_add_dirs(self.config.fixture_post_path if summary.get("blind_first_released") else None),
         )
         return QAReport(
             title=str(payload.get("title", "")).strip(),
@@ -508,12 +649,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--codex-command", default=os.environ.get("CODEX_BIN", "codex"))
     parser.add_argument("--model", default=None)
+    parser.add_argument("--codex-timeout-seconds", type=float, default=DEFAULT_CODEX_TIMEOUT_SECONDS)
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS)
     parser.add_argument("--max-idle-turns", type=int, default=DEFAULT_MAX_IDLE_TURNS)
     parser.add_argument("--max-runtime-seconds", type=int, default=DEFAULT_MAX_RUNTIME_SECONDS)
     parser.add_argument("--read-quiet-seconds", type=float, default=DEFAULT_READ_QUIET_SECONDS)
     parser.add_argument("--read-timeout-seconds", type=float, default=DEFAULT_READ_TIMEOUT_SECONDS)
+    parser.add_argument("--settle-timeout-seconds", type=float, default=DEFAULT_SETTLE_TIMEOUT_SECONDS)
     parser.add_argument("--transcript-tail-chars", type=int, default=DEFAULT_TRANSCRIPT_TAIL_CHARS)
     parser.add_argument("--latest-output-chars", type=int, default=DEFAULT_LATEST_OUTPUT_CHARS)
     parser.add_argument("--fixture-post-path", default=None)
@@ -542,23 +685,26 @@ def main(argv: list[str] | None = None) -> int:
         command_cwd=command_cwd,
         codex_command=args.codex_command,
         codex_model=args.model,
+        codex_timeout_seconds=args.codex_timeout_seconds,
         max_iterations=args.max_iterations,
         max_idle_turns=args.max_idle_turns,
         max_runtime_seconds=args.max_runtime_seconds,
         read_quiet_seconds=args.read_quiet_seconds,
         read_timeout_seconds=args.read_timeout_seconds,
+        settle_timeout_seconds=args.settle_timeout_seconds,
         transcript_tail_chars=args.transcript_tail_chars,
         latest_output_chars=args.latest_output_chars,
         fixture_post_path=fixture_post_path,
     )
     role_prompt = (PROMPTS_DIR / "role_prompt.md").read_text(encoding="utf-8")
     nudge_prompt = (PROMPTS_DIR / "nudge_prompt.md").read_text(encoding="utf-8")
-    codex_workspace = command_cwd
+    codex_workspace = artifacts_root
     client = CodexClient(
         workspace_root=codex_workspace,
         artifacts_root=artifacts_root,
         command=config.codex_command,
         model=config.codex_model,
+        timeout_seconds=config.codex_timeout_seconds,
     )
     loop = SupervisorLoop(
         config=config,
@@ -647,8 +793,8 @@ def unique_paths(paths: Iterable[Path]) -> list[Path]:
     return ordered
 
 
-def control_add_dirs(command_cwd: Path, fixture_post_path: Path | None) -> list[Path]:
-    add_dirs = [command_cwd]
+def codex_add_dirs(fixture_post_path: Path | None) -> list[Path]:
+    add_dirs: list[Path] = []
     if fixture_post_path is not None:
         add_dirs.append(fixture_post_path if fixture_post_path.is_dir() else fixture_post_path.parent)
     return add_dirs
@@ -661,6 +807,57 @@ def clean_string_list(values: Iterable[Any]) -> list[str]:
         if item:
             cleaned.append(item)
     return cleaned
+
+
+def coerce_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
+def terminal_requires_input(text: str) -> bool:
+    normalized = normalize_terminal_text(text)
+    for line in reversed(normalized.splitlines()):
+        candidate = line.strip()
+        if not candidate:
+            continue
+        if PROMPT_LINE_RE.search(candidate):
+            return True
+        return candidate.endswith(":") or candidate.endswith("?")
+    return False
+
+
+def visible_terminal_output(text: str) -> str:
+    return text if normalize_terminal_text(text).strip() else ""
+
+
+def fallback_report(*, summary: dict[str, Any], turns: list[dict[str, Any]], error: str) -> QAReport:
+    last_summary = ""
+    notable_moments: list[str] = []
+    product_issues: list[str] = []
+    for turn in turns:
+        directive = turn.get("directive", {})
+        summary_text = str(directive.get("summary", "")).strip()
+        if summary_text:
+            last_summary = summary_text
+        notable_moments.extend(clean_string_list(directive.get("issues", [])))
+    if last_summary:
+        notable_moments.append(f"Last control summary: {last_summary}")
+    if summary.get("stop_reason"):
+        product_issues.append(f"Run stopped with `{summary['stop_reason']}` while the QA loop was still active.")
+    return QAReport(
+        title="QA Loop Report (fallback)",
+        overall_outcome=f"Fallback report generated after QA-loop report synthesis failed: {error}",
+        loop_state=str(summary.get("loop_state", "")).strip(),
+        integration_progress=last_summary or "The run ended before a synthesized QA summary was available.",
+        ux_clarity=[],
+        product_issues=product_issues,
+        agent_interaction_issues=[f"Automatic report generation failed: {error}"],
+        suggestions=["Inspect the saved transcript and Codex stderr log for the interrupted report step."],
+        notable_moments=notable_moments,
+    )
 
 
 def render_markdown_report(run_id: str, summary: dict[str, Any], report: QAReport) -> str:

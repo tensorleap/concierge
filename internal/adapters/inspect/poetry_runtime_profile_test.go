@@ -2,6 +2,7 @@ package inspect
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -23,13 +24,13 @@ func TestPoetryRuntimeResolverRechecksReadinessWhenPreviousProfileWasStale(t *te
 			switch {
 			case joined == "env info --executable":
 				return []byte("/repo/.venv/bin/python\n"), nil, nil
-			case joined == "run python --version":
+			case joined == "--version":
 				return []byte("Python 3.11.8\n"), nil, nil
 			case joined == "check":
 				return []byte("All set!\n"), nil, nil
-			case joined == "run python -c import code_loader":
+			case joined == "-c import code_loader":
 				return nil, nil, nil
-			case strings.HasPrefix(joined, "run python -c ") && strings.Contains(joined, "supportsGuideLocalStatusTable"):
+			case strings.HasPrefix(joined, "-c ") && strings.Contains(joined, "supportsGuideLocalStatusTable"):
 				return []byte(`{"probeSucceeded":true,"version":"1.0.165","supportsGuideLocalStatusTable":true,"supportsCheckDataset":true}` + "\n"), nil, nil
 			default:
 				t.Fatalf("unexpected poetry command: %q", joined)
@@ -104,13 +105,13 @@ func TestPoetryRuntimeResolverFlagsInterpreterDriftWithoutLockfileChange(t *test
 			switch {
 			case joined == "env info --executable":
 				return []byte("/repo/.venv-alt/bin/python\n"), nil, nil
-			case joined == "run python --version":
+			case joined == "--version":
 				return []byte("Python 3.11.8\n"), nil, nil
 			case joined == "check":
 				return []byte("All set!\n"), nil, nil
-			case joined == "run python -c import code_loader":
+			case joined == "-c import code_loader":
 				return nil, nil, nil
-			case strings.HasPrefix(joined, "run python -c ") && strings.Contains(joined, "supportsGuideLocalStatusTable"):
+			case strings.HasPrefix(joined, "-c ") && strings.Contains(joined, "supportsGuideLocalStatusTable"):
 				return []byte(`{"probeSucceeded":true,"version":"1.0.165","supportsGuideLocalStatusTable":true,"supportsCheckDataset":true}` + "\n"), nil, nil
 			default:
 				t.Fatalf("unexpected poetry command: %q", joined)
@@ -177,13 +178,13 @@ func TestPoetryRuntimeResolverCapturesLegacyCodeLoaderCapabilities(t *testing.T)
 			switch {
 			case joined == "env info --executable":
 				return []byte("/repo/.venv/bin/python\n"), nil, nil
-			case joined == "run python --version":
+			case joined == "--version":
 				return []byte("Python 3.10.16\n"), nil, nil
 			case joined == "check":
 				return []byte("All set!\n"), nil, nil
-			case joined == "run python -c import code_loader":
+			case joined == "-c import code_loader":
 				return nil, nil, nil
-			case strings.HasPrefix(joined, "run python -c ") && strings.Contains(joined, "supportsGuideLocalStatusTable"):
+			case strings.HasPrefix(joined, "-c ") && strings.Contains(joined, "supportsGuideLocalStatusTable"):
 				return []byte(`{"probeSucceeded":true,"version":"1.0.138","supportsGuideLocalStatusTable":false,"supportsCheckDataset":true}` + "\n"), nil, nil
 			default:
 				t.Fatalf("unexpected poetry command: %q", joined)
@@ -220,5 +221,63 @@ func TestPoetryRuntimeResolverCapturesLegacyCodeLoaderCapabilities(t *testing.T)
 	}
 	if !resolution.Profile.CodeLoader.SupportsCheckDataset {
 		t.Fatalf("expected check_dataset support, got %+v", resolution.Profile.CodeLoader)
+	}
+}
+
+func TestPoetryRuntimeResolverFallsBackWhenPoetryEnvInfoExecutableFails(t *testing.T) {
+	t.Parallel()
+
+	resolver := &PoetryRuntimeResolver{
+		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
+			_ = ctx
+			_ = dir
+			_ = name
+
+			joined := strings.Join(args, " ")
+			switch {
+			case joined == "env info --executable":
+				return nil, []byte("NA\n"), errors.New("exit status 1")
+			case joined == "run python -c import sys; print(sys.executable)":
+				return []byte("/repo/.venv/bin/python\n"), nil, nil
+			case joined == "--version":
+				return []byte("Python 3.10.19\n"), nil, nil
+			case joined == "check":
+				return []byte("All set!\n"), nil, nil
+			case joined == "-c import code_loader":
+				return nil, nil, nil
+			case strings.HasPrefix(joined, "-c ") && strings.Contains(joined, "supportsGuideLocalStatusTable"):
+				return []byte(`{"probeSucceeded":true,"version":"1.0.165","supportsGuideLocalStatusTable":true,"supportsCheckDataset":true}` + "\n"), nil, nil
+			default:
+				t.Fatalf("unexpected poetry command: %q", joined)
+				return nil, nil, nil
+			}
+		},
+	}
+
+	snapshot := core.WorkspaceSnapshot{
+		FileHashes: map[string]string{
+			"pyproject.toml": "pyproject-hash",
+			"poetry.lock":    "poetry-lock-hash",
+		},
+		Runtime: core.RuntimeState{
+			SupportedProject: true,
+			PoetryFound:      true,
+			PoetryExecutable: "poetry",
+			PoetryVersion:    "Poetry 2.0.0",
+		},
+	}
+
+	resolution, err := resolver.Resolve(context.Background(), "/repo", snapshot, nil)
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if resolution.Profile == nil {
+		t.Fatal("expected resolved runtime profile")
+	}
+	if resolution.Profile.InterpreterPath != "/repo/.venv/bin/python" {
+		t.Fatalf("expected fallback interpreter path, got %q", resolution.Profile.InterpreterPath)
+	}
+	if resolution.Profile.PythonVersion != "Python 3.10.19" {
+		t.Fatalf("expected python version %q, got %q", "Python 3.10.19", resolution.Profile.PythonVersion)
 	}
 }

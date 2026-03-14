@@ -879,6 +879,36 @@ Questions to resolve before broader rollout:
 
 ---
 
+## 18) Codex QA Loop
+
+The repository also includes a standalone QA harness for subjective terminal evaluation under `QA/`, with the entrypoint at `QA/qa_loop.py`.
+
+For the design document and operator guide, see `QA/DESIGN.md` and `QA/QA_LOOP.md`.
+
+What it does:
+
+* launches Concierge inside a real PTY
+* asks `codex exec` to act as a QA engineer and synthetic user
+* forwards terminal output to Codex and types Codex's chosen replies back into Concierge
+* stops on completion, dead-end, fix-needed, idle-limit, runtime-limit, or iteration-limit
+* writes structured turn logs plus human-readable reports under `QA/runs/`, `QA/transcripts/`, and `QA/reports/`
+
+Minimal usage:
+
+```bash
+python3 QA/qa_loop.py --command-cwd /path/to/fixture
+```
+
+If no command is supplied, the harness defaults to this repository's Concierge binary (or `go run ./cmd/concierge run` when the binary is missing). For a blind-first comparison flow, pass `--fixture-post-path /path/to/post-fixture`; the prompt will not reveal that path to Codex until the run stalls.
+
+Requirements:
+
+* `python3`
+* a local `codex` CLI login that can run `codex exec`
+* a runnable Concierge command
+
+---
+
 ## Appendix A — Key Tensorleap references (URLs)
 
 ```text

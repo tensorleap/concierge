@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["SEND_INPUT", "WAIT"]
+    },
+    "input_text": {
+      "type": "string"
+    },
+    "loop_state": {
+      "type": "string",
+      "enum": ["CONTINUE", "STOP_REPORT", "STOP_FIX", "STOP_DEADEND"]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "next_focus": {
+      "type": "string"
+    }
+  },
+  "required": ["action", "input_text", "loop_state", "summary", "issues", "next_focus"],
+  "additionalProperties": false
+}

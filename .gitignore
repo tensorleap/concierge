@@ -20,3 +20,10 @@ tmp.benchmarks/
 bin/
 .fixtures/
 .concierge/
+__pycache__/
+QA/runs/*
+!QA/runs/.gitkeep
+QA/transcripts/*
+!QA/transcripts/.gitkeep
+QA/reports/*
+!QA/reports/.gitkeep

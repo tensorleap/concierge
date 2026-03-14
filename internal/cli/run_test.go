@@ -518,11 +518,8 @@ func TestRunStopsAfterManualRuntimeSetupIsRequired(t *testing.T) {
 	withWorkingDir(t, repo)
 
 	output, err := executeCLI(t, "run", "--max-iterations=3", "--no-color")
-	if err == nil {
-		t.Fatal("expected run to stop for manual runtime setup")
-	}
-	if !strings.Contains(err.Error(), "complete the manual step described above") {
-		t.Fatalf("expected manual-step error, got: %v", err)
+	if err != nil {
+		t.Fatalf("expected run to return success for manual runtime setup handoff, got: %v\noutput=%q", err, output)
 	}
 	if strings.Count(output, "Integration Checklist") != 1 {
 		t.Fatalf("expected one checklist before stopping, got output: %q", output)
@@ -544,6 +541,9 @@ func TestRunStopsAfterManualRuntimeSetupIsRequired(t *testing.T) {
 	}
 	if !strings.Contains(output, "You do not need to start Concierge with `poetry run`; Concierge will use the Poetry environment automatically.") {
 		t.Fatalf("expected explicit guidance about running Concierge directly, got output: %q", output)
+	}
+	if !strings.Contains(output, "Manual step required outside Concierge. After completing the step above, rerun `concierge run`.") {
+		t.Fatalf("expected explicit non-error handoff message, got output: %q", output)
 	}
 }
 

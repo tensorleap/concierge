@@ -54,9 +54,9 @@ func (r *SpinnerRenderer) Emit(event Event) {
 
 	switch event.Kind {
 	case EventStageStarted:
-		r.status = stageLabel(event.Stage)
+		r.status = nonEmpty(event.Message, stageLabel(event.Stage))
 	case EventStepSelected:
-		r.status = "Fixing " + strings.ToLower(stepLabel(event.StepID))
+		r.status = nonEmpty(event.Message, "Working on "+strings.ToLower(stepLabel(event.StepID)))
 	case EventWaitingApproval, EventGitReviewStarted:
 		r.status = event.Message
 	case EventAgentStarted:
@@ -129,9 +129,9 @@ func (r *HighlightsRenderer) lineForEvent(event Event) string {
 	case EventIterationStarted:
 		return paint(fmt.Sprintf("Iteration %d", maxInt(event.Iteration, 1)), ansiBold+ansiCyan, !r.options.NoColor)
 	case EventStageStarted:
-		return "• " + stageLabel(event.Stage)
+		return "• " + nonEmpty(event.Message, stageLabel(event.Stage))
 	case EventStepSelected:
-		return "• Fixing: " + stepLabel(event.StepID)
+		return "• " + nonEmpty(event.Message, "Working on: "+stepLabel(event.StepID))
 	case EventWaitingApproval, EventGitReviewStarted:
 		return "• " + nonEmpty(event.Message, "Waiting for your approval")
 	case EventAgentTaskPrepared:
@@ -149,9 +149,9 @@ func (r *HighlightsRenderer) lineForEvent(event Event) string {
 	case EventAgentInterrupted:
 		return "• Claude was interrupted for this step"
 	case EventValidationStarted:
-		return "• Validating runtime behavior"
+		return "• " + nonEmpty(event.Message, "Validating runtime behavior")
 	case EventValidationFinished:
-		return "• Validation finished"
+		return "• " + nonEmpty(event.Message, "Validation finished")
 	case EventFallback:
 		return paint("• "+nonEmpty(event.Message, "Falling back to buffered agent execution"), ansiYellow, !r.options.NoColor)
 	case EventError:

@@ -23,7 +23,7 @@ func TestHighlightsRendererDeduplicatesRepeatedLines(t *testing.T) {
 	if strings.Count(output, "Inspecting Tensorleap artifacts") != 1 {
 		t.Fatalf("expected deduped inspect line, got %q", output)
 	}
-	if strings.Count(output, "Fixing: leap.yaml is present and valid") != 1 {
+	if strings.Count(output, "Working on: leap.yaml is present and valid") != 1 {
 		t.Fatalf("expected deduped step line, got %q", output)
 	}
 }

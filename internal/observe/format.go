@@ -14,9 +14,9 @@ func stageLabel(stage core.Stage) string {
 	case core.StageInspect:
 		return "Inspecting Tensorleap artifacts"
 	case core.StagePlan:
-		return "Choosing the next fix"
+		return "Choosing the next step"
 	case core.StageExecute:
-		return "Applying the selected fix"
+		return "Working through the selected step"
 	case core.StageValidate:
 		return "Validating runtime behavior"
 	case core.StageReport:

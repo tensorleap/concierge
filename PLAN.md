@@ -35,11 +35,12 @@ The remaining work starts from that baseline.
 - [x] `GUIDE1` `ACCEPTED` - Make `leap_integration.py` the canonical integration layout for fresh repos.
 - [x] `GUIDE2` `ACCEPTED` - Implement guide-native progressive validator orchestration and reporting.
 - [x] `GUIDE3` `ACCEPTED` - Enforce thin `integration_test` rules and targeted authoring for integration-test wiring failures.
-- [ ] `VAL1` `PENDING` - Replace the stub harness with multi-sample runtime validation plus issue mapping.
-- [x] `FIX1` `DONE` - Separate fixture bootstrap from product runtime and generate guide-native mutation cases.
+- [x] `VAL1` `ACCEPTED` - Replace the stub harness with multi-sample runtime validation plus issue mapping.
+- [x] `FIX1` `ACCEPTED` - Separate fixture bootstrap from product runtime and generate guide-native mutation cases.
 - [ ] `FIX2` `PENDING` - Add capability and composite fixture E2E coverage, including agent-context quality assertions.
 - [ ] `OPS1` `PENDING` - Implement upload readiness checks and guarded `leap push`.
 - [ ] `SHIP1` `PENDING` - Finish CI, docs, and release-readiness hardening.
+- [ ] `QA1` `PENDING` - Add a Codex-driven PTY QA loop that can exercise Concierge like a human user and emit qualitative reports.
 
 ## Surprises & Discoveries
 
@@ -76,6 +77,7 @@ This plan supersedes the old pending identifiers without keeping them inline:
 4. `FIX1-FIX2` replace the old fixture/bootstrap/capability-E2E tail (`12A0-12H`).
 5. `OPS1` replaces guarded upload work (`13A`).
 6. `SHIP1` replaces CI, docs, and release hardening (`13B-14B`).
+7. `QA1` adds the operator-facing QA harness for subjective terminal evaluation.
 
 ## Phase 1: Runtime And Environment
 
@@ -496,11 +498,49 @@ Acceptance:
 
 The remaining backlog is fully documented, tested in CI, and ready for release review.
 
+### QA1
+
+Objective:
+
+Implement the standalone Codex QA loop from `QA/DESIGN.md`: run Concierge in a PTY, let Codex act as the user, persist transcripts, and emit a qualitative report.
+
+Primary files:
+
+1. `QA/qa_loop.py`
+2. `QA/pty_driver.py`
+3. `QA/prompts/role_prompt.md`
+4. `QA/prompts/nudge_prompt.md`
+5. `QA/prompts/control_schema.json`
+6. `QA/prompts/report_schema.json`
+7. `QA/tests/test_pty_driver.py`
+8. `QA/tests/test_qa_loop.py`
+9. `Makefile`
+10. `README.md`
+
+Locked behavior:
+
+1. Concierge runs inside a real PTY and the supervisor captures terminal output plus typed input decisions.
+2. Codex control turns are structured JSON directives with `action`, `input_text`, and `loop_state`.
+3. The loop enforces `max_iterations`, `max_idle_turns`, and `max_runtime` to avoid infinite runs.
+4. Blind-first evaluation stays active until progress stalls; only then may the prompt reveal an optional post-fixture path.
+5. Each run writes machine-readable turn logs, terminal transcripts, and a final qualitative report.
+6. `STOP_FIX` is treated as a stop reason only; the optional repair loop is deferred.
+
+Validation:
+
+1. `python3 -m unittest discover -s tests -p 'test_*.py' -v`
+2. `python3 QA/qa_loop.py --help`
+3. `make test`
+
+Acceptance:
+
+The repository contains a repeatable local QA harness that can drive Concierge end to end without human input and leave behind actionable UX/product feedback.
+
 ## Validation And Acceptance
 
 The backlog is complete when:
 
-1. `ENV1-ENV4`, `GUIDE1-GUIDE3`, `VAL1`, `FIX1-FIX2`, `OPS1`, and `SHIP1` have all moved off `PENDING`.
+1. `ENV1-ENV4`, `GUIDE1-GUIDE3`, `VAL1`, `FIX1-FIX2`, `OPS1`, `SHIP1`, and `QA1` have all moved off `PENDING`.
 2. Concierge always resolves runtime before Python-dependent work.
 3. Concierge steers repos toward the `leap_integration.py` workflow and reasons about staged validator progress correctly.
 4. Fixture E2E and CI prove the guide-native flow end to end.
@@ -516,18 +556,18 @@ The backlog is complete when:
 
 Current state:
 
-The remaining backlog is now explicitly ordered around runtime correctness first, then alignment to the Tensorleap authoring model from `GUIDE.md`, then the downstream validation, fixture, upload, CI, and release work.
+Runtime resolution, guide-native validation, multi-sample harness validation, and deterministic fixture mutation coverage are now merged on `main`. The remaining backlog is centered on fixture E2E convergence proof, guarded upload, and release hardening.
 
 Primary residual risks:
 
-1. Runtime ambiguity still threatens every Python-dependent action until `ENV1-ENV4` land.
-2. Concierge still reasons mostly in contract terms, not yet in the full guide-native staged validator loop.
-3. Fixture and release confidence remain incomplete until `VAL1`, `FIX1-FIX2`, `OPS1`, and `SHIP1` land.
+1. Capability-level fixture E2E coverage is still incomplete until `FIX2` proves planner ordering and recovery across generated case repos.
+2. Guarded upload behavior is still unimplemented until `OPS1` lands.
+3. CI and release confidence remain incomplete until `SHIP1` lands.
 
 Mitigations:
 
-1. Do not start any guide-native authoring or harness work before the runtime phase is complete.
-2. Treat `GUIDE1-GUIDE3` as the new product center of gravity, not as doc polish.
+1. Keep `FIX2` focused on generated case repos so capability and composite recovery are proven end to end without depending on exact repo diffs.
+2. Add guarded upload only after fixture E2E confirms the guide-native repair loop.
 3. Keep the pending plan compressed so future sessions spend context on implementation, not on historical bookkeeping.
 
 ## Interfaces And Dependencies

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "overall_outcome": {
+      "type": "string"
+    },
+    "loop_state": {
+      "type": "string"
+    },
+    "integration_progress": {
+      "type": "string"
+    },
+    "ux_clarity": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "product_issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "agent_interaction_issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "suggestions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "notable_moments": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "title",
+    "overall_outcome",
+    "loop_state",
+    "integration_progress",
+    "ux_clarity",
+    "product_issues",
+    "agent_interaction_issues",
+    "suggestions",
+    "notable_moments"
+  ],
+  "additionalProperties": false
+}

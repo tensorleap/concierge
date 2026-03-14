@@ -141,3 +141,11 @@ Both commands must pass. `prepare` must create:
 - stripped files exist in `post`
 - stripped files do not exist in `pre`
 - both repos are clean git trees
+
+## Project Skills
+
+This repository also provides a project-local skill:
+
+- `concierge-qa-loop`
+  Path: `QA/SKILL.md`
+  Use when the user asks to perform QA, smoke-test Concierge, manually test a fixture, evaluate terminal UX, or report QA findings. The skill runs `python3 QA/qa_loop.py`, waits for the saved report under `QA/reports/`, and summarizes the final findings from the generated artifacts.

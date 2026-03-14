@@ -85,6 +85,7 @@ type LocalRuntimeProfile struct {
 	ConfirmationMode  string                    `json:"confirmationMode,omitempty"`
 	DependenciesReady bool                      `json:"dependenciesReady,omitempty"`
 	CodeLoaderReady   bool                      `json:"codeLoaderReady,omitempty"`
+	CodeLoaderDeclaredInProject bool            `json:"codeLoaderDeclaredInProject,omitempty"`
 	CodeLoader        CodeLoaderCapabilityState `json:"codeLoader,omitempty"`
 	Fingerprint       RuntimeProfileFingerprint `json:"fingerprint"`
 }

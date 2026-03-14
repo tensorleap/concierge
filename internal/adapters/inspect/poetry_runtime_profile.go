@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -57,6 +60,11 @@ except Exception:
 
 print(json.dumps(result))
 `
+
+var (
+	poetryDependencySectionPattern = regexp.MustCompile(`^\[tool\.poetry(\.group\.[^.]+)?\.dependencies\]\s*$`)
+	codeLoaderDependencyPattern   = regexp.MustCompile(`^(code-loader|code_loader)\s*=`)
+)
 
 type codeLoaderCapabilityProbe struct {
 	ProbeSucceeded                bool   `json:"probeSucceeded"`
@@ -124,6 +132,11 @@ func (r *PoetryRuntimeResolver) Resolve(
 			PythonVersion:   strings.TrimSpace(pythonVersion),
 		},
 	}
+	codeLoaderDeclared, err := detectProjectCodeLoaderDeclaration(repoRoot)
+	if err != nil {
+		return PoetryRuntimeResolution{}, core.WrapError(core.KindUnknown, "inspect.runtime_profile.code_loader_declared", err)
+	}
+	profile.CodeLoaderDeclaredInProject = codeLoaderDeclared
 	profile.DependenciesReady = runPoetryReadinessCheck(ctx, r.runCommand, repoRoot, "poetry", "check")
 	profile.CodeLoaderReady = runPoetryReadinessCheck(
 		ctx,
@@ -192,6 +205,34 @@ func cloneRuntimeProfile(profile *core.LocalRuntimeProfile) *core.LocalRuntimePr
 	cloned := *profile
 	cloned.Fingerprint = profile.Fingerprint
 	return &cloned
+}
+
+func detectProjectCodeLoaderDeclaration(repoRoot string) (bool, error) {
+	pyprojectPath := filepath.Join(strings.TrimSpace(repoRoot), "pyproject.toml")
+	raw, err := os.ReadFile(pyprojectPath)
+	if err != nil {
+		return false, fmt.Errorf("read pyproject.toml: %w", err)
+	}
+
+	inDependenciesSection := false
+	for _, rawLine := range strings.Split(string(raw), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			inDependenciesSection = poetryDependencySectionPattern.MatchString(line)
+			continue
+		}
+		if !inDependenciesSection {
+			continue
+		}
+		if codeLoaderDependencyPattern.MatchString(line) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func runPoetryRuntimeCommand(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {

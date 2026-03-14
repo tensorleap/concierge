@@ -3,6 +3,8 @@ package inspect
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,6 +14,7 @@ import (
 func TestPoetryRuntimeResolverRechecksReadinessWhenPreviousProfileWasStale(t *testing.T) {
 	t.Parallel()
 
+	repoRoot := preparePoetryRuntimeRepo(t, true)
 	callCount := 0
 	resolver := &PoetryRuntimeResolver{
 		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
@@ -60,7 +63,7 @@ func TestPoetryRuntimeResolverRechecksReadinessWhenPreviousProfileWasStale(t *te
 		DependenciesReady: false,
 		CodeLoaderReady:   false,
 		Fingerprint: core.RuntimeProfileFingerprint{
-			ProjectRoot:     "/repo",
+			ProjectRoot:     repoRoot,
 			PyProjectHash:   "pyproject-hash",
 			PoetryLockHash:  "poetry-lock-hash",
 			InterpreterPath: "/repo/.venv/bin/python",
@@ -68,7 +71,7 @@ func TestPoetryRuntimeResolverRechecksReadinessWhenPreviousProfileWasStale(t *te
 		},
 	}
 
-	resolution, err := resolver.Resolve(context.Background(), "/repo", snapshot, previous)
+	resolution, err := resolver.Resolve(context.Background(), repoRoot, snapshot, previous)
 	if err != nil {
 		t.Fatalf("Resolve returned error: %v", err)
 	}
@@ -87,6 +90,9 @@ func TestPoetryRuntimeResolverRechecksReadinessWhenPreviousProfileWasStale(t *te
 	if !resolution.Profile.CodeLoader.SupportsGuideLocalStatusTable {
 		t.Fatalf("expected guide-local status table support, got %+v", resolution.Profile.CodeLoader)
 	}
+	if !resolution.Profile.CodeLoaderDeclaredInProject {
+		t.Fatalf("expected resolver to record declared code-loader dependency, got %+v", resolution.Profile)
+	}
 	if callCount == 0 {
 		t.Fatal("expected resolver to call Poetry instead of reusing the stale profile")
 	}
@@ -95,6 +101,7 @@ func TestPoetryRuntimeResolverRechecksReadinessWhenPreviousProfileWasStale(t *te
 func TestPoetryRuntimeResolverFlagsInterpreterDriftWithoutLockfileChange(t *testing.T) {
 	t.Parallel()
 
+	repoRoot := preparePoetryRuntimeRepo(t, true)
 	resolver := &PoetryRuntimeResolver{
 		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
 			_ = ctx
@@ -139,7 +146,7 @@ func TestPoetryRuntimeResolverFlagsInterpreterDriftWithoutLockfileChange(t *test
 		InterpreterPath:  "/repo/.venv/bin/python",
 		PythonVersion:    "Python 3.11.8",
 		Fingerprint: core.RuntimeProfileFingerprint{
-			ProjectRoot:     "/repo",
+			ProjectRoot:     repoRoot,
 			PyProjectHash:   "pyproject-hash",
 			PoetryLockHash:  "poetry-lock-hash",
 			InterpreterPath: "/repo/.venv/bin/python",
@@ -147,7 +154,7 @@ func TestPoetryRuntimeResolverFlagsInterpreterDriftWithoutLockfileChange(t *test
 		},
 	}
 
-	resolution, err := resolver.Resolve(context.Background(), "/repo", snapshot, previous)
+	resolution, err := resolver.Resolve(context.Background(), repoRoot, snapshot, previous)
 	if err != nil {
 		t.Fatalf("Resolve returned error: %v", err)
 	}
@@ -168,6 +175,7 @@ func TestPoetryRuntimeResolverFlagsInterpreterDriftWithoutLockfileChange(t *test
 func TestPoetryRuntimeResolverCapturesLegacyCodeLoaderCapabilities(t *testing.T) {
 	t.Parallel()
 
+	repoRoot := preparePoetryRuntimeRepo(t, true)
 	resolver := &PoetryRuntimeResolver{
 		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
 			_ = ctx
@@ -206,7 +214,7 @@ func TestPoetryRuntimeResolverCapturesLegacyCodeLoaderCapabilities(t *testing.T)
 		},
 	}
 
-	resolution, err := resolver.Resolve(context.Background(), "/repo", snapshot, nil)
+	resolution, err := resolver.Resolve(context.Background(), repoRoot, snapshot, nil)
 	if err != nil {
 		t.Fatalf("Resolve returned error: %v", err)
 	}
@@ -227,6 +235,7 @@ func TestPoetryRuntimeResolverCapturesLegacyCodeLoaderCapabilities(t *testing.T)
 func TestPoetryRuntimeResolverFallsBackWhenPoetryEnvInfoExecutableFails(t *testing.T) {
 	t.Parallel()
 
+	repoRoot := preparePoetryRuntimeRepo(t, true)
 	resolver := &PoetryRuntimeResolver{
 		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
 			_ = ctx
@@ -267,7 +276,7 @@ func TestPoetryRuntimeResolverFallsBackWhenPoetryEnvInfoExecutableFails(t *testi
 		},
 	}
 
-	resolution, err := resolver.Resolve(context.Background(), "/repo", snapshot, nil)
+	resolution, err := resolver.Resolve(context.Background(), repoRoot, snapshot, nil)
 	if err != nil {
 		t.Fatalf("Resolve returned error: %v", err)
 	}
@@ -280,4 +289,82 @@ func TestPoetryRuntimeResolverFallsBackWhenPoetryEnvInfoExecutableFails(t *testi
 	if resolution.Profile.PythonVersion != "Python 3.10.19" {
 		t.Fatalf("expected python version %q, got %q", "Python 3.10.19", resolution.Profile.PythonVersion)
 	}
+}
+
+func TestPoetryRuntimeResolverDetectsWhenProjectDoesNotDeclareCodeLoader(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := preparePoetryRuntimeRepo(t, false)
+	resolver := &PoetryRuntimeResolver{
+		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
+			_ = ctx
+			_ = dir
+			_ = name
+
+			joined := strings.Join(args, " ")
+			switch {
+			case joined == "env info --executable":
+				return []byte("/repo/.venv/bin/python\n"), nil, nil
+			case joined == "--version":
+				return []byte("Python 3.11.8\n"), nil, nil
+			case joined == "check":
+				return []byte("All set!\n"), nil, nil
+			case joined == "-c import code_loader":
+				return nil, []byte("ModuleNotFoundError\n"), errors.New("exit status 1")
+			default:
+				t.Fatalf("unexpected poetry command: %q", joined)
+				return nil, nil, nil
+			}
+		},
+	}
+
+	snapshot := core.WorkspaceSnapshot{
+		FileHashes: map[string]string{
+			"pyproject.toml": "pyproject-hash",
+			"poetry.lock":    "poetry-lock-hash",
+		},
+		Runtime: core.RuntimeState{
+			SupportedProject: true,
+			PoetryFound:      true,
+			PoetryExecutable: "poetry",
+			PoetryVersion:    "Poetry 2.0.0",
+		},
+	}
+
+	resolution, err := resolver.Resolve(context.Background(), repoRoot, snapshot, nil)
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if resolution.Profile == nil {
+		t.Fatal("expected resolved runtime profile")
+	}
+	if resolution.Profile.CodeLoaderDeclaredInProject {
+		t.Fatalf("did not expect code-loader to be declared in project: %+v", resolution.Profile)
+	}
+}
+
+func preparePoetryRuntimeRepo(t *testing.T, declared bool) string {
+	t.Helper()
+
+	repoRoot := t.TempDir()
+	lines := []string{
+		"[tool.poetry]",
+		`name = "demo"`,
+		`version = "0.1.0"`,
+		`description = ""`,
+		`authors = ["Concierge <qa@example.com>"]`,
+		"",
+		"[tool.poetry.dependencies]",
+		`python = "^3.10"`,
+	}
+	if declared {
+		lines = append(lines, `code-loader = "^1.0.165"`)
+	}
+	lines = append(lines, "")
+
+	if err := os.WriteFile(filepath.Join(repoRoot, "pyproject.toml"), []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	return repoRoot
 }

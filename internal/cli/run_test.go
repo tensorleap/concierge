@@ -547,6 +547,30 @@ func TestRunStopsAfterManualRuntimeSetupIsRequired(t *testing.T) {
 	}
 }
 
+func TestRunRepairsDeclaredCodeLoaderMissingWithoutCommitPrompt(t *testing.T) {
+	t.Setenv("CONCIERGE_ENABLE_HARNESS", "0")
+	mockPoetryDeclaredCodeLoaderMissingUntilInstall(t)
+
+	repo := initRunTestRepo(t, true)
+	withWorkingDir(t, repo)
+
+	output, err := executeCLIWithInput(t, "y\n", "run", "--max-iterations=2", "--no-color")
+	if err != nil {
+		t.Fatalf("expected runtime repair flow to complete, got: %v\noutput=%q", err, output)
+	}
+	if !strings.Contains(output, "You > Continue now? [y/N]:") {
+		t.Fatalf("expected runtime repair approval prompt, got output: %q", output)
+	}
+	if strings.Contains(output, "Apply and commit these changes? [Y/n]:") {
+		t.Fatalf("did not expect commit approval prompt for environment-only runtime repair, got output: %q", output)
+	}
+
+	status := runGit(t, repo, "status", "--porcelain")
+	if strings.TrimSpace(status) != "" {
+		t.Fatalf("expected clean worktree after runtime repair, got %q", status)
+	}
+}
+
 func TestRunWithPersistWritesConciergeArtifacts(t *testing.T) {
 	disableHarness(t)
 	repo := initRunTestRepo(t, true)
@@ -1001,6 +1025,157 @@ esac
 		t.Fatalf("WriteFile failed for mock poetry CLI: %v", err)
 	}
 
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return binDir
+}
+
+func mockPoetryDeclaredCodeLoaderMissingUntilInstall(t *testing.T) string {
+	t.Helper()
+
+	binDir := t.TempDir()
+	installMarker := filepath.Join(t.TempDir(), "code_loader_installed")
+	leapPath := filepath.Join(binDir, "leap")
+	poetryPath := filepath.Join(binDir, "poetry")
+	mockPythonPath := filepath.Join(binDir, "mock-python")
+
+	leapScript := `#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-}"
+case "$cmd" in
+  --version)
+    echo "leap v0.2.0"
+    ;;
+  auth)
+    if [[ "${2:-}" != "whoami" ]]; then
+      echo "unsupported auth subcommand" >&2
+      exit 1
+    fi
+    echo "concierge@example.com"
+    ;;
+  server)
+    if [[ "${2:-}" != "info" ]]; then
+      echo "unsupported server subcommand" >&2
+      exit 1
+    fi
+    cat <<'EOF'
+Installation information:
+datasetvolumes: []
+EOF
+    ;;
+  *)
+    echo "unsupported leap command" >&2
+    exit 1
+    ;;
+esac
+`
+	if err := os.WriteFile(leapPath, []byte(leapScript), 0o755); err != nil {
+		t.Fatalf("WriteFile failed for mock leap CLI: %v", err)
+	}
+
+	mockPythonScript := fmt.Sprintf(`#!/usr/bin/env bash
+set -euo pipefail
+
+self_path=%q
+install_marker=%q
+cmd="${1:-}"
+case "$cmd" in
+  --version)
+    echo "Python 3.11.8"
+    ;;
+  -c)
+    code="${2:-}"
+    if [[ "$code" == "import code_loader" ]]; then
+      if [[ -f "$install_marker" ]]; then
+        exit 0
+      fi
+      echo "ModuleNotFoundError: No module named 'code_loader'" >&2
+      exit 1
+    fi
+    if [[ "$code" == "import sys; print(sys.executable)" ]]; then
+      echo "$self_path"
+      exit 0
+    fi
+    if [[ "$code" == *"probeSucceeded"* && "$code" == *"supportsGuideLocalStatusTable"* ]]; then
+      echo '{"probeSucceeded":true,"version":"1.0.165","supportsGuideLocalStatusTable":true,"supportsCheckDataset":true}'
+      exit 0
+    fi
+    if [[ "$code" == *"LeapLoader"* && "$code" == *"check_dataset"* ]]; then
+      echo '{"available":true,"isValid":true,"isValidForModel":true,"generalError":"","printLog":"","payloads":[],"setup":{"preprocess":{"trainingLength":1,"validationLength":1,"testLength":0,"unlabeledLength":0,"additionalLength":0},"inputs":[],"metadata":[],"outputs":[],"visualizers":[],"predictionTypes":[],"customLosses":[],"metrics":[]}}'
+      exit 0
+    fi
+    if [[ "$code" == *"import onnx"* || "$code" == *"from tensorflow import keras"* ]]; then
+      echo '{"inputs":[]}'
+      exit 0
+    fi
+    python3 "$@"
+    ;;
+  leap_integration.py|*/leap_integration.py)
+    cat <<'EOF'
+tensorleap_preprocess        | ✅
+tensorleap_input_encoder     | ✅
+tensorleap_load_model        | ✅
+tensorleap_integration_test  | ✅
+tensorleap_gt_encoder        | ✅
+All parts have been successfully set.
+Successful!
+EOF
+    ;;
+  *)
+    python3 "$@"
+    ;;
+esac
+`, mockPythonPath, installMarker)
+	if err := os.WriteFile(mockPythonPath, []byte(mockPythonScript), 0o755); err != nil {
+		t.Fatalf("WriteFile failed for mock poetry runtime python: %v", err)
+	}
+
+	poetryScript := fmt.Sprintf(`#!/usr/bin/env bash
+set -euo pipefail
+
+mock_python=%q
+install_marker=%q
+cmd="${1:-}"
+case "$cmd" in
+  --version)
+    echo "Poetry 2.0.0"
+    ;;
+  env)
+    if [[ "${2:-}" != "info" || "${3:-}" != "--executable" ]]; then
+      echo "unsupported poetry env command" >&2
+      exit 1
+    fi
+    echo "$mock_python"
+    ;;
+  check)
+    echo "All set!"
+    ;;
+  install)
+    touch "$install_marker"
+    echo "Installing dependencies"
+    ;;
+  add)
+    echo "unexpected poetry add ${2:-}" >&2
+    exit 99
+    ;;
+  run)
+    if [[ "${2:-}" != "python" ]]; then
+      echo "unsupported poetry run command" >&2
+      exit 1
+    fi
+    "$mock_python" "${@:3}"
+    ;;
+  *)
+    echo "unsupported poetry command" >&2
+    exit 1
+    ;;
+esac
+`, mockPythonPath, installMarker)
+	if err := os.WriteFile(poetryPath, []byte(poetryScript), 0o755); err != nil {
+		t.Fatalf("WriteFile failed for mock poetry CLI: %v", err)
+	}
+
+	t.Setenv("CONCIERGE_TEST_MOCK_PYTHON_PATH", mockPythonPath)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return binDir
 }

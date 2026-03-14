@@ -35,8 +35,8 @@ The remaining work starts from that baseline.
 - [x] `GUIDE1` `ACCEPTED` - Make `leap_integration.py` the canonical integration layout for fresh repos.
 - [x] `GUIDE2` `ACCEPTED` - Implement guide-native progressive validator orchestration and reporting.
 - [x] `GUIDE3` `ACCEPTED` - Enforce thin `integration_test` rules and targeted authoring for integration-test wiring failures.
-- [ ] `VAL1` `PENDING` - Replace the stub harness with multi-sample runtime validation plus issue mapping.
-- [x] `FIX1` `DONE` - Separate fixture bootstrap from product runtime and generate guide-native mutation cases.
+- [x] `VAL1` `ACCEPTED` - Replace the stub harness with multi-sample runtime validation plus issue mapping.
+- [x] `FIX1` `ACCEPTED` - Separate fixture bootstrap from product runtime and generate guide-native mutation cases.
 - [ ] `FIX2` `PENDING` - Add capability and composite fixture E2E coverage, including agent-context quality assertions.
 - [ ] `OPS1` `PENDING` - Implement upload readiness checks and guarded `leap push`.
 - [ ] `SHIP1` `PENDING` - Finish CI, docs, and release-readiness hardening.
@@ -556,18 +556,18 @@ The backlog is complete when:
 
 Current state:
 
-The remaining backlog is now explicitly ordered around runtime correctness first, then alignment to the Tensorleap authoring model from `GUIDE.md`, then the downstream validation, fixture, upload, CI, and release work.
+Runtime resolution, guide-native validation, multi-sample harness validation, and deterministic fixture mutation coverage are now merged on `main`. The remaining backlog is centered on fixture E2E convergence proof, guarded upload, and release hardening.
 
 Primary residual risks:
 
-1. Runtime ambiguity still threatens every Python-dependent action until `ENV1-ENV4` land.
-2. Concierge still reasons mostly in contract terms, not yet in the full guide-native staged validator loop.
-3. Fixture and release confidence remain incomplete until `VAL1`, `FIX1-FIX2`, `OPS1`, and `SHIP1` land.
+1. Capability-level fixture E2E coverage is still incomplete until `FIX2` proves planner ordering and recovery across generated case repos.
+2. Guarded upload behavior is still unimplemented until `OPS1` lands.
+3. CI and release confidence remain incomplete until `SHIP1` lands.
 
 Mitigations:
 
-1. Do not start any guide-native authoring or harness work before the runtime phase is complete.
-2. Treat `GUIDE1-GUIDE3` as the new product center of gravity, not as doc polish.
+1. Keep `FIX2` focused on generated case repos so capability and composite recovery are proven end to end without depending on exact repo diffs.
+2. Add guarded upload only after fixture E2E confirms the guide-native repair loop.
 3. Keep the pending plan compressed so future sessions spend context on implementation, not on historical bookkeeping.
 
 ## Interfaces And Dependencies

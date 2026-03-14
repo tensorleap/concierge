@@ -17,6 +17,8 @@ type PoetryDependencyExecutor struct {
 	runCommand poetryDependencyCommandRunner
 }
 
+const minimumCodeLoaderConstraint = "code-loader@^1.0.165"
+
 // NewPoetryDependencyExecutor creates a Poetry-backed runtime executor.
 func NewPoetryDependencyExecutor() *PoetryDependencyExecutor {
 	return &PoetryDependencyExecutor{runCommand: runPoetryDependencyCommand}
@@ -51,9 +53,9 @@ func (e *PoetryDependencyExecutor) Execute(ctx context.Context, snapshot core.Wo
 
 	commandArgs := []string{"install"}
 	summary := "installed project dependencies in the resolved Poetry environment"
-	if !profile.CodeLoaderReady {
-		commandArgs = []string{"add", "code-loader@^1.0"}
-		summary = "added code-loader@^1.0 through Poetry"
+	if !profile.CodeLoaderReady && !profile.CodeLoaderDeclaredInProject {
+		commandArgs = []string{"add", minimumCodeLoaderConstraint}
+		summary = fmt.Sprintf("added %s through Poetry", minimumCodeLoaderConstraint)
 	}
 
 	stdout, stderr, err := e.runCommand(ctx, repoRoot, "poetry", commandArgs...)
@@ -65,16 +67,40 @@ func (e *PoetryDependencyExecutor) Execute(ctx context.Context, snapshot core.Wo
 		return core.ExecutionResult{}, core.WrapError(core.KindUnknown, "execute.poetry.run", fmt.Errorf("%s", errText))
 	}
 
+	evidence := []core.EvidenceItem{
+		{Name: "executor.mode", Value: "poetry_dependency"},
+		{Name: "runtime.command", Value: "poetry " + strings.Join(commandArgs, " ")},
+		{Name: "runtime.stdout", Value: strings.TrimSpace(string(stdout))},
+		{Name: "runtime.stderr", Value: strings.TrimSpace(string(stderr))},
+	}
+	if !profile.CodeLoaderReady {
+		verificationArgs := []string{"-c", "import code_loader"}
+		verifyStdout, verifyStderr, verifyErr := e.runCommand(ctx, repoRoot, profile.InterpreterPath, verificationArgs...)
+		evidence = append(evidence,
+			core.EvidenceItem{Name: "runtime.verification.command", Value: profile.InterpreterPath + " " + strings.Join(verificationArgs, " ")},
+			core.EvidenceItem{Name: "runtime.verification.stdout", Value: strings.TrimSpace(string(verifyStdout))},
+			core.EvidenceItem{Name: "runtime.verification.stderr", Value: strings.TrimSpace(string(verifyStderr))},
+		)
+		if verifyErr != nil {
+			errText := strings.TrimSpace(strings.TrimSpace(string(verifyStdout)) + "\n" + strings.TrimSpace(string(verifyStderr)))
+			if errText == "" {
+				errText = verifyErr.Error()
+			}
+			return core.ExecutionResult{}, core.WrapError(
+				core.KindUnknown,
+				"execute.poetry.verify_code_loader",
+				fmt.Errorf("code_loader import still failed after runtime repair: %s", errText),
+			)
+		}
+		evidence = append(evidence, core.EvidenceItem{Name: "runtime.verification.result", Value: "code_loader import ok"})
+		summary += " and verified `code_loader` import"
+	}
+
 	return core.ExecutionResult{
 		Step:    step,
 		Applied: true,
 		Summary: summary,
-		Evidence: []core.EvidenceItem{
-			{Name: "executor.mode", Value: "poetry_dependency"},
-			{Name: "runtime.command", Value: "poetry " + strings.Join(commandArgs, " ")},
-			{Name: "runtime.stdout", Value: strings.TrimSpace(string(stdout))},
-			{Name: "runtime.stderr", Value: strings.TrimSpace(string(stderr))},
-		},
+		Evidence: evidence,
 	}, nil
 }
 

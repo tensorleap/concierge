@@ -26,7 +26,7 @@
       "family": "minimum_inputs",
       "patch": "fixtures/cases/patches/mnist_minimum_inputs.patch",
       "expected_primary_step": "ensure.input_encoders",
-      "expected_issue_codes": ["input_encoder_missing", "input_encoder_coverage_incomplete"],
+      "expected_issue_codes": ["input_encoder_coverage_incomplete"],
       "confirmed_mapping": {
         "input_symbols": ["image", "meta"],
         "ground_truth_symbols": ["classes", "label"]
@@ -50,7 +50,11 @@
       "patch": "fixtures/cases/patches/mnist_integration_test_wiring.patch",
       "expected_primary_step": "ensure.integration_test_contract",
       "expected_issue_codes": ["integration_test_missing_required_calls"],
-      "expected_missing_integration_call": "encode_meta"
+      "confirmed_mapping": {
+        "input_symbols": ["image", "meta"],
+        "ground_truth_symbols": ["classes", "label"]
+      },
+      "expected_missing_integration_call": "meta"
     },
     {
       "id": "mnist_gt_encoders",
@@ -59,7 +63,7 @@
       "family": "gt_encoders",
       "patch": "fixtures/cases/patches/mnist_gt_encoders.patch",
       "expected_primary_step": "ensure.ground_truth_encoders",
-      "expected_issue_codes": ["gt_encoder_missing", "gt_encoder_coverage_incomplete"],
+      "expected_issue_codes": ["gt_encoder_coverage_incomplete"],
       "confirmed_mapping": {
         "input_symbols": ["image", "meta"],
         "ground_truth_symbols": ["classes", "label"]

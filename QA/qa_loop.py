@@ -35,6 +35,7 @@ PROMPT_LINE_RE = re.compile(
 QA_DIR = Path(__file__).resolve().parent
 REPO_ROOT = QA_DIR.parent
 PROMPTS_DIR = QA_DIR / "prompts"
+EXTERNAL_COMMAND_TIMEOUT_FLOOR_SECONDS = 1.0
 
 
 @dataclass
@@ -399,6 +400,37 @@ class SupervisorLoop:
                         },
                     )
                     idle_turns = 0
+                elif directive.action == "RUN_COMMAND" and directive.input_text:
+                    command_result = self._run_external_command(
+                        command_text=directive.input_text,
+                        iteration=iteration,
+                        paths=paths,
+                        remaining_runtime_seconds=max(
+                            self.config.max_runtime_seconds - (time.monotonic() - started_monotonic),
+                            EXTERNAL_COMMAND_TIMEOUT_FLOOR_SECONDS,
+                        ),
+                    )
+                    transcript_raw, transcript_clean = append_terminal_output(
+                        paths,
+                        transcript_raw,
+                        transcript_clean,
+                        command_result["transcript"],
+                    )
+                    idle_turns = 0
+                    if not self.driver.is_running() and command_result["returncode"] == 0:
+                        self.driver.stop()
+                        append_jsonl(
+                            paths.interaction_log,
+                            {
+                                "time": utc_now(),
+                                "iteration": iteration,
+                                "kind": "process_restart",
+                                "command": self.config.command,
+                            },
+                        )
+                        self.driver.start(self.config.command, cwd=self.config.command_cwd, env=os.environ.copy())
+                    latest_output = visible_terminal_output(self._read_until_actionable(patience=True))
+                    transcript_raw, transcript_clean = append_terminal_output(paths, transcript_raw, transcript_clean, latest_output)
                 elif latest_output:
                     idle_turns = 0
                 else:
@@ -586,6 +618,67 @@ class SupervisorLoop:
             add_dirs=codex_add_dirs(self.config.fixture_post_path if not blind_first_active else None),
         )
         return LoopDirective.from_dict(payload)
+
+    def _run_external_command(
+        self,
+        *,
+        command_text: str,
+        iteration: int,
+        paths: RunPaths,
+        remaining_runtime_seconds: float,
+    ) -> dict[str, Any]:
+        append_jsonl(
+            paths.interaction_log,
+            {
+                "time": utc_now(),
+                "iteration": iteration,
+                "kind": "command",
+                "text": command_text,
+                "cwd": str(self.config.command_cwd),
+            },
+        )
+        try:
+            completed = subprocess.run(
+                ["bash", "-lc", command_text],
+                cwd=str(self.config.command_cwd),
+                env=os.environ.copy(),
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=max(remaining_runtime_seconds, EXTERNAL_COMMAND_TIMEOUT_FLOOR_SECONDS),
+            )
+            returncode = completed.returncode
+            stdout = coerce_text(completed.stdout)
+            stderr = coerce_text(completed.stderr)
+        except subprocess.TimeoutExpired as exc:
+            returncode = 124
+            stdout = coerce_text(exc.stdout or "")
+            stderr = coerce_text(exc.stderr or "")
+
+        transcript_lines = [
+            f"[qa-loop] external command in {self.config.command_cwd}:",
+            f"$ {command_text}",
+        ]
+        if stdout.strip():
+            transcript_lines.extend(["[stdout]", stdout.rstrip()])
+        if stderr.strip():
+            transcript_lines.extend(["[stderr]", stderr.rstrip()])
+        transcript_lines.append(f"[qa-loop] external command exit code: {returncode}")
+        transcript = "\n".join(transcript_lines) + "\n"
+
+        append_jsonl(
+            paths.interaction_log,
+            {
+                "time": utc_now(),
+                "iteration": iteration,
+                "kind": "command_result",
+                "text": command_text,
+                "cwd": str(self.config.command_cwd),
+                "returncode": returncode,
+            },
+        )
+
+        return {"returncode": returncode, "stdout": stdout, "stderr": stderr, "transcript": transcript}
 
     def _request_report(self, *, paths: RunPaths, summary: dict[str, Any], loop_state: str) -> QAReport:
         prompt = textwrap.dedent(

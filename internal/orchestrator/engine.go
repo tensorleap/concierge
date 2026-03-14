@@ -106,16 +106,16 @@ func (e *Engine) runIteration(
 	}
 	e.emit(observe.Event{Kind: observe.EventStageFinished, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageInspect, Message: "Inspection finished"})
 
-	e.emit(observe.Event{Kind: observe.EventStageStarted, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StagePlan, Message: "Choosing the next fix"})
+	e.emit(observe.Event{Kind: observe.EventStageStarted, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StagePlan, Message: "Choosing the next step"})
 	plan, err := e.planner.Plan(ctx, snapshot, status)
 	if err != nil {
 		e.emit(observe.Event{Kind: observe.EventError, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StagePlan, Message: err.Error()})
 		return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StagePlan, Err: err}
 	}
 	e.emit(observe.Event{Kind: observe.EventStageFinished, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StagePlan, Message: "Selected the next step"})
-	e.emit(observe.Event{Kind: observe.EventStepSelected, Iteration: iteration, SnapshotID: snapshot.ID, StepID: plan.Primary.ID, Message: core.HumanEnsureStepLabel(plan.Primary.ID)})
+	e.emit(observe.Event{Kind: observe.EventStepSelected, Iteration: iteration, SnapshotID: snapshot.ID, StepID: plan.Primary.ID, Message: "Working on: " + core.HumanEnsureStepLabel(plan.Primary.ID)})
 
-	e.emit(observe.Event{Kind: observe.EventStageStarted, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageExecute, StepID: plan.Primary.ID, Message: "Applying the selected fix"})
+	e.emit(observe.Event{Kind: observe.EventStageStarted, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageExecute, StepID: plan.Primary.ID, Message: "Working through the selected step"})
 	result, err := e.executor.Execute(ctx, snapshot, plan.Primary)
 	if err != nil {
 		e.emit(observe.Event{Kind: observe.EventError, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageExecute, StepID: plan.Primary.ID, Message: err.Error()})
@@ -136,15 +136,23 @@ func (e *Engine) runIteration(
 	e.emit(observe.Event{Kind: observe.EventStageFinished, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageExecute, StepID: plan.Primary.ID, Message: "Execution finished"})
 
 	finalResult := decision.FinalResult
+	validationStartedMessage := "Validating runtime behavior"
+	validationFinishedMessage := "Validation finished"
+	reportStartedMessage := "Writing the run report"
+	if executionRequiresUserAction(finalResult) {
+		validationStartedMessage = "Confirming the manual next step"
+		validationFinishedMessage = "Manual next step confirmed"
+		reportStartedMessage = "Writing the blocker summary"
+	}
 
-	e.emit(observe.Event{Kind: observe.EventValidationStarted, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageValidate, StepID: finalResult.Step.ID, Message: "Validating runtime behavior"})
+	e.emit(observe.Event{Kind: observe.EventValidationStarted, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageValidate, StepID: finalResult.Step.ID, Message: validationStartedMessage})
 	validation, err := e.validator.Validate(ctx, snapshot, finalResult)
 	if err != nil {
 		e.emit(observe.Event{Kind: observe.EventError, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageValidate, StepID: finalResult.Step.ID, Message: err.Error()})
 		return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StageValidate, Err: err}
 	}
 	validation = mergeBlockingInspectIssues(validation, status)
-	e.emit(observe.Event{Kind: observe.EventValidationFinished, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageValidate, StepID: finalResult.Step.ID, Message: "Validation finished"})
+	e.emit(observe.Event{Kind: observe.EventValidationFinished, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageValidate, StepID: finalResult.Step.ID, Message: validationFinishedMessage})
 
 	evidence := append([]core.EvidenceItem(nil), finalResult.Evidence...)
 	evidence = append(evidence, decision.Evidence...)
@@ -170,7 +178,7 @@ func (e *Engine) runIteration(
 		}
 	}
 
-	e.emit(observe.Event{Kind: observe.EventStageStarted, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageReport, StepID: finalResult.Step.ID, Message: "Writing the run report"})
+	e.emit(observe.Event{Kind: observe.EventStageStarted, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageReport, StepID: finalResult.Step.ID, Message: reportStartedMessage})
 	if err := e.reporter.Report(ctx, report); err != nil {
 		e.emit(observe.Event{Kind: observe.EventError, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageReport, StepID: finalResult.Step.ID, Message: err.Error()})
 		return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StageReport, Err: err}
@@ -224,6 +232,15 @@ func mergeBlockingInspectIssues(validation core.ValidationResult, status core.In
 	}
 
 	return merged
+}
+
+func executionRequiresUserAction(result core.ExecutionResult) bool {
+	for _, item := range result.Evidence {
+		if item.Name == "executor.mode" && item.Value == "self_service" {
+			return true
+		}
+	}
+	return false
 }
 
 func missingDependencyError(name string) error {

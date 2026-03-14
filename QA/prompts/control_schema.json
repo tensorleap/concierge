@@ -4,7 +4,7 @@
   "properties": {
     "action": {
       "type": "string",
-      "enum": ["SEND_INPUT", "WAIT"]
+      "enum": ["SEND_INPUT", "WAIT", "RUN_COMMAND"]
     },
     "input_text": {
       "type": "string"

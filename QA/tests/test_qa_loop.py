@@ -279,6 +279,159 @@ class QALoopTest(unittest.TestCase):
             report_path = artifacts_root / "reports" / f"{run_dir.name}.md"
             self.assertTrue(report_path.is_file())
 
+    def test_supervisor_loop_runs_manual_command_and_restarts_concierge(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            artifacts_root = tmp / "artifacts"
+            command_cwd = tmp / "fixture"
+            artifacts_root.mkdir()
+            command_cwd.mkdir()
+
+            concierge_script = tmp / "fake_concierge_restart.py"
+            concierge_script.write_text(
+                textwrap.dedent(
+                    """
+                    from pathlib import Path
+
+                    marker = Path("prepared.txt")
+                    if not marker.exists():
+                        print("Manual step required: run touch prepared.txt", flush=True)
+                        raise SystemExit(0)
+
+                    print("Type YES to continue:", flush=True)
+                    answer = input()
+                    print(f"Input received: {answer}", flush=True)
+                    print("Integration complete", flush=True)
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            codex_script = tmp / "fake_codex_restart.py"
+            codex_script.write_text(
+                textwrap.dedent(
+                    """
+                    import json
+                    import os
+                    import sys
+                    from pathlib import Path
+
+                    args = sys.argv[1:]
+                    output_path = None
+                    for index, value in enumerate(args):
+                        if value == "-o":
+                            output_path = Path(args[index + 1])
+                            break
+                    if output_path is None:
+                        raise SystemExit("missing -o")
+
+                    prompt = sys.stdin.read()
+                    state_path = Path(os.environ["FAKE_CODEX_STATE"])
+                    if state_path.exists():
+                        state = json.loads(state_path.read_text(encoding="utf-8"))
+                    else:
+                        state = {"turn": 0}
+
+                    if "final qualitative QA report" in prompt:
+                        payload = {
+                            "title": "Manual handoff recovery report",
+                            "overall_outcome": "The supervisor ran the manual command, restarted Concierge, and completed the session.",
+                            "loop_state": "STOP_REPORT",
+                            "integration_progress": "The manual prerequisite was handled outside Concierge and the relaunched session reached completion.",
+                            "ux_clarity": [],
+                            "product_issues": [],
+                            "agent_interaction_issues": [],
+                            "suggestions": [],
+                            "notable_moments": ["The supervisor restarted Concierge after the external command succeeded."]
+                        }
+                    else:
+                        state["turn"] += 1
+                        if state["turn"] == 1:
+                            payload = {
+                                "action": "RUN_COMMAND",
+                                "input_text": "touch prepared.txt",
+                                "loop_state": "CONTINUE",
+                                "summary": "Handle the manual prerequisite outside Concierge.",
+                                "issues": [],
+                                "next_focus": "Relaunch Concierge and continue the flow."
+                            }
+                        elif state["turn"] == 2:
+                            payload = {
+                                "action": "SEND_INPUT",
+                                "input_text": "YES",
+                                "loop_state": "CONTINUE",
+                                "summary": "Continue the restarted session.",
+                                "issues": [],
+                                "next_focus": "Wait for the completion message."
+                            }
+                        else:
+                            payload = {
+                                "action": "WAIT",
+                                "input_text": "",
+                                "loop_state": "STOP_REPORT",
+                                "summary": "The restarted session reached a clean stopping point.",
+                                "issues": [],
+                                "next_focus": "Write the final report."
+                            }
+                        state_path.write_text(json.dumps(state), encoding="utf-8")
+
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    output_path.write_text(json.dumps(payload), encoding="utf-8")
+                    print(json.dumps({"type": "thread.started", "thread_id": "fake-thread"}))
+                    print(json.dumps({"type": "item.completed", "item": {"id": "item-1", "type": "agent_message", "text": json.dumps(payload)}}))
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            codex_script.chmod(0o755)
+
+            env = os.environ.copy()
+            env["FAKE_CODEX_STATE"] = str(tmp / "fake_codex_restart_state.json")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(QA_LOOP),
+                    "--artifacts-root",
+                    str(artifacts_root),
+                    "--command-cwd",
+                    str(command_cwd),
+                    "--codex-command",
+                    f"{sys.executable} {codex_script}",
+                    "--",
+                    sys.executable,
+                    str(concierge_script),
+                ],
+                cwd=str(ROOT),
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                msg=f"stdout:\n{completed.stdout}\n\nstderr:\n{completed.stderr}",
+            )
+
+            run_dir = next((artifacts_root / "runs").iterdir())
+            summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["loop_state"], "STOP_REPORT")
+            self.assertEqual(summary["terminal_exit_code"], 0)
+
+            interaction_log = artifacts_root / "transcripts" / f"{run_dir.name}.interaction.jsonl"
+            interaction_body = interaction_log.read_text(encoding="utf-8")
+            self.assertIn('"kind": "command"', interaction_body)
+            self.assertIn('"kind": "process_restart"', interaction_body)
+
+            transcript_path = artifacts_root / "transcripts" / f"{run_dir.name}.terminal.txt"
+            transcript = transcript_path.read_text(encoding="utf-8")
+            self.assertIn("[qa-loop] external command", transcript)
+            self.assertIn("Type YES to continue:", transcript)
+            self.assertIn("Integration complete", transcript)
+
     def test_supervisor_loop_waits_for_delayed_followup_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)

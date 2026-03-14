@@ -375,7 +375,10 @@ func newRunCommand() *cobra.Command {
 			case orchestrator.RunStopReasonInterrupted:
 				return fmt.Errorf("the current Claude step was interrupted. review the latest output and rerun `concierge run` when you're ready to continue")
 			case orchestrator.RunStopReasonNeedsUserAction:
-				return fmt.Errorf("Concierge needs you to complete the manual step described above before it can continue. After that, rerun `concierge run`.")
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Manual step required outside Concierge. After completing the step above, rerun `concierge run`."); err != nil {
+					return err
+				}
+				return nil
 			case orchestrator.RunStopReasonMaxIterations:
 				return fmt.Errorf("integration still has pending requirements. run `concierge run` again to continue guided checks.\ntip: use `--max-iterations 3` to run multiple guided rounds in one command")
 			case orchestrator.RunStopReasonCancelled:

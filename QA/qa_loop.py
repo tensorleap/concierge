@@ -8,12 +8,13 @@ import re
 import shlex
 import subprocess
 import sys
+import threading
 import textwrap
 import time
 import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable, TextIO
 
 from pty_driver import PTYDriver
 
@@ -102,12 +103,39 @@ class RunPaths:
     terminal_raw: Path
     terminal_clean: Path
     interaction_log: Path
+    full_transcript: Path
     report_json: Path
     report_markdown: Path
 
 
 class CodexInvocationError(RuntimeError):
     pass
+
+
+class LiveIO:
+    def __init__(self, *, transcript_path: Path) -> None:
+        self.transcript_path = transcript_path
+        self._lock = threading.Lock()
+
+    def stdout(self, text: str) -> None:
+        self._write(text, stream=sys.stdout)
+
+    def stderr(self, text: str) -> None:
+        self._write(text, stream=sys.stderr)
+
+    def transcript_only(self, text: str) -> None:
+        self._write(text, stream=None)
+
+    def _write(self, text: str, *, stream: TextIO | None) -> None:
+        if not text:
+            return
+        with self._lock:
+            if stream is not None:
+                stream.write(text)
+                stream.flush()
+            self.transcript_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.transcript_path.open("a", encoding="utf-8") as handle:
+                handle.write(text)
 
 
 class CodexClient:
@@ -136,6 +164,8 @@ class CodexClient:
         stderr_log_path: Path,
         add_dirs: Iterable[Path] = (),
         timeout_seconds: float | None = None,
+        live_io: LiveIO | None = None,
+        session_label: str = "codex",
     ) -> dict[str, Any]:
         cmd = [
             *shlex.split(self.command),
@@ -160,33 +190,37 @@ class CodexClient:
             cmd.extend(["--add-dir", str(path)])
         cmd.append("-")
 
-        try:
-            completed = subprocess.run(
-                cmd,
-                input=prompt,
-                text=True,
-                capture_output=True,
-                cwd=str(self.workspace_root),
-                check=False,
-                timeout=self.timeout_seconds if timeout_seconds is None else timeout_seconds,
+        if live_io is not None:
+            live_io.stdout(f"[qa-loop] starting {session_label}: {shlex.join(cmd)}\n")
+            live_io.transcript_only(
+                f"[qa-loop] --- {session_label} stdin begin ---\n"
+                f"{prompt.rstrip()}\n"
+                f"[qa-loop] --- {session_label} stdin end ---\n"
             )
-            stdout = completed.stdout
-            stderr = completed.stderr
-            returncode = completed.returncode
-        except subprocess.TimeoutExpired as exc:
-            stdout = exc.stdout or ""
-            stderr = exc.stderr or ""
-            returncode = None
-        stdout = coerce_text(stdout)
-        stderr = coerce_text(stderr)
+
+        effective_timeout = self.timeout_seconds if timeout_seconds is None else timeout_seconds
+        try:
+            completed = run_streaming_subprocess(
+                cmd=cmd,
+                cwd=self.workspace_root,
+                env=None,
+                input_text=prompt,
+                timeout_seconds=effective_timeout,
+                live_io=live_io,
+                stdout_prefix=f"[qa-loop][{session_label} stdout] ",
+                stderr_prefix=f"[qa-loop][{session_label} stderr] ",
+            )
+            stdout = completed["stdout"]
+            stderr = completed["stderr"]
+            returncode = completed["returncode"]
+        except subprocess.TimeoutExpired:
+            raise CodexInvocationError(
+                f"codex exec timed out after {effective_timeout:.1f}s; see {stderr_log_path}"
+            )
         event_log_path.parent.mkdir(parents=True, exist_ok=True)
         event_log_path.write_text(stdout, encoding="utf-8")
         stderr_log_path.write_text(stderr, encoding="utf-8")
 
-        if returncode is None:
-            raise CodexInvocationError(
-                f"codex exec timed out after {self.timeout_seconds:.1f}s; see {stderr_log_path}"
-            )
         if returncode != 0:
             raise CodexInvocationError(
                 f"codex exec failed with exit code {returncode}; see {stderr_log_path}"
@@ -218,6 +252,7 @@ class SupervisorLoop:
     def run(self, *, run_id: str | None = None) -> dict[str, Any]:
         run_id = run_id or default_run_id()
         paths = prepare_run_paths(self.config.artifacts_root, run_id)
+        live_io = LiveIO(transcript_path=paths.full_transcript)
         started_at = time.time()
         started_monotonic = time.monotonic()
         self.driver.start(self.config.command, cwd=self.config.command_cwd, env=os.environ.copy())
@@ -226,8 +261,15 @@ class SupervisorLoop:
         transcript_clean = ""
         turns: list[dict[str, Any]] = []
         ensure_run_artifact_files(paths)
+        live_io.stdout(f"[qa-loop] run id: {run_id}\n")
         latest_output = visible_terminal_output(self._read_until_actionable(patience=True))
-        transcript_raw, transcript_clean = append_terminal_output(paths, transcript_raw, transcript_clean, latest_output)
+        transcript_raw, transcript_clean = append_terminal_output(
+            paths,
+            transcript_raw,
+            transcript_clean,
+            latest_output,
+            live_io=live_io,
+        )
 
         loop_state = "CONTINUE"
         stop_reason = ""
@@ -247,6 +289,7 @@ class SupervisorLoop:
                         transcript_raw,
                         transcript_clean,
                         latest_output,
+                        live_io=live_io,
                     )
                 else:
                     latest_output = ""
@@ -287,6 +330,7 @@ class SupervisorLoop:
                         transcript_raw,
                         transcript_clean,
                         latest_output,
+                        live_io=live_io,
                     )
                     if latest_output:
                         idle_turns = 0
@@ -313,6 +357,7 @@ class SupervisorLoop:
                         turns=turns,
                         blind_first_active=blind_first_active,
                         released_blind_first=released_blind_first,
+                        live_io=live_io,
                     )
                 except CodexInvocationError as exc:
                     prompt_visible = terminal_requires_input(latest_output)
@@ -334,6 +379,7 @@ class SupervisorLoop:
                             transcript_raw,
                             transcript_clean,
                             latest_output,
+                            live_io=live_io,
                         )
                         if latest_output:
                             idle_turns = 0
@@ -371,10 +417,9 @@ class SupervisorLoop:
                 }
                 append_jsonl(paths.turns_jsonl, turn_record)
                 turns.append(turn_record)
-                print(
+                live_io.stdout(
                     f"[qa-loop] turn {iteration}: {directive.action} {directive.loop_state} "
-                    f"{directive.summary or directive.next_focus}",
-                    flush=True,
+                    f"{directive.summary or directive.next_focus}\n"
                 )
 
                 if directive.action == "SEND_INPUT" and directive.input_text:
@@ -393,6 +438,7 @@ class SupervisorLoop:
                         stop_reason = "process_exit_before_input"
                         break
                     try:
+                        live_io.stdout(f"[qa-loop] input -> {directive.input_text}\n")
                         self.driver.send(directive.input_text, append_newline=True)
                     except OSError as exc:
                         append_jsonl(
@@ -427,12 +473,15 @@ class SupervisorLoop:
                             self.config.max_runtime_seconds - (time.monotonic() - started_monotonic),
                             EXTERNAL_COMMAND_TIMEOUT_FLOOR_SECONDS,
                         ),
+                        live_io=live_io,
                     )
                     transcript_raw, transcript_clean = append_terminal_output(
                         paths,
                         transcript_raw,
                         transcript_clean,
                         command_result["transcript"],
+                        live_io=live_io,
+                        echo_live=False,
                     )
                     idle_turns = 0
                     if not self.driver.is_running() and command_result["returncode"] == 0:
@@ -446,9 +495,19 @@ class SupervisorLoop:
                                 "command": self.config.command,
                             },
                         )
+                        live_io.stdout(
+                            f"[qa-loop] restarting target command in {self.config.command_cwd}: "
+                            f"{shlex.join(self.config.command)}\n"
+                        )
                         self.driver.start(self.config.command, cwd=self.config.command_cwd, env=os.environ.copy())
                     latest_output = visible_terminal_output(self._read_until_actionable(patience=True))
-                    transcript_raw, transcript_clean = append_terminal_output(paths, transcript_raw, transcript_clean, latest_output)
+                    transcript_raw, transcript_clean = append_terminal_output(
+                        paths,
+                        transcript_raw,
+                        transcript_clean,
+                        latest_output,
+                        live_io=live_io,
+                    )
                 elif latest_output:
                     idle_turns = 0
                 else:
@@ -457,7 +516,13 @@ class SupervisorLoop:
                 latest_output = visible_terminal_output(
                     self._read_until_actionable(patience=directive.action == "SEND_INPUT")
                 )
-                transcript_raw, transcript_clean = append_terminal_output(paths, transcript_raw, transcript_clean, latest_output)
+                transcript_raw, transcript_clean = append_terminal_output(
+                    paths,
+                    transcript_raw,
+                    transcript_clean,
+                    latest_output,
+                    live_io=live_io,
+                )
 
                 loop_state = directive.loop_state
                 if loop_state != "CONTINUE":
@@ -489,6 +554,7 @@ class SupervisorLoop:
                     transcript_raw,
                     transcript_clean,
                     trailing_output,
+                    live_io=live_io,
                 )
             target_stopped_by_supervisor = self.driver.is_running()
             exit_code = self.driver.stop()
@@ -499,6 +565,7 @@ class SupervisorLoop:
                     transcript_raw,
                     transcript_clean,
                     trailing_output,
+                    live_io=live_io,
                 )
 
         if not stop_reason:
@@ -526,6 +593,7 @@ class SupervisorLoop:
                 "terminal_raw": str(paths.terminal_raw),
                 "terminal_clean": str(paths.terminal_clean),
                 "interaction_log": str(paths.interaction_log),
+                "full_transcript": str(paths.full_transcript),
                 "report_json": str(paths.report_json),
                 "report_markdown": str(paths.report_markdown),
             },
@@ -534,7 +602,7 @@ class SupervisorLoop:
         write_report_artifacts(paths=paths, run_id=run_id, summary=summary, report=provisional_report(summary=summary, turns=turns))
 
         try:
-            report = self._request_report(paths=paths, summary=summary, loop_state=loop_state)
+            report = self._request_report(paths=paths, summary=summary, loop_state=loop_state, live_io=live_io)
             summary["report_status"] = "ready"
         except CodexInvocationError as exc:
             append_jsonl(
@@ -559,6 +627,7 @@ class SupervisorLoop:
             "report_json_path": str(paths.report_json),
             "report_markdown_path": str(paths.report_markdown),
             "terminal_clean_path": str(paths.terminal_clean),
+            "full_transcript_path": str(paths.full_transcript),
             "turns_path": str(paths.turns_jsonl),
         }
 
@@ -598,6 +667,7 @@ class SupervisorLoop:
         turns: list[dict[str, Any]],
         blind_first_active: bool,
         released_blind_first: bool,
+        live_io: LiveIO,
     ) -> LoopDirective:
         context = {
             "iteration": iteration,
@@ -641,6 +711,8 @@ class SupervisorLoop:
             event_log_path=turn_base.with_suffix(".jsonl"),
             stderr_log_path=turn_base.with_suffix(".stderr.log"),
             add_dirs=codex_add_dirs(self.config.fixture_post_path if not blind_first_active else None),
+            live_io=live_io,
+            session_label=f"codex-control-{iteration:03d}",
         )
         return LoopDirective.from_dict(payload)
 
@@ -651,6 +723,7 @@ class SupervisorLoop:
         iteration: int,
         paths: RunPaths,
         remaining_runtime_seconds: float,
+        live_io: LiveIO,
     ) -> dict[str, Any]:
         append_jsonl(
             paths.interaction_log,
@@ -662,19 +735,20 @@ class SupervisorLoop:
                 "cwd": str(self.config.command_cwd),
             },
         )
+        live_io.stdout(f"[qa-loop] external command start in {self.config.command_cwd}\n$ {command_text}\n")
         try:
-            completed = subprocess.run(
-                ["bash", "-lc", command_text],
-                cwd=str(self.config.command_cwd),
+            completed = run_streaming_subprocess(
+                cmd=["bash", "-lc", command_text],
+                cwd=self.config.command_cwd,
                 env=os.environ.copy(),
-                text=True,
-                capture_output=True,
-                check=False,
-                timeout=max(remaining_runtime_seconds, EXTERNAL_COMMAND_TIMEOUT_FLOOR_SECONDS),
+                timeout_seconds=max(remaining_runtime_seconds, EXTERNAL_COMMAND_TIMEOUT_FLOOR_SECONDS),
+                live_io=live_io,
+                stdout_prefix="[qa-loop][external stdout] ",
+                stderr_prefix="[qa-loop][external stderr] ",
             )
-            returncode = completed.returncode
-            stdout = coerce_text(completed.stdout)
-            stderr = coerce_text(completed.stderr)
+            returncode = completed["returncode"]
+            stdout = completed["stdout"]
+            stderr = completed["stderr"]
         except subprocess.TimeoutExpired as exc:
             returncode = 124
             stdout = coerce_text(exc.stdout or "")
@@ -690,6 +764,7 @@ class SupervisorLoop:
             transcript_lines.extend(["[stderr]", stderr.rstrip()])
         transcript_lines.append(f"[qa-loop] external command exit code: {returncode}")
         transcript = "\n".join(transcript_lines) + "\n"
+        live_io.stdout(f"[qa-loop] external command exit code: {returncode}\n")
 
         append_jsonl(
             paths.interaction_log,
@@ -705,7 +780,14 @@ class SupervisorLoop:
 
         return {"returncode": returncode, "stdout": stdout, "stderr": stderr, "transcript": transcript}
 
-    def _request_report(self, *, paths: RunPaths, summary: dict[str, Any], loop_state: str) -> QAReport:
+    def _request_report(
+        self,
+        *,
+        paths: RunPaths,
+        summary: dict[str, Any],
+        loop_state: str,
+        live_io: LiveIO,
+    ) -> QAReport:
         prompt = textwrap.dedent(
             f"""
             You are writing the final qualitative QA report for a Concierge terminal session.
@@ -738,6 +820,8 @@ class SupervisorLoop:
             stderr_log_path=report_base.with_suffix(".stderr.log"),
             add_dirs=codex_add_dirs(self.config.fixture_post_path if summary.get("blind_first_released") else None),
             timeout_seconds=min(self.config.codex_timeout_seconds, DEFAULT_REPORT_TIMEOUT_SECONDS),
+            live_io=live_io,
+            session_label="codex-final-report",
         )
         return QAReport(
             title=str(payload.get("title", "")).strip(),
@@ -832,6 +916,7 @@ def main(argv: list[str] | None = None) -> int:
         nudge_prompt=nudge_prompt,
     )
     result = loop.run(run_id=args.run_id)
+    print(f"[qa-loop] transcript: {result['full_transcript_path']}", flush=True)
     print(f"[qa-loop] report: {result['report_markdown_path']}", flush=True)
     return exit_code_for_loop_state(result["loop_state"])
 
@@ -856,23 +941,34 @@ def prepare_run_paths(artifacts_root: Path, run_id: str) -> RunPaths:
         terminal_raw=transcripts_dir / f"{run_id}.terminal.raw.txt",
         terminal_clean=transcripts_dir / f"{run_id}.terminal.txt",
         interaction_log=transcripts_dir / f"{run_id}.interaction.jsonl",
+        full_transcript=transcripts_dir / f"{run_id}.full.txt",
         report_json=reports_dir / f"{run_id}.json",
         report_markdown=reports_dir / f"{run_id}.md",
     )
 
 
 def ensure_run_artifact_files(paths: RunPaths) -> None:
-    for path in (paths.terminal_raw, paths.terminal_clean, paths.interaction_log):
+    for path in (paths.terminal_raw, paths.terminal_clean, paths.interaction_log, paths.full_transcript):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.touch(exist_ok=True)
 
 
-def append_terminal_output(paths: RunPaths, raw_text: str, clean_text: str, latest_output: str) -> tuple[str, str]:
+def append_terminal_output(
+    paths: RunPaths,
+    raw_text: str,
+    clean_text: str,
+    latest_output: str,
+    *,
+    live_io: LiveIO | None = None,
+    echo_live: bool = True,
+) -> tuple[str, str]:
     if not latest_output:
         return raw_text, clean_text
     raw_text += latest_output
     clean_chunk = normalize_terminal_text(latest_output)
     clean_text += clean_chunk
+    if live_io is not None and echo_live:
+        live_io.stdout(latest_output)
     paths.terminal_raw.parent.mkdir(parents=True, exist_ok=True)
     with paths.terminal_raw.open("a", encoding="utf-8") as handle:
         handle.write(latest_output)
@@ -940,6 +1036,92 @@ def coerce_text(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return value
+
+
+def run_streaming_subprocess(
+    *,
+    cmd: list[str],
+    cwd: Path,
+    env: dict[str, str] | None,
+    timeout_seconds: float,
+    input_text: str | None = None,
+    live_io: LiveIO | None = None,
+    stdout_prefix: str = "",
+    stderr_prefix: str = "",
+) -> dict[str, Any]:
+    process = subprocess.Popen(
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        stdin=subprocess.PIPE if input_text is not None else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+
+    stdout_chunks: list[str] = []
+    stderr_chunks: list[str] = []
+
+    def stream_pipe(
+        pipe: TextIO | None,
+        chunks: list[str],
+        *,
+        prefix: str,
+        emit: Callable[[str], None] | None,
+    ) -> None:
+        if pipe is None:
+            return
+        try:
+            for line in iter(pipe.readline, ""):
+                text = coerce_text(line)
+                chunks.append(text)
+                if emit is not None:
+                    emit(f"{prefix}{text}" if prefix else text)
+        finally:
+            pipe.close()
+
+    stdout_thread = threading.Thread(
+        target=stream_pipe,
+        args=(process.stdout, stdout_chunks),
+        kwargs={"prefix": stdout_prefix, "emit": live_io.stdout if live_io is not None else None},
+        daemon=True,
+    )
+    stderr_thread = threading.Thread(
+        target=stream_pipe,
+        args=(process.stderr, stderr_chunks),
+        kwargs={"prefix": stderr_prefix, "emit": live_io.stderr if live_io is not None else None},
+        daemon=True,
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+
+    if input_text is not None and process.stdin is not None:
+        process.stdin.write(input_text)
+        process.stdin.close()
+
+    try:
+        returncode = process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+        stdout_thread.join(timeout=0.5)
+        stderr_thread.join(timeout=0.5)
+        raise subprocess.TimeoutExpired(
+            cmd=cmd,
+            timeout=timeout_seconds,
+            output="".join(stdout_chunks),
+            stderr="".join(stderr_chunks),
+        )
+
+    stdout_thread.join(timeout=0.5)
+    stderr_thread.join(timeout=0.5)
+
+    return {
+        "returncode": returncode,
+        "stdout": "".join(stdout_chunks),
+        "stderr": "".join(stderr_chunks),
+    }
 
 
 def terminal_requires_input(text: str) -> bool:

@@ -150,6 +150,8 @@ class QALoopTest(unittest.TestCase):
                 0,
                 msg=f"stdout:\n{completed.stdout}\n\nstderr:\n{completed.stderr}",
             )
+            self.assertIn("Welcome to Concierge", completed.stdout)
+            self.assertIn("[qa-loop][codex-control-001 stdout]", completed.stdout)
 
             run_dirs = sorted((artifacts_root / "runs").iterdir())
             self.assertEqual(len(run_dirs), 1)
@@ -169,6 +171,16 @@ class QALoopTest(unittest.TestCase):
             transcript = transcript_path.read_text(encoding="utf-8")
             self.assertIn("Welcome to Concierge", transcript)
             self.assertIn("Integration complete", transcript)
+
+            full_transcript_path = artifacts_root / "transcripts" / f"{run_dir.name}.full.txt"
+            self.assertTrue(full_transcript_path.is_file())
+            self.assertEqual(Path(summary["paths"]["full_transcript"]).resolve(), full_transcript_path.resolve())
+            full_transcript = full_transcript_path.read_text(encoding="utf-8")
+            self.assertIn("Welcome to Concierge", full_transcript)
+            self.assertIn("[qa-loop] input -> YES", full_transcript)
+            self.assertIn("[qa-loop] --- codex-control-001 stdin begin ---", full_transcript)
+            self.assertIn("[qa-loop][codex-control-001 stdout]", full_transcript)
+            self.assertIn(f"[qa-loop] transcript: {full_transcript_path.resolve()}", completed.stdout)
 
     def test_supervisor_loop_stops_cleanly_when_target_exits_before_followup_input(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

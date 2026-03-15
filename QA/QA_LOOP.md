@@ -33,11 +33,19 @@ python3 QA/qa_loop.py \
   --fixture-post-path .fixtures/<fixture-id>/post
 ```
 
+Shortcut from the repo root:
+
+```bash
+make qa
+make qa REPO=mnist
+```
+
 What this does:
 
 - runs Concierge against `.fixtures/<fixture-id>/pre`
 - keeps Codex in blind-first mode at the start
 - only exposes the `post` repo path if progress stalls
+- when using `make qa`, resets the chosen built-in fixture back to a clean pinned `pre`/`post` state first
 
 ## Using Another Repo
 
@@ -107,13 +115,14 @@ By default the harness writes:
 - `QA/runs/<run-id>/summary.json`
 - `QA/runs/<run-id>/turns.jsonl`
 - `QA/runs/<run-id>/codex/*`
+- `QA/transcripts/<run-id>.full.txt`
 - `QA/transcripts/<run-id>.terminal.raw.txt`
 - `QA/transcripts/<run-id>.terminal.txt`
 - `QA/transcripts/<run-id>.interaction.jsonl`
 - `QA/reports/<run-id>.json`
 - `QA/reports/<run-id>.md`
 
-The markdown report is the easiest artifact to read first.
+The harness prints the absolute path to the full-session transcript at the end of the run. The markdown report is still the easiest artifact to read first.
 
 ## Exit Codes
 
@@ -127,9 +136,5 @@ The markdown report is the easiest artifact to read first.
 If you want the shortest working path with the built-in fixtures:
 
 ```bash
-bash scripts/fixtures_prepare.sh
-bash scripts/fixtures_verify.sh
-python3 QA/qa_loop.py \
-  --command-cwd .fixtures/<fixture-id>/pre \
-  --fixture-post-path .fixtures/<fixture-id>/post
+make qa
 ```

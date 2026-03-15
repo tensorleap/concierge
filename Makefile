@@ -14,8 +14,10 @@ UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v '/internal/e2e/fixtures$$'
 PYTHON ?= python3
 QA_DIR ?= QA
 QA_TEST_DIR ?= $(QA_DIR)/tests
+REPO ?= ultralytics
+QA_ARGS ?=
 
-.PHONY: build test test-qa-loop test-fixtures test-live-claude clean fixtures-prepare fixtures-mutate-cases fixtures-verify fixtures-reset fixtures-checks
+.PHONY: build test test-qa-loop test-fixtures test-live-claude clean fixtures-prepare fixtures-mutate-cases fixtures-verify fixtures-reset fixtures-checks qa
 
 build:
 	@mkdir -p $(BIN_DIR)
@@ -33,6 +35,9 @@ test-live-claude:
 
 test-fixtures: fixtures-prepare fixtures-verify
 	go test ./internal/e2e/fixtures -v
+
+qa:
+	bash scripts/qa_fixture_run.sh --repo "$(REPO)" -- $(QA_ARGS)
 
 clean:
 	rm -rf $(BIN_DIR)

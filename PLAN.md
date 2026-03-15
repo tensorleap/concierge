@@ -37,6 +37,7 @@ The remaining work starts from that baseline.
 - [x] `GUIDE3` `ACCEPTED` - Enforce thin `integration_test` rules and targeted authoring for integration-test wiring failures.
 - [x] `VAL1` `ACCEPTED` - Replace the stub harness with multi-sample runtime validation plus issue mapping.
 - [x] `FIX1` `ACCEPTED` - Separate fixture bootstrap from product runtime and generate guide-native mutation cases.
+- (2026-03-15) `QA1` remains `PENDING`. Added a fixture-scoped `make qa` entrypoint, clean built-in fixture reset before launch, live terminal/Codex visibility, and a single full-session transcript artifact for local QA runs.
 - [ ] `FIX2` `PENDING` - Add capability and composite fixture E2E coverage, including agent-context quality assertions.
 - [ ] `OPS1` `PENDING` - Implement upload readiness checks and guarded `leap push`.
 - [ ] `SHIP1` `PENDING` - Finish CI, docs, and release-readiness hardening.

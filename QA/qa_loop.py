@@ -27,6 +27,7 @@ DEFAULT_SETTLE_TIMEOUT_SECONDS = 20.0
 DEFAULT_TRANSCRIPT_TAIL_CHARS = 16000
 DEFAULT_LATEST_OUTPUT_CHARS = 6000
 DEFAULT_CODEX_TIMEOUT_SECONDS = 300.0
+DEFAULT_REPORT_TIMEOUT_SECONDS = 60.0
 ANSI_ESCAPE_RE = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
 PROMPT_LINE_RE = re.compile(
     r"(\[[^\]]+\]\s*:?\s*$|(?:continue|apply|type|enter|select|choose|confirm|approve|input).*[?:]\s*$|you\s*>\s*.*$)",
@@ -134,6 +135,7 @@ class CodexClient:
         event_log_path: Path,
         stderr_log_path: Path,
         add_dirs: Iterable[Path] = (),
+        timeout_seconds: float | None = None,
     ) -> dict[str, Any]:
         cmd = [
             *shlex.split(self.command),
@@ -166,7 +168,7 @@ class CodexClient:
                 capture_output=True,
                 cwd=str(self.workspace_root),
                 check=False,
-                timeout=self.timeout_seconds,
+                timeout=self.timeout_seconds if timeout_seconds is None else timeout_seconds,
             )
             stdout = completed.stdout
             stderr = completed.stderr
@@ -231,6 +233,7 @@ class SupervisorLoop:
         stop_reason = ""
         idle_turns = 0
         blind_first_active = True
+        target_stopped_by_supervisor = False
 
         try:
             for iteration in range(1, self.config.max_iterations + 1):
@@ -250,10 +253,25 @@ class SupervisorLoop:
 
                 elapsed = int(time.monotonic() - started_monotonic)
                 released_blind_first = not blind_first_active
-                stalled = idle_turns >= 2
-                if blind_first_active and stalled and self.config.fixture_post_path is not None and transcript_clean.strip():
+                stalled = idle_turns >= blind_first_release_threshold(self.config.max_idle_turns)
+                if (
+                    blind_first_active
+                    and stalled
+                    and self.config.fixture_post_path is not None
+                    and transcript_clean.strip()
+                    and not terminal_requires_input(transcript_clean)
+                ):
                     blind_first_active = False
                     released_blind_first = True
+                    append_jsonl(
+                        paths.interaction_log,
+                        {
+                            "time": utc_now(),
+                            "iteration": iteration,
+                            "kind": "blind_first_released",
+                            "idle_turns": idle_turns,
+                        },
+                    )
                 last_action = ""
                 if turns:
                     last_action = str(turns[-1].get("directive", {}).get("action", "")).strip()
@@ -472,6 +490,7 @@ class SupervisorLoop:
                     transcript_clean,
                     trailing_output,
                 )
+            target_stopped_by_supervisor = self.driver.is_running()
             exit_code = self.driver.stop()
             trailing_output = self.driver.drain(max_bytes=262144)
             if trailing_output:
@@ -498,7 +517,9 @@ class SupervisorLoop:
             "idle_turns": idle_turns,
             "blind_first_released": not blind_first_active,
             "fixture_post_path": str(self.config.fixture_post_path) if self.config.fixture_post_path else "",
-            "terminal_exit_code": exit_code,
+            "terminal_exit_code": None if target_stopped_by_supervisor else exit_code,
+            "terminal_stopped_by_supervisor": target_stopped_by_supervisor,
+            "report_status": "pending",
             "paths": {
                 "summary_json": str(paths.summary_json),
                 "turns_jsonl": str(paths.turns_jsonl),
@@ -510,9 +531,11 @@ class SupervisorLoop:
             },
         }
         paths.summary_json.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+        write_report_artifacts(paths=paths, run_id=run_id, summary=summary, report=provisional_report(summary=summary, turns=turns))
 
         try:
             report = self._request_report(paths=paths, summary=summary, loop_state=loop_state)
+            summary["report_status"] = "ready"
         except CodexInvocationError as exc:
             append_jsonl(
                 paths.interaction_log,
@@ -524,8 +547,10 @@ class SupervisorLoop:
                 },
             )
             report = fallback_report(summary=summary, turns=turns, error=str(exc))
-        paths.report_json.write_text(json.dumps(asdict(report), indent=2) + "\n", encoding="utf-8")
-        paths.report_markdown.write_text(render_markdown_report(run_id, summary, report), encoding="utf-8")
+            summary["report_status"] = "fallback"
+        summary["report_generated_at"] = utc_now()
+        write_report_artifacts(paths=paths, run_id=run_id, summary=summary, report=report)
+        paths.summary_json.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 
         return {
             "loop_state": loop_state,
@@ -712,6 +737,7 @@ class SupervisorLoop:
             event_log_path=report_base.with_suffix(".jsonl"),
             stderr_log_path=report_base.with_suffix(".stderr.log"),
             add_dirs=codex_add_dirs(self.config.fixture_post_path if summary.get("blind_first_released") else None),
+            timeout_seconds=min(self.config.codex_timeout_seconds, DEFAULT_REPORT_TIMEOUT_SECONDS),
         )
         return QAReport(
             title=str(payload.get("title", "")).strip(),
@@ -893,6 +919,12 @@ def codex_add_dirs(fixture_post_path: Path | None) -> list[Path]:
     return add_dirs
 
 
+def blind_first_release_threshold(max_idle_turns: int) -> int:
+    if max_idle_turns <= 1:
+        return 1
+    return min(max_idle_turns, max(3, max_idle_turns - 1))
+
+
 def clean_string_list(values: Iterable[Any]) -> list[str]:
     cleaned: list[str] = []
     for value in values:
@@ -951,6 +983,36 @@ def fallback_report(*, summary: dict[str, Any], turns: list[dict[str, Any]], err
         suggestions=["Inspect the saved transcript and Codex stderr log for the interrupted report step."],
         notable_moments=notable_moments,
     )
+
+
+def provisional_report(*, summary: dict[str, Any], turns: list[dict[str, Any]]) -> QAReport:
+    last_summary = ""
+    notable_moments: list[str] = []
+    product_issues: list[str] = []
+    for turn in turns:
+        directive = turn.get("directive", {})
+        summary_text = str(directive.get("summary", "")).strip()
+        if summary_text:
+            last_summary = summary_text
+        notable_moments.extend(clean_string_list(directive.get("issues", [])))
+    if summary.get("stop_reason"):
+        product_issues.append(f"Run stopped with `{summary['stop_reason']}`.")
+    return QAReport(
+        title="QA Loop Report (provisional)",
+        overall_outcome="A provisional report was written before final Codex report synthesis completed.",
+        loop_state=str(summary.get("loop_state", "")).strip(),
+        integration_progress=last_summary or "The run finished before the synthesized report was available.",
+        ux_clarity=[],
+        product_issues=product_issues,
+        agent_interaction_issues=[],
+        suggestions=["Wait for the final report synthesis to finish, or inspect this provisional report if the supervisor is interrupted."],
+        notable_moments=notable_moments,
+    )
+
+
+def write_report_artifacts(*, paths: RunPaths, run_id: str, summary: dict[str, Any], report: QAReport) -> None:
+    paths.report_json.write_text(json.dumps(asdict(report), indent=2) + "\n", encoding="utf-8")
+    paths.report_markdown.write_text(render_markdown_report(run_id, summary, report), encoding="utf-8")
 
 
 def render_markdown_report(run_id: str, summary: dict[str, Any], report: QAReport) -> str:

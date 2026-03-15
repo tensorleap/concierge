@@ -51,6 +51,8 @@ The remaining work starts from that baseline.
 - `LeapLoader.check_dataset()` is the better machine interface than scraping local terminal output.
 - The current codebase still hard-codes binder-era names across inspector, scaffolding, agent scope, prompt/context packs, fixture helpers, and a wide slice of tests.
 - The old pending plan over-weighted historical step bookkeeping and under-weighted alignment to the new integration model.
+- QA loop blind-first release based on only two idle turns is too eager for real runs; long but still-active Concierge work can expose the post fixture before the session has genuinely stalled.
+- Writing `summary.json` before any report artifact exists leaves the harness with misleading paths when final report synthesis blocks or times out; QA artifacts need a provisional report state.
 
 ## Decision Log
 

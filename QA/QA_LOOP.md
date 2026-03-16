@@ -46,6 +46,7 @@ What this does:
 - keeps Codex in blind-first mode at the start
 - only exposes the `post` repo path if progress stalls
 - when using `make qa`, resets the chosen built-in fixture back to a clean pinned `pre`/`post` state first
+- renders live Codex control/report events as readable terminal text while keeping the raw JSON event logs under `QA/runs/<run-id>/codex/`
 
 ## Using Another Repo
 

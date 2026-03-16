@@ -903,7 +903,7 @@ make qa REPO=mnist
 python3 QA/qa_loop.py --command-cwd /path/to/fixture
 ```
 
-`make qa` resets the chosen built-in fixture to a clean pinned `pre`/`post` state, starts the QA loop, and prints the absolute path to the full-session transcript when the run ends.
+`make qa` resets the chosen built-in fixture to a clean pinned `pre`/`post` state, starts the QA loop, streams readable Codex/Concierge progress in the terminal, and prints the absolute path to the full-session transcript when the run ends.
 
 If no command is supplied, the harness defaults to this repository's Concierge binary (or `go run ./cmd/concierge run` when the binary is missing). For a blind-first comparison flow, pass `--fixture-post-path /path/to/post-fixture`; the prompt will not reveal that path to Codex until the run stalls.
 

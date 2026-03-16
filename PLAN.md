@@ -38,6 +38,7 @@ The remaining work starts from that baseline.
 - [x] `VAL1` `ACCEPTED` - Replace the stub harness with multi-sample runtime validation plus issue mapping.
 - [x] `FIX1` `ACCEPTED` - Separate fixture bootstrap from product runtime and generate guide-native mutation cases.
 - (2026-03-15) `QA1` remains `PENDING`. Added a fixture-scoped `make qa` entrypoint, clean built-in fixture reset before launch, live terminal/Codex visibility, and a single full-session transcript artifact for local QA runs.
+- (2026-03-15) `QA1` remains `PENDING`. Live `make qa` output now renders Codex control/report events as readable terminal text while preserving the raw JSON event logs under `QA/runs/.../codex/`.
 - [ ] `FIX2` `PENDING` - Add capability and composite fixture E2E coverage, including agent-context quality assertions.
 - [ ] `OPS1` `PENDING` - Implement upload readiness checks and guarded `leap push`.
 - [ ] `SHIP1` `PENDING` - Finish CI, docs, and release-readiness hardening.
@@ -54,6 +55,7 @@ The remaining work starts from that baseline.
 - The old pending plan over-weighted historical step bookkeeping and under-weighted alignment to the new integration model.
 - QA loop blind-first release based on only two idle turns is too eager for real runs; long but still-active Concierge work can expose the post fixture before the session has genuinely stalled.
 - Writing `summary.json` before any report artifact exists leaves the harness with misleading paths when final report synthesis blocks or times out; QA artifacts need a provisional report state.
+- The Codex CLI JSON event stream is appropriate for saved machine-readable artifacts, but it is too noisy for live `make qa` monitoring without a dedicated text renderer.
 
 ## Decision Log
 

@@ -12,6 +12,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 QA_LOOP = ROOT / "qa_loop.py"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import qa_loop
 
 
 def wait_for_file(path: Path, *, timeout_seconds: float = 3.0) -> bool:
@@ -151,7 +155,8 @@ class QALoopTest(unittest.TestCase):
                 msg=f"stdout:\n{completed.stdout}\n\nstderr:\n{completed.stderr}",
             )
             self.assertIn("Welcome to Concierge", completed.stdout)
-            self.assertIn("[qa-loop][codex-control-001 stdout]", completed.stdout)
+            self.assertIn("[qa-loop][codex-control-001] thread started: fake-thread", completed.stdout)
+            self.assertIn("[qa-loop][codex-control-001] action: SEND_INPUT -> YES (CONTINUE)", completed.stdout)
 
             run_dirs = sorted((artifacts_root / "runs").iterdir())
             self.assertEqual(len(run_dirs), 1)
@@ -179,8 +184,38 @@ class QALoopTest(unittest.TestCase):
             self.assertIn("Welcome to Concierge", full_transcript)
             self.assertIn("[qa-loop] input -> YES", full_transcript)
             self.assertIn("[qa-loop] --- codex-control-001 stdin begin ---", full_transcript)
-            self.assertIn("[qa-loop][codex-control-001 stdout]", full_transcript)
+            self.assertIn("[qa-loop][codex-control-001] action: SEND_INPUT -> YES (CONTINUE)", full_transcript)
             self.assertIn(f"[qa-loop] transcript: {full_transcript_path.resolve()}", completed.stdout)
+
+            event_log_path = run_dir / "codex" / "turn-001.jsonl"
+            self.assertTrue(event_log_path.is_file())
+            event_log = event_log_path.read_text(encoding="utf-8")
+            self.assertIn('"type": "thread.started"', event_log)
+            self.assertIn('"type": "item.completed"', event_log)
+
+    def test_format_codex_stream_event_renders_command_execution_as_text(self) -> None:
+        rendered = qa_loop.format_codex_stream_event(
+            "codex-final-report",
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "item-9",
+                        "type": "command_execution",
+                        "command": "/bin/bash -lc 'echo hi'",
+                        "aggregated_output": "first line\nsecond line\n",
+                        "exit_code": 0,
+                        "status": "completed",
+                    },
+                }
+            )
+            + "\n",
+        )
+
+        self.assertIn("[qa-loop][codex-final-report] command completed (exit 0): /bin/bash -lc 'echo hi'", rendered)
+        self.assertIn("[qa-loop][codex-final-report] command output:", rendered)
+        self.assertIn("    first line", rendered)
+        self.assertIn("    second line", rendered)
 
     def test_supervisor_loop_stops_cleanly_when_target_exits_before_followup_input(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -209,6 +209,7 @@ class CodexClient:
                 live_io=live_io,
                 stdout_prefix=f"[qa-loop][{session_label} stdout] ",
                 stderr_prefix=f"[qa-loop][{session_label} stderr] ",
+                stdout_formatter=lambda line, session_label=session_label: format_codex_stream_event(session_label, line),
             )
             stdout = completed["stdout"]
             stderr = completed["stderr"]
@@ -1038,6 +1039,129 @@ def coerce_text(value: str | bytes | None) -> str:
     return value
 
 
+def indent_lines(text: str, *, prefix: str = "    ") -> list[str]:
+    body = text.rstrip("\n")
+    if not body:
+        return []
+    return [f"{prefix}{line}" for line in body.splitlines()]
+
+
+def format_codex_agent_payload(prefix: str, payload: dict[str, Any]) -> str:
+    lines: list[str] = []
+
+    action = str(payload.get("action", "")).strip()
+    if action:
+        headline = f"{prefix} action: {action}"
+        input_text = str(payload.get("input_text", ""))
+        if input_text:
+            headline += f" -> {input_text}"
+        loop_state = str(payload.get("loop_state", "")).strip()
+        if loop_state:
+            headline += f" ({loop_state})"
+        lines.append(headline)
+
+        summary = str(payload.get("summary", "")).strip()
+        if summary:
+            lines.append(f"{prefix} summary: {summary}")
+        for issue in clean_string_list(payload.get("issues", [])):
+            lines.append(f"{prefix} issue: {issue}")
+        next_focus = str(payload.get("next_focus", "")).strip()
+        if next_focus:
+            lines.append(f"{prefix} next: {next_focus}")
+        return "\n".join(lines) + "\n"
+
+    if "title" in payload or "overall_outcome" in payload:
+        title = str(payload.get("title", "")).strip() or "QA report"
+        lines.append(f"{prefix} report: {title}")
+        overall_outcome = str(payload.get("overall_outcome", "")).strip()
+        if overall_outcome:
+            lines.append(f"{prefix} outcome: {overall_outcome}")
+        loop_state = str(payload.get("loop_state", "")).strip()
+        if loop_state:
+            lines.append(f"{prefix} loop state: {loop_state}")
+        integration_progress = str(payload.get("integration_progress", "")).strip()
+        if integration_progress:
+            lines.append(f"{prefix} integration: {integration_progress}")
+        for field_name, label in (
+            ("ux_clarity", "ux"),
+            ("product_issues", "product issue"),
+            ("agent_interaction_issues", "agent issue"),
+            ("suggestions", "suggestion"),
+            ("notable_moments", "notable"),
+        ):
+            for item in clean_string_list(payload.get(field_name, [])):
+                lines.append(f"{prefix} {label}: {item}")
+        return "\n".join(lines) + "\n"
+
+    return ""
+
+
+def format_codex_stream_event(session_label: str, line: str) -> str:
+    prefix = f"[qa-loop][{session_label}]"
+    stripped = line.strip()
+    if not stripped:
+        return line
+
+    try:
+        event = json.loads(stripped)
+    except json.JSONDecodeError:
+        return f"[qa-loop][{session_label} stdout] {line}"
+
+    event_type = str(event.get("type", "")).strip()
+    if event_type == "thread.started":
+        thread_id = str(event.get("thread_id", "")).strip() or "unknown"
+        return f"{prefix} thread started: {thread_id}\n"
+
+    item = event.get("item")
+    if not isinstance(item, dict):
+        if event_type:
+            return f"{prefix} event: {event_type}\n"
+        return f"[qa-loop][{session_label} stdout] {line}"
+
+    item_type = str(item.get("type", "")).strip()
+    if item_type == "agent_message":
+        text = coerce_text(item.get("text"))
+        if text.strip():
+            try:
+                payload = json.loads(text)
+            except json.JSONDecodeError:
+                return f"{prefix} agent: {text.rstrip()}\n"
+            if isinstance(payload, dict):
+                formatted = format_codex_agent_payload(prefix, payload)
+                if formatted:
+                    return formatted
+        return f"{prefix} agent message received\n"
+
+    if item_type == "command_execution":
+        command = str(item.get("command", "")).strip() or "<unknown command>"
+        if event_type == "item.started":
+            return f"{prefix} command started: {command}\n"
+
+        status = str(item.get("status", "")).strip() or event_type.replace("item.", "")
+        exit_code = item.get("exit_code")
+        if status == "completed":
+            if exit_code is None:
+                lines = [f"{prefix} command completed: {command}"]
+            else:
+                lines = [f"{prefix} command completed (exit {exit_code}): {command}"]
+        elif status == "failed":
+            lines = [f"{prefix} command failed: {command}"]
+        else:
+            lines = [f"{prefix} command {status}: {command}"]
+
+        aggregated_output = coerce_text(item.get("aggregated_output"))
+        if aggregated_output.strip():
+            lines.append(f"{prefix} command output:")
+            lines.extend(indent_lines(aggregated_output))
+        return "\n".join(lines) + "\n"
+
+    if event_type and item_type:
+        return f"{prefix} {event_type}: {item_type}\n"
+    if event_type:
+        return f"{prefix} event: {event_type}\n"
+    return f"[qa-loop][{session_label} stdout] {line}"
+
+
 def run_streaming_subprocess(
     *,
     cmd: list[str],
@@ -1048,6 +1172,7 @@ def run_streaming_subprocess(
     live_io: LiveIO | None = None,
     stdout_prefix: str = "",
     stderr_prefix: str = "",
+    stdout_formatter: Callable[[str], str] | None = None,
 ) -> dict[str, Any]:
     process = subprocess.Popen(
         cmd,
@@ -1069,6 +1194,7 @@ def run_streaming_subprocess(
         *,
         prefix: str,
         emit: Callable[[str], None] | None,
+        formatter: Callable[[str], str] | None = None,
     ) -> None:
         if pipe is None:
             return
@@ -1077,14 +1203,21 @@ def run_streaming_subprocess(
                 text = coerce_text(line)
                 chunks.append(text)
                 if emit is not None:
-                    emit(f"{prefix}{text}" if prefix else text)
+                    if formatter is not None:
+                        emit(formatter(text))
+                    else:
+                        emit(f"{prefix}{text}" if prefix else text)
         finally:
             pipe.close()
 
     stdout_thread = threading.Thread(
         target=stream_pipe,
         args=(process.stdout, stdout_chunks),
-        kwargs={"prefix": stdout_prefix, "emit": live_io.stdout if live_io is not None else None},
+        kwargs={
+            "prefix": stdout_prefix,
+            "emit": live_io.stdout if live_io is not None else None,
+            "formatter": stdout_formatter,
+        },
         daemon=True,
     )
     stderr_thread = threading.Thread(

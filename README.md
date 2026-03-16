@@ -899,19 +899,21 @@ Minimal usage:
 make qa
 make qa REPO=mnist
 
-# or run the harness directly
-python3 QA/qa_loop.py --command-cwd /path/to/fixture
+# or run the harness directly against an already-started fixture container
+python3 QA/qa_loop.py --container-name <running-container> --container-workdir /workspace
 ```
 
-`make qa` resets the chosen built-in fixture to a clean pinned `pre`/`post` state, starts the QA loop, streams readable Codex/Concierge progress in the terminal, and prints the absolute path to the full-session transcript when the run ends.
+`make qa` resets the chosen built-in fixture to a clean pinned `pre`/`post` state, builds a fixture-scoped Docker image from the `pre` repo only, starts an isolated container, streams readable Codex/Concierge progress in the terminal, and prints the absolute path to the full-session transcript when the run ends.
 
-If no command is supplied, the harness defaults to this repository's Concierge binary (or `go run ./cmd/concierge run` when the binary is missing). For a blind-first comparison flow, pass `--fixture-post-path /path/to/post-fixture`; the prompt will not reveal that path to Codex until the run stalls.
+If no command is supplied, the harness defaults to `/usr/local/bin/concierge run` inside the target container. For a blind-first comparison flow, pass `--fixture-post-path /path/to/post-fixture`; the prompt will not reveal that path to Codex until the run stalls. The `post` fixture is kept on the host and is never copied into the target container.
 
 Requirements:
 
 * `python3`
 * a local `codex` CLI login that can run `codex exec`
-* a runnable Concierge command
+* Docker
+* Go (to cross-build the Linux Concierge binary for the fixture image)
+* `ANTHROPIC_API_KEY` available to pass into the container
 
 ---
 

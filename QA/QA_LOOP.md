@@ -1,15 +1,17 @@
 # QA Loop Guide
 
-`QA/qa_loop.py` is a local harness that runs Concierge in a real PTY, lets `codex exec` act as the user, and saves a transcript plus a qualitative QA report.
+`QA/qa_loop.py` is a local harness that runs Concierge inside a Docker container PTY, lets `codex exec` act as the user, and saves a transcript plus a qualitative QA report.
 
 ## Prerequisites
 
 - `python3`
 - a working local `codex` CLI login
 - this Concierge repo available locally
-- a repo for Concierge to operate on
+- Docker
+- Go
+- `ANTHROPIC_API_KEY`
 
-You do not need to manually check out a separate fixture repo if you want to use the built-in fixture corpus. Prepare the fixtures once, then point `QA/qa_loop.py` at the generated `pre` repo.
+You do not need to manually check out a separate fixture repo if you want to use the built-in fixture corpus. Prepare the fixtures once, then use `scripts/qa_fixture_run.sh` or `make qa`; they build a fixture-scoped container image from the clean `pre` repo and run the harness against that container.
 
 ## Using A Built-In Fixture
 
@@ -28,9 +30,7 @@ That creates:
 Typical fixture run:
 
 ```bash
-python3 QA/qa_loop.py \
-  --command-cwd .fixtures/<fixture-id>/pre \
-  --fixture-post-path .fixtures/<fixture-id>/post
+bash scripts/qa_fixture_run.sh --repo <fixture-id>
 ```
 
 Shortcut from the repo root:
@@ -43,29 +43,33 @@ make qa REPO=mnist
 What this does:
 
 - runs Concierge against `.fixtures/<fixture-id>/pre`
+- copies only the clean `pre` repo into a fixture-specific Docker image
 - keeps Codex in blind-first mode at the start
 - only exposes the `post` repo path if progress stalls
 - when using `make qa`, resets the chosen built-in fixture back to a clean pinned `pre`/`post` state first
+- starts a long-lived fixture container and runs Concierge inside it with `docker exec`
+- records Docker snapshots after every supervisor turn
 - renders live Codex control/report events as readable terminal text while keeping the raw JSON event logs under `QA/runs/<run-id>/codex/`
 
-## Using Another Repo
+## Using A Running Container
 
-If you already have a repo checked out somewhere else, point `--command-cwd` at it:
+If you already have a prepared container that exposes the target repo at `/workspace`, point `QA/qa_loop.py` at that container:
 
 ```bash
-python3 QA/qa_loop.py --command-cwd /path/to/target-repo
+python3 QA/qa_loop.py \
+  --container-name <running-container> \
+  --container-workdir /workspace
 ```
 
-`QA/qa_loop.py` does not prepare that repo for you. It just runs Concierge there.
+`QA/qa_loop.py` does not build or start that container for you. It just drives Concierge inside it.
 
 ## Default Command Behavior
 
 If you do not pass a command after `--`, `QA/qa_loop.py` runs:
 
-- `bin/concierge run` if `bin/concierge` exists in this repo
-- otherwise `go run /absolute/path/to/this/repo/cmd/concierge run`
+- `/usr/local/bin/concierge run` inside the target container
 
-That means a local `go build` is optional for normal usage.
+The fixture helper script cross-builds that Linux binary and bakes it into the image for you.
 
 ## Overriding The Command
 
@@ -73,17 +77,24 @@ If you want a custom Concierge invocation, pass it after `--`:
 
 ```bash
 python3 QA/qa_loop.py \
-  --command-cwd .fixtures/<fixture-id>/pre \
+  --container-name <running-container> \
+  --container-workdir /workspace \
   -- \
-  /absolute/path/to/concierge run --persist --yes
+  /usr/local/bin/concierge run --persist --yes
 ```
 
-Everything after `--` is treated as the PTY command.
+Everything after `--` is treated as the container-internal PTY command.
 
 ## Useful Options
 
-- `--command-cwd PATH`
-  Run Concierge in this repo or fixture directory.
+- `--container-name NAME`
+  Running Docker container to target.
+- `--container-workdir PATH`
+  Working directory inside the container. Default: `/workspace`.
+- `--container-image REF`
+  Optional image reference to record in `summary.json`.
+- `--docker-bin PATH`
+  Docker CLI to use. Default: `docker`.
 - `--fixture-post-path PATH`
   Optional known-good repo path that Codex may inspect only after the blind-first phase stalls.
 - `--artifacts-root PATH`
@@ -124,6 +135,8 @@ By default the harness writes:
 - `QA/reports/<run-id>.md`
 
 The harness prints the absolute path to the full-session transcript at the end of the run. The markdown report is still the easiest artifact to read first.
+
+For fixture runs, each `QA/runs/<run-id>/docker/` directory also contains per-turn `docker commit` metadata and any exported container artifacts such as `/workspace/.concierge`.
 
 ## Exit Codes
 

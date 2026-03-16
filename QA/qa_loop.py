@@ -77,8 +77,12 @@ class QAReport:
 @dataclass
 class LoopConfig:
     artifacts_root: Path
+    docker_bin: str
+    host_cwd: Path
+    container_name: str
+    container_image: str | None
     command: list[str]
-    command_cwd: Path
+    command_cwd: str
     codex_command: str
     codex_model: str | None
     codex_timeout_seconds: float
@@ -98,6 +102,7 @@ class RunPaths:
     run_id: str
     run_dir: Path
     codex_dir: Path
+    docker_dir: Path
     summary_json: Path
     turns_jsonl: Path
     terminal_raw: Path
@@ -109,6 +114,10 @@ class RunPaths:
 
 
 class CodexInvocationError(RuntimeError):
+    pass
+
+
+class DockerInvocationError(RuntimeError):
     pass
 
 
@@ -256,7 +265,12 @@ class SupervisorLoop:
         live_io = LiveIO(transcript_path=paths.full_transcript)
         started_at = time.time()
         started_monotonic = time.monotonic()
-        self.driver.start(self.config.command, cwd=self.config.command_cwd, env=os.environ.copy())
+        docker_snapshots: list[dict[str, Any]] = []
+        live_io.stdout(
+            f"[qa-loop] target container: {self.config.container_name} "
+            f"({self.config.command_cwd})\n"
+        )
+        self.driver.start(self._target_command(), cwd=self.config.host_cwd, env=os.environ.copy())
 
         transcript_raw = ""
         transcript_clean = ""
@@ -500,7 +514,7 @@ class SupervisorLoop:
                             f"[qa-loop] restarting target command in {self.config.command_cwd}: "
                             f"{shlex.join(self.config.command)}\n"
                         )
-                        self.driver.start(self.config.command, cwd=self.config.command_cwd, env=os.environ.copy())
+                        self.driver.start(self._target_command(), cwd=self.config.host_cwd, env=os.environ.copy())
                     latest_output = visible_terminal_output(self._read_until_actionable(patience=True))
                     transcript_raw, transcript_clean = append_terminal_output(
                         paths,
@@ -524,6 +538,27 @@ class SupervisorLoop:
                     latest_output,
                     live_io=live_io,
                 )
+
+                try:
+                    snapshot = self._capture_container_snapshot(
+                        iteration=iteration,
+                        paths=paths,
+                        live_io=live_io,
+                    )
+                    docker_snapshots.append(snapshot)
+                except DockerInvocationError as exc:
+                    append_jsonl(
+                        paths.interaction_log,
+                        {
+                            "time": utc_now(),
+                            "iteration": iteration,
+                            "kind": "docker_snapshot_error",
+                            "reason": str(exc),
+                        },
+                    )
+                    loop_state = "STOP_DEADEND"
+                    stop_reason = "docker_snapshot_error"
+                    break
 
                 loop_state = directive.loop_state
                 if loop_state != "CONTINUE":
@@ -577,7 +612,7 @@ class SupervisorLoop:
             "started_at": utc_from_timestamp(started_at),
             "finished_at": utc_now(),
             "command": self.config.command,
-            "command_cwd": str(self.config.command_cwd),
+            "command_cwd": self.config.command_cwd,
             "artifacts_root": str(self.config.artifacts_root),
             "loop_state": loop_state,
             "stop_reason": stop_reason,
@@ -588,9 +623,17 @@ class SupervisorLoop:
             "terminal_exit_code": None if target_stopped_by_supervisor else exit_code,
             "terminal_stopped_by_supervisor": target_stopped_by_supervisor,
             "report_status": "pending",
+            "docker": {
+                "docker_bin": self.config.docker_bin,
+                "container_name": self.config.container_name,
+                "container_image": self.config.container_image or "",
+                "container_workdir": self.config.command_cwd,
+                "snapshots": docker_snapshots,
+            },
             "paths": {
                 "summary_json": str(paths.summary_json),
                 "turns_jsonl": str(paths.turns_jsonl),
+                "docker_dir": str(paths.docker_dir),
                 "terminal_raw": str(paths.terminal_raw),
                 "terminal_clean": str(paths.terminal_clean),
                 "interaction_log": str(paths.interaction_log),
@@ -599,6 +642,9 @@ class SupervisorLoop:
                 "report_markdown": str(paths.report_markdown),
             },
         }
+        exported_artifacts = self._export_container_artifacts(paths=paths)
+        if exported_artifacts:
+            summary["docker"]["exported_artifacts"] = exported_artifacts
         paths.summary_json.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
         write_report_artifacts(paths=paths, run_id=run_id, summary=summary, report=provisional_report(summary=summary, turns=turns))
 
@@ -680,7 +726,8 @@ class SupervisorLoop:
             "terminal_running": self.driver.is_running(),
             "terminal_exit_code": self.driver.returncode,
             "command": self.config.command,
-            "command_cwd": str(self.config.command_cwd),
+            "command_cwd": self.config.command_cwd,
+            "container_name": self.config.container_name,
             "blind_first_active": blind_first_active,
             "post_fixture_path_available": bool(self.config.fixture_post_path and not blind_first_active),
             "post_fixture_path": str(self.config.fixture_post_path) if self.config.fixture_post_path and not blind_first_active else "",
@@ -733,14 +780,17 @@ class SupervisorLoop:
                 "iteration": iteration,
                 "kind": "command",
                 "text": command_text,
-                "cwd": str(self.config.command_cwd),
+                "cwd": self.config.command_cwd,
             },
         )
-        live_io.stdout(f"[qa-loop] external command start in {self.config.command_cwd}\n$ {command_text}\n")
+        live_io.stdout(
+            f"[qa-loop] external command start in {self.config.container_name}:{self.config.command_cwd}\n"
+            f"$ {command_text}\n"
+        )
         try:
             completed = run_streaming_subprocess(
-                cmd=["bash", "-lc", command_text],
-                cwd=self.config.command_cwd,
+                cmd=self._docker_exec_command(["bash", "-lc", command_text], tty=False),
+                cwd=self.config.host_cwd,
                 env=os.environ.copy(),
                 timeout_seconds=max(remaining_runtime_seconds, EXTERNAL_COMMAND_TIMEOUT_FLOOR_SECONDS),
                 live_io=live_io,
@@ -756,7 +806,7 @@ class SupervisorLoop:
             stderr = coerce_text(exc.stderr or "")
 
         transcript_lines = [
-            f"[qa-loop] external command in {self.config.command_cwd}:",
+            f"[qa-loop] external command in {self.config.container_name}:{self.config.command_cwd}:",
             f"$ {command_text}",
         ]
         if stdout.strip():
@@ -774,12 +824,109 @@ class SupervisorLoop:
                 "iteration": iteration,
                 "kind": "command_result",
                 "text": command_text,
-                "cwd": str(self.config.command_cwd),
+                "cwd": self.config.command_cwd,
                 "returncode": returncode,
             },
         )
 
         return {"returncode": returncode, "stdout": stdout, "stderr": stderr, "transcript": transcript}
+
+    def _target_command(self) -> list[str]:
+        return self._docker_exec_command(self.config.command, tty=True)
+
+    def _docker_exec_command(self, inner_command: list[str], *, tty: bool) -> list[str]:
+        cmd = [self.config.docker_bin, "exec", "-i"]
+        if tty:
+            cmd.append("-t")
+        cmd.extend(["-w", self.config.command_cwd, self.config.container_name, *inner_command])
+        return cmd
+
+    def _docker_capture(self, command: list[str], *, timeout_seconds: float = 30.0) -> subprocess.CompletedProcess[str]:
+        completed = subprocess.run(
+            command,
+            cwd=str(self.config.host_cwd),
+            env=os.environ.copy(),
+            text=True,
+            capture_output=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip() or f"exit code {completed.returncode}"
+            raise DockerInvocationError(f"{shlex.join(command)} failed: {detail}")
+        return completed
+
+    def _capture_container_snapshot(
+        self,
+        *,
+        iteration: int,
+        paths: RunPaths,
+        live_io: LiveIO,
+    ) -> dict[str, Any]:
+        snapshot_ref = f"concierge-qa-snapshots:{docker_tag_component(paths.run_id)}-turn-{iteration:03d}"
+        live_io.stdout(f"[qa-loop] docker snapshot turn {iteration}: {snapshot_ref}\n")
+
+        commit_completed = self._docker_capture(
+            [self.config.docker_bin, "commit", self.config.container_name, snapshot_ref]
+        )
+        image_id = commit_completed.stdout.strip().splitlines()[-1] if commit_completed.stdout.strip() else snapshot_ref
+
+        diff_completed = self._docker_capture([self.config.docker_bin, "diff", self.config.container_name])
+        diff_path = paths.docker_dir / f"turn-{iteration:03d}.diff.txt"
+        diff_path.write_text(diff_completed.stdout, encoding="utf-8")
+
+        inspect_completed = self._docker_capture([self.config.docker_bin, "inspect", snapshot_ref])
+        inspect_path = paths.docker_dir / f"turn-{iteration:03d}.inspect.json"
+        inspect_path.write_text(inspect_completed.stdout, encoding="utf-8")
+
+        snapshot = {
+            "iteration": iteration,
+            "image_ref": snapshot_ref,
+            "image_id": image_id,
+            "diff_path": str(diff_path),
+            "inspect_path": str(inspect_path),
+        }
+        append_jsonl(
+            paths.interaction_log,
+            {
+                "time": utc_now(),
+                "iteration": iteration,
+                "kind": "docker_snapshot",
+                **snapshot,
+            },
+        )
+        return snapshot
+
+    def _export_container_artifacts(self, *, paths: RunPaths) -> list[dict[str, str]]:
+        exported: list[dict[str, str]] = []
+        exists = subprocess.run(
+            self._docker_exec_command(["bash", "-lc", "test -d .concierge"], tty=False),
+            cwd=str(self.config.host_cwd),
+            env=os.environ.copy(),
+            text=True,
+            capture_output=True,
+            timeout=15.0,
+            check=False,
+        )
+        if exists.returncode != 0:
+            return exported
+
+        source = f"{self.config.container_name}:{self.config.command_cwd}/.concierge"
+        destination = paths.docker_dir / "workspace.concierge"
+        completed = subprocess.run(
+            [self.config.docker_bin, "cp", source, str(destination)],
+            cwd=str(self.config.host_cwd),
+            env=os.environ.copy(),
+            text=True,
+            capture_output=True,
+            timeout=30.0,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip() or f"exit code {completed.returncode}"
+            raise DockerInvocationError(f"{self.config.docker_bin} cp {source} {destination} failed: {detail}")
+        exported.append({"source": source, "destination": str(destination)})
+        return exported
 
     def _request_report(
         self,
@@ -839,18 +986,17 @@ class SupervisorLoop:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run Concierge inside a PTY and let Codex drive it like a QA engineer.",
+        description="Run Concierge inside a Docker container PTY and let Codex drive it like a QA engineer.",
     )
     parser.add_argument(
         "--artifacts-root",
         default=str(QA_DIR),
         help="Directory where runs/, transcripts/, and reports/ will be written. Defaults to QA/.",
     )
-    parser.add_argument(
-        "--command-cwd",
-        default=os.getcwd(),
-        help="Working directory for the Concierge command under test.",
-    )
+    parser.add_argument("--docker-bin", default=os.environ.get("DOCKER_BIN", "docker"))
+    parser.add_argument("--container-name", required=True)
+    parser.add_argument("--container-workdir", default="/workspace")
+    parser.add_argument("--container-image", default=None)
     parser.add_argument("--codex-command", default=os.environ.get("CODEX_BIN", "codex"))
     parser.add_argument("--model", default=None)
     parser.add_argument("--codex-timeout-seconds", type=float, default=DEFAULT_CODEX_TIMEOUT_SECONDS)
@@ -875,7 +1021,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     artifacts_root = Path(args.artifacts_root).resolve()
-    command_cwd = Path(args.command_cwd).resolve()
     fixture_post_path = Path(args.fixture_post_path).resolve() if args.fixture_post_path else None
     command = list(args.command)
     if command and command[0] == "--":
@@ -885,8 +1030,12 @@ def main(argv: list[str] | None = None) -> int:
 
     config = LoopConfig(
         artifacts_root=artifacts_root,
+        docker_bin=args.docker_bin,
+        host_cwd=REPO_ROOT,
+        container_name=args.container_name,
+        container_image=args.container_image,
         command=command,
-        command_cwd=command_cwd,
+        command_cwd=args.container_workdir,
         codex_command=args.codex_command,
         codex_model=args.model,
         codex_timeout_seconds=args.codex_timeout_seconds,
@@ -929,14 +1078,16 @@ def default_run_id() -> str:
 def prepare_run_paths(artifacts_root: Path, run_id: str) -> RunPaths:
     run_dir = artifacts_root / "runs" / run_id
     codex_dir = run_dir / "codex"
+    docker_dir = run_dir / "docker"
     transcripts_dir = artifacts_root / "transcripts"
     reports_dir = artifacts_root / "reports"
-    for directory in (run_dir, codex_dir, transcripts_dir, reports_dir):
+    for directory in (run_dir, codex_dir, docker_dir, transcripts_dir, reports_dir):
         directory.mkdir(parents=True, exist_ok=True)
     return RunPaths(
         run_id=run_id,
         run_dir=run_dir,
         codex_dir=codex_dir,
+        docker_dir=docker_dir,
         summary_json=run_dir / "summary.json",
         turns_jsonl=run_dir / "turns.jsonl",
         terminal_raw=transcripts_dir / f"{run_id}.terminal.raw.txt",
@@ -1014,6 +1165,11 @@ def codex_add_dirs(fixture_post_path: Path | None) -> list[Path]:
     if fixture_post_path is not None:
         add_dirs.append(fixture_post_path if fixture_post_path.is_dir() else fixture_post_path.parent)
     return add_dirs
+
+
+def docker_tag_component(value: str) -> str:
+    sanitized = re.sub(r"[^a-z0-9_.-]+", "-", value.lower()).strip(".-")
+    return sanitized or "qa-run"
 
 
 def blind_first_release_threshold(max_idle_turns: int) -> int:
@@ -1338,7 +1494,8 @@ def render_markdown_report(run_id: str, summary: dict[str, Any], report: QARepor
         f"- Outcome: {report.overall_outcome}",
         f"- Loop state: `{summary['loop_state']}`",
         f"- Stop reason: `{summary['stop_reason']}`",
-        f"- Command cwd: `{summary['command_cwd']}`",
+        f"- Container: `{summary.get('docker', {}).get('container_name', '')}`",
+        f"- Container workspace: `{summary['command_cwd']}`",
         "",
         "## Integration Progress",
         report.integration_progress or "No integration progress summary was provided.",
@@ -1370,10 +1527,7 @@ def render_bullets(items: list[str]) -> list[str]:
 
 def default_concierge_command(artifacts_root: Path) -> list[str]:
     _ = artifacts_root
-    binary = REPO_ROOT / "bin" / "concierge"
-    if binary.is_file() and os.access(binary, os.X_OK):
-        return [str(binary), "run"]
-    return ["go", "run", str(REPO_ROOT / "cmd" / "concierge"), "run"]
+    return ["/usr/local/bin/concierge", "run"]
 
 
 def exit_code_for_loop_state(loop_state: str) -> int:

@@ -18,13 +18,156 @@ if str(ROOT) not in sys.path:
 import qa_loop
 
 
-def wait_for_file(path: Path, *, timeout_seconds: float = 3.0) -> bool:
+def wait_for_file(path: Path, *, timeout_seconds: float = 5.0) -> bool:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         if path.is_file():
             return True
         time.sleep(0.05)
     return path.is_file()
+
+
+def write_fake_docker(tmp: Path) -> Path:
+    fake_docker = tmp / "fake_docker.py"
+    fake_docker.write_text(
+        textwrap.dedent(
+            """
+            #!/usr/bin/env python3
+            import json
+            import os
+            import shutil
+            import sys
+            from pathlib import Path
+
+
+            def containers() -> dict[str, Path]:
+                raw = os.environ.get("FAKE_DOCKER_CONTAINERS", "{}")
+                payload = json.loads(raw)
+                return {name: Path(path).resolve() for name, path in payload.items()}
+
+
+            def workspace_for(container: str) -> Path:
+                try:
+                    return containers()[container]
+                except KeyError as exc:
+                    raise SystemExit(f"unknown fake container: {container}") from exc
+
+
+            def resolve_workspace_path(workspace: Path, path_text: str) -> Path:
+                normalized = path_text or "/workspace"
+                if normalized == "/workspace":
+                    return workspace
+                if normalized.startswith("/workspace/"):
+                    return workspace / normalized.removeprefix("/workspace/")
+                raise SystemExit(f"unsupported fake docker path: {path_text}")
+
+
+            def main() -> int:
+                args = sys.argv[1:]
+                if not args:
+                    raise SystemExit("missing docker command")
+
+                command = args[0]
+                if command == "exec":
+                    workdir = "/workspace"
+                    index = 1
+                    while index < len(args):
+                        token = args[index]
+                        if token in {"-i", "-t"}:
+                            index += 1
+                            continue
+                        if token == "-w":
+                            workdir = args[index + 1]
+                            index += 2
+                            continue
+                        if token.startswith("-"):
+                            raise SystemExit(f"unsupported fake docker exec flag: {token}")
+                        break
+                    container = args[index]
+                    inner_command = args[index + 1 :]
+                    workspace = workspace_for(container)
+                    cwd = resolve_workspace_path(workspace, workdir)
+                    os.chdir(cwd)
+                    env = os.environ.copy()
+                    env["FAKE_DOCKER_CONTAINER_NAME"] = container
+                    os.execvpe(inner_command[0], inner_command, env)
+
+                if command == "commit":
+                    container = args[1]
+                    image_ref = args[2]
+                    print(f"sha256:{abs(hash((container, image_ref))) & 0xffffffff:08x}")
+                    return 0
+
+                if command == "diff":
+                    container = args[1]
+                    workspace = workspace_for(container)
+                    for path in sorted(workspace.rglob("*")):
+                        if path.is_file():
+                            print(f"A {path.relative_to(workspace)}")
+                    return 0
+
+                if command == "inspect":
+                    target = args[1]
+                    print(json.dumps([{"Id": f"fake-{target}", "Name": target, "RepoTags": [target]}]))
+                    return 0
+
+                if command == "cp":
+                    source = args[1]
+                    destination = Path(args[2]).resolve()
+                    container, inner_path = source.split(":", 1)
+                    workspace = workspace_for(container)
+                    source_path = resolve_workspace_path(workspace, inner_path)
+                    if not source_path.exists():
+                        return 1
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    if source_path.is_dir():
+                        shutil.copytree(source_path, destination, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(source_path, destination)
+                    return 0
+
+                raise SystemExit(f"unsupported fake docker command: {command}")
+
+
+            if __name__ == "__main__":
+                raise SystemExit(main())
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o755)
+    return fake_docker
+
+
+def qa_loop_command(
+    *,
+    artifacts_root: Path,
+    fake_docker: Path,
+    container_name: str,
+    codex_command: str,
+    target_command: list[str],
+    extra_args: list[str] | None = None,
+) -> list[str]:
+    command = [
+        sys.executable,
+        str(QA_LOOP),
+        "--artifacts-root",
+        str(artifacts_root),
+        "--docker-bin",
+        str(fake_docker),
+        "--container-name",
+        container_name,
+        "--container-workdir",
+        "/workspace",
+        "--codex-command",
+        codex_command,
+    ]
+    if extra_args:
+        command.extend(extra_args)
+    command.append("--")
+    command.extend(target_command)
+    return command
 
 
 class QALoopTest(unittest.TestCase):
@@ -35,6 +178,8 @@ class QALoopTest(unittest.TestCase):
             command_cwd = tmp / "fixture"
             artifacts_root.mkdir()
             command_cwd.mkdir()
+            fake_docker = write_fake_docker(tmp)
+            container_name = "fixture"
 
             concierge_script = tmp / "fake_concierge.py"
             concierge_script.write_text(
@@ -128,21 +273,16 @@ class QALoopTest(unittest.TestCase):
 
             env = os.environ.copy()
             env["FAKE_CODEX_STATE"] = str(tmp / "fake_codex_state.json")
+            env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
 
             completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(QA_LOOP),
-                    "--artifacts-root",
-                    str(artifacts_root),
-                    "--command-cwd",
-                    str(command_cwd),
-                    "--codex-command",
-                    f"{sys.executable} {codex_script}",
-                    "--",
-                    sys.executable,
-                    str(concierge_script),
-                ],
+                qa_loop_command(
+                    artifacts_root=artifacts_root,
+                    fake_docker=fake_docker,
+                    container_name=container_name,
+                    codex_command=f"{sys.executable} {codex_script}",
+                    target_command=[sys.executable, str(concierge_script)],
+                ),
                 cwd=str(ROOT),
                 env=env,
                 text=True,
@@ -165,6 +305,11 @@ class QALoopTest(unittest.TestCase):
             summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["loop_state"], "STOP_REPORT")
             self.assertEqual(summary["report_status"], "ready")
+            self.assertEqual(summary["docker"]["container_name"], container_name)
+            self.assertEqual(len(summary["docker"]["snapshots"]), 2)
+            first_snapshot = summary["docker"]["snapshots"][0]
+            self.assertTrue(Path(first_snapshot["diff_path"]).is_file())
+            self.assertTrue(Path(first_snapshot["inspect_path"]).is_file())
 
             report_path = artifacts_root / "reports" / f"{run_dir.name}.md"
             self.assertTrue(report_path.is_file())
@@ -224,6 +369,8 @@ class QALoopTest(unittest.TestCase):
             command_cwd = tmp / "fixture"
             artifacts_root.mkdir()
             command_cwd.mkdir()
+            fake_docker = write_fake_docker(tmp)
+            container_name = "fixture"
 
             concierge_script = tmp / "fake_concierge_exit.py"
             concierge_script.write_text(
@@ -299,21 +446,16 @@ class QALoopTest(unittest.TestCase):
 
             env = os.environ.copy()
             env["FAKE_CODEX_STATE"] = str(tmp / "fake_codex_exit_state.json")
+            env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
 
             completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(QA_LOOP),
-                    "--artifacts-root",
-                    str(artifacts_root),
-                    "--command-cwd",
-                    str(command_cwd),
-                    "--codex-command",
-                    f"{sys.executable} {codex_script}",
-                    "--",
-                    sys.executable,
-                    str(concierge_script),
-                ],
+                qa_loop_command(
+                    artifacts_root=artifacts_root,
+                    fake_docker=fake_docker,
+                    container_name=container_name,
+                    codex_command=f"{sys.executable} {codex_script}",
+                    target_command=[sys.executable, str(concierge_script)],
+                ),
                 cwd=str(ROOT),
                 env=env,
                 text=True,
@@ -344,6 +486,8 @@ class QALoopTest(unittest.TestCase):
             command_cwd = tmp / "fixture"
             artifacts_root.mkdir()
             command_cwd.mkdir()
+            fake_docker = write_fake_docker(tmp)
+            container_name = "fixture"
 
             concierge_script = tmp / "fake_concierge_restart.py"
             concierge_script.write_text(
@@ -447,21 +591,16 @@ class QALoopTest(unittest.TestCase):
 
             env = os.environ.copy()
             env["FAKE_CODEX_STATE"] = str(tmp / "fake_codex_restart_state.json")
+            env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
 
             completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(QA_LOOP),
-                    "--artifacts-root",
-                    str(artifacts_root),
-                    "--command-cwd",
-                    str(command_cwd),
-                    "--codex-command",
-                    f"{sys.executable} {codex_script}",
-                    "--",
-                    sys.executable,
-                    str(concierge_script),
-                ],
+                qa_loop_command(
+                    artifacts_root=artifacts_root,
+                    fake_docker=fake_docker,
+                    container_name=container_name,
+                    codex_command=f"{sys.executable} {codex_script}",
+                    target_command=[sys.executable, str(concierge_script)],
+                ),
                 cwd=str(ROOT),
                 env=env,
                 text=True,
@@ -499,6 +638,8 @@ class QALoopTest(unittest.TestCase):
             command_cwd = tmp / "fixture"
             artifacts_root.mkdir()
             command_cwd.mkdir()
+            fake_docker = write_fake_docker(tmp)
+            container_name = "fixture"
 
             concierge_script = tmp / "fake_concierge_delayed.py"
             concierge_script.write_text(
@@ -612,25 +753,22 @@ class QALoopTest(unittest.TestCase):
 
             env = os.environ.copy()
             env["FAKE_CODEX_STATE"] = str(tmp / "fake_codex_delayed_state.json")
+            env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
 
             completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(QA_LOOP),
-                    "--artifacts-root",
-                    str(artifacts_root),
-                    "--command-cwd",
-                    str(command_cwd),
-                    "--codex-command",
-                    f"{sys.executable} {codex_script}",
-                    "--read-timeout-seconds",
-                    "0.2",
-                    "--settle-timeout-seconds",
-                    "1.2",
-                    "--",
-                    sys.executable,
-                    str(concierge_script),
-                ],
+                qa_loop_command(
+                    artifacts_root=artifacts_root,
+                    fake_docker=fake_docker,
+                    container_name=container_name,
+                    codex_command=f"{sys.executable} {codex_script}",
+                    target_command=[sys.executable, str(concierge_script)],
+                    extra_args=[
+                        "--read-timeout-seconds",
+                        "0.2",
+                        "--settle-timeout-seconds",
+                        "1.2",
+                    ],
+                ),
                 cwd=str(ROOT),
                 env=env,
                 text=True,
@@ -667,6 +805,8 @@ class QALoopTest(unittest.TestCase):
             artifacts_root.mkdir()
             command_cwd.mkdir()
             fixture_post.mkdir()
+            fake_docker = write_fake_docker(tmp)
+            container_name = "fixture"
             (fixture_post / "expected.txt").write_text("post fixture sentinel\n", encoding="utf-8")
 
             concierge_script = tmp / "fake_concierge_blind_first.py"
@@ -787,29 +927,26 @@ class QALoopTest(unittest.TestCase):
 
             env = os.environ.copy()
             env["FAKE_CODEX_STATE"] = str(tmp / "fake_codex_blind_first_state.json")
+            env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
 
             completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(QA_LOOP),
-                    "--artifacts-root",
-                    str(artifacts_root),
-                    "--command-cwd",
-                    str(command_cwd),
-                    "--fixture-post-path",
-                    str(fixture_post),
-                    "--codex-command",
-                    f"{sys.executable} {codex_script}",
-                    "--max-idle-turns",
-                    "6",
-                    "--read-timeout-seconds",
-                    "0.15",
-                    "--settle-timeout-seconds",
-                    "0.4",
-                    "--",
-                    sys.executable,
-                    str(concierge_script),
-                ],
+                qa_loop_command(
+                    artifacts_root=artifacts_root,
+                    fake_docker=fake_docker,
+                    container_name=container_name,
+                    codex_command=f"{sys.executable} {codex_script}",
+                    target_command=[sys.executable, str(concierge_script)],
+                    extra_args=[
+                        "--fixture-post-path",
+                        str(fixture_post),
+                        "--max-idle-turns",
+                        "6",
+                        "--read-timeout-seconds",
+                        "0.15",
+                        "--settle-timeout-seconds",
+                        "0.4",
+                    ],
+                ),
                 cwd=str(ROOT),
                 env=env,
                 text=True,
@@ -837,6 +974,8 @@ class QALoopTest(unittest.TestCase):
             command_cwd = tmp / "fixture"
             artifacts_root.mkdir()
             command_cwd.mkdir()
+            fake_docker = write_fake_docker(tmp)
+            container_name = "fixture"
 
             concierge_script = tmp / "fake_concierge_provisional.py"
             concierge_script.write_text(
@@ -915,25 +1054,22 @@ class QALoopTest(unittest.TestCase):
 
             env = os.environ.copy()
             env["FAKE_CODEX_STATE"] = str(tmp / "fake_codex_provisional_state.json")
+            env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
 
             proc = subprocess.Popen(
-                [
-                    sys.executable,
-                    str(QA_LOOP),
-                    "--artifacts-root",
-                    str(artifacts_root),
-                    "--command-cwd",
-                    str(command_cwd),
-                    "--run-id",
-                    "provisional-report",
-                    "--codex-command",
-                    f"{sys.executable} {codex_script}",
-                    "--codex-timeout-seconds",
-                    "1.5",
-                    "--",
-                    sys.executable,
-                    str(concierge_script),
-                ],
+                qa_loop_command(
+                    artifacts_root=artifacts_root,
+                    fake_docker=fake_docker,
+                    container_name=container_name,
+                    codex_command=f"{sys.executable} {codex_script}",
+                    target_command=[sys.executable, str(concierge_script)],
+                    extra_args=[
+                        "--run-id",
+                        "provisional-report",
+                        "--codex-timeout-seconds",
+                        "1.5",
+                    ],
+                ),
                 cwd=str(ROOT),
                 env=env,
                 text=True,
@@ -973,6 +1109,8 @@ class QALoopTest(unittest.TestCase):
             command_cwd = tmp / "fixture"
             artifacts_root.mkdir()
             command_cwd.mkdir()
+            fake_docker = write_fake_docker(tmp)
+            container_name = "fixture"
 
             concierge_script = tmp / "fake_concierge_report_timeout.py"
             concierge_script.write_text(
@@ -1052,23 +1190,20 @@ class QALoopTest(unittest.TestCase):
 
             env = os.environ.copy()
             env["FAKE_CODEX_STATE"] = str(tmp / "fake_codex_report_timeout_state.json")
+            env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
 
             completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(QA_LOOP),
-                    "--artifacts-root",
-                    str(artifacts_root),
-                    "--command-cwd",
-                    str(command_cwd),
-                    "--codex-command",
-                    f"{sys.executable} {codex_script}",
-                    "--codex-timeout-seconds",
-                    "0.5",
-                    "--",
-                    sys.executable,
-                    str(concierge_script),
-                ],
+                qa_loop_command(
+                    artifacts_root=artifacts_root,
+                    fake_docker=fake_docker,
+                    container_name=container_name,
+                    codex_command=f"{sys.executable} {codex_script}",
+                    target_command=[sys.executable, str(concierge_script)],
+                    extra_args=[
+                        "--codex-timeout-seconds",
+                        "0.5",
+                    ],
+                ),
                 cwd=str(ROOT),
                 env=env,
                 text=True,
@@ -1102,6 +1237,8 @@ class QALoopTest(unittest.TestCase):
             command_cwd = tmp / "fixture"
             artifacts_root.mkdir()
             command_cwd.mkdir()
+            fake_docker = write_fake_docker(tmp)
+            container_name = "fixture"
 
             concierge_script = tmp / "fake_concierge_control_timeout.py"
             concierge_script.write_text(
@@ -1162,22 +1299,19 @@ class QALoopTest(unittest.TestCase):
             codex_script.chmod(0o755)
 
             completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(QA_LOOP),
-                    "--artifacts-root",
-                    str(artifacts_root),
-                    "--command-cwd",
-                    str(command_cwd),
-                    "--codex-command",
-                    f"{sys.executable} {codex_script}",
-                    "--codex-timeout-seconds",
-                    "0.5",
-                    "--",
-                    sys.executable,
-                    str(concierge_script),
-                ],
+                qa_loop_command(
+                    artifacts_root=artifacts_root,
+                    fake_docker=fake_docker,
+                    container_name=container_name,
+                    codex_command=f"{sys.executable} {codex_script}",
+                    target_command=[sys.executable, str(concierge_script)],
+                    extra_args=[
+                        "--codex-timeout-seconds",
+                        "0.5",
+                    ],
+                ),
                 cwd=str(ROOT),
+                env={**os.environ, "FAKE_DOCKER_CONTAINERS": json.dumps({container_name: str(command_cwd)})},
                 text=True,
                 capture_output=True,
                 check=False,
@@ -1208,6 +1342,8 @@ class QALoopTest(unittest.TestCase):
             command_cwd = tmp / "fixture"
             artifacts_root.mkdir()
             command_cwd.mkdir()
+            fake_docker = write_fake_docker(tmp)
+            container_name = "fixture"
 
             concierge_script = tmp / "fake_concierge_autowait.py"
             concierge_script.write_text(
@@ -1319,27 +1455,24 @@ class QALoopTest(unittest.TestCase):
 
             env = os.environ.copy()
             env["FAKE_CODEX_STATE"] = str(tmp / "fake_codex_autowait_state.json")
+            env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
 
             completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(QA_LOOP),
-                    "--artifacts-root",
-                    str(artifacts_root),
-                    "--command-cwd",
-                    str(command_cwd),
-                    "--codex-command",
-                    f"{sys.executable} {codex_script}",
-                    "--codex-timeout-seconds",
-                    "0.5",
-                    "--read-timeout-seconds",
-                    "0.2",
-                    "--settle-timeout-seconds",
-                    "1.2",
-                    "--",
-                    sys.executable,
-                    str(concierge_script),
-                ],
+                qa_loop_command(
+                    artifacts_root=artifacts_root,
+                    fake_docker=fake_docker,
+                    container_name=container_name,
+                    codex_command=f"{sys.executable} {codex_script}",
+                    target_command=[sys.executable, str(concierge_script)],
+                    extra_args=[
+                        "--codex-timeout-seconds",
+                        "0.5",
+                        "--read-timeout-seconds",
+                        "0.2",
+                        "--settle-timeout-seconds",
+                        "1.2",
+                    ],
+                ),
                 cwd=str(ROOT),
                 env=env,
                 text=True,

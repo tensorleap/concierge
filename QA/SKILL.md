@@ -23,18 +23,17 @@ Use this skill when the user wants QA or a manual smoke of Concierge in this rep
 Built-in fixture:
 
 ```bash
-python3 QA/qa_loop.py \
-  --run-id <run-id> \
-  --command-cwd .fixtures/<fixture-id>/pre \
-  --fixture-post-path .fixtures/<fixture-id>/post
+bash scripts/qa_fixture_run.sh --repo <fixture-id> -- \
+  --run-id <run-id>
 ```
 
-Arbitrary repo:
+Already-running container:
 
 ```bash
 python3 QA/qa_loop.py \
   --run-id <run-id> \
-  --command-cwd /path/to/target-repo
+  --container-name <running-container> \
+  --container-workdir /workspace
 ```
 
 6. Let the run finish. Do not stop early unless the command is clearly wedged and not writing artifacts.
@@ -60,6 +59,7 @@ When answering the user after QA:
 - When choosing a built-in fixture automatically, select only from `fixtures/manifest.json`, never from `.fixtures/cases/`.
 - If the report file lags behind `summary.json`, wait for it before replying.
 - If the user asks to fix issues found by QA, finish the QA run first, then switch to implementation work.
+- Built-in fixtures should run through `scripts/qa_fixture_run.sh` so the target container is built from the clean `pre` repo only.
 
 ## References
 

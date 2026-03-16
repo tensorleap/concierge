@@ -58,13 +58,135 @@ func newStageHarness() *stageHarness {
 		},
 		result: core.ExecutionResult{
 			Step:    step,
-			Applied: true,
+			Applied: false,
 			Summary: "ok",
 		},
 		validation: core.ValidationResult{
 			Passed: true,
 		},
 	}
+}
+
+type refreshStageHarness struct {
+	*stageHarness
+
+	snapshots     []core.WorkspaceSnapshot
+	statuses      []core.IntegrationStatus
+	snapshotCalls int
+	inspectCalls  int
+}
+
+func newRefreshStageHarness() *refreshStageHarness {
+	step := core.EnsureStep{
+		ID:          core.EnsureStepModelContract,
+		Description: "Ensure model path is resolved and supported",
+	}
+
+	preSnapshot := core.WorkspaceSnapshot{
+		ID:                  "snapshot-before-model-loader",
+		CapturedAt:          time.Unix(1700000000, 0).UTC(),
+		WorktreeFingerprint: "before-load-model",
+		Repository: core.RepositoryState{
+			Root:    "/repo",
+			GitRoot: "/repo",
+			Branch:  "feature/step-QA1-qa-text-output",
+			Head:    "abc123",
+			Dirty:   false,
+		},
+		FileHashes: map[string]string{
+			"leap.yaml":           "leap-yaml-before",
+			"leap_integration.py": "integration-before",
+		},
+	}
+	postSnapshot := preSnapshot
+	postSnapshot.ID = "snapshot-after-model-loader"
+	postSnapshot.WorktreeFingerprint = "after-load-model"
+	postSnapshot.FileHashes = map[string]string{
+		"leap.yaml":           "leap-yaml-before",
+		"leap_integration.py": "integration-after",
+	}
+
+	preStatus := core.IntegrationStatus{
+		Issues: []core.Issue{
+			{
+				Code:     core.IssueCodeModelFileMissing,
+				Message:  "no model candidate found; implement @tensorleap_load_model with a supported .onnx or .h5 artifact path",
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopeModel,
+			},
+		},
+		Contracts: &core.IntegrationContracts{
+			EntryFile: "leap_integration.py",
+		},
+	}
+	postStatus := core.IntegrationStatus{
+		Issues: []core.Issue{
+			{
+				Code:     core.IssueCodeModelFileMissing,
+				Message:  `model file "yolo11s.onnx" was not found`,
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopeModel,
+			},
+		},
+		Contracts: &core.IntegrationContracts{
+			EntryFile:          "leap_integration.py",
+			LoadModelFunctions: []string{"load_model"},
+			ModelCandidates: []core.ModelCandidate{
+				{Path: "yolo11s.onnx", Source: "load_model.load_model"},
+			},
+		},
+	}
+
+	return &refreshStageHarness{
+		stageHarness: &stageHarness{
+			fail: make(map[core.Stage]error),
+			snapshot: preSnapshot,
+			status:   preStatus,
+			plan: core.ExecutionPlan{
+				Primary: step,
+			},
+			result: core.ExecutionResult{
+				Step:    step,
+				Applied: true,
+				Summary: "agent task completed",
+			},
+			validation: core.ValidationResult{
+				Passed: true,
+			},
+		},
+		snapshots: []core.WorkspaceSnapshot{preSnapshot, postSnapshot},
+		statuses:  []core.IntegrationStatus{preStatus, postStatus},
+	}
+}
+
+func (h *refreshStageHarness) Snapshot(ctx context.Context, request core.SnapshotRequest) (core.WorkspaceSnapshot, error) {
+	_ = ctx
+	_ = request
+	h.calls = append(h.calls, core.StageSnapshot)
+	if err := h.fail[core.StageSnapshot]; err != nil {
+		return core.WorkspaceSnapshot{}, err
+	}
+	index := h.snapshotCalls
+	if index >= len(h.snapshots) {
+		index = len(h.snapshots) - 1
+	}
+	h.snapshotCalls++
+	return h.snapshots[index], nil
+}
+
+func (h *refreshStageHarness) Inspect(ctx context.Context, snapshot core.WorkspaceSnapshot) (core.IntegrationStatus, error) {
+	_ = ctx
+	_ = snapshot
+	h.calls = append(h.calls, core.StageInspect)
+	if err := h.fail[core.StageInspect]; err != nil {
+		return core.IntegrationStatus{}, err
+	}
+	index := h.inspectCalls
+	if index >= len(h.statuses) {
+		index = len(h.statuses) - 1
+	}
+	h.inspectCalls++
+	return h.statuses[index], nil
 }
 
 func (h *stageHarness) Snapshot(ctx context.Context, request core.SnapshotRequest) (core.WorkspaceSnapshot, error) {
@@ -359,6 +481,58 @@ func TestRunIterationUsesDefaultClock(t *testing.T) {
 	}
 }
 
+func TestRunIterationRefreshesInspectionAfterAppliedModelAuthoring(t *testing.T) {
+	// Regression for QA run 20260315T181250Z-78ca4afe:
+	// after applying @tensorleap_load_model, the same iteration still reported
+	// "no model candidate found" instead of acknowledging the discovered yolo11s.onnx path.
+	harness := newRefreshStageHarness()
+	engine := mustNewEngine(t, Dependencies{
+		Snapshotter: harness,
+		Inspector:   harness,
+		Planner:     harness,
+		Executor:    harness,
+		Validator:   harness,
+		Reporter:    harness,
+		Clock: func() time.Time {
+			return time.Date(2026, 3, 15, 18, 18, 7, 0, time.UTC)
+		},
+	})
+
+	report, err := engine.RunIteration(context.Background(), core.SnapshotRequest{RepoRoot: "/repo"})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if report.SnapshotID != "snapshot-after-model-loader" {
+		t.Fatalf("expected post-change snapshot ID %q, got %q", "snapshot-after-model-loader", report.SnapshotID)
+	}
+	if hasIssueMessage(report.Validation.Issues, "no model candidate found") {
+		t.Fatalf("expected post-apply validation to drop the stale pre-edit model issue, got %+v", report.Validation.Issues)
+	}
+	if !hasIssueMessage(report.Validation.Issues, `model file "yolo11s.onnx" was not found`) {
+		t.Fatalf("expected post-apply validation to acknowledge the discovered model loader path, got %+v", report.Validation.Issues)
+	}
+
+	modelCheck, ok := findCheck(report.Checks, core.EnsureStepModelContract)
+	if !ok {
+		t.Fatalf("expected %q check in report, got %+v", core.EnsureStepModelContract, report.Checks)
+	}
+	if hasIssueMessage(modelCheck.Issues, "no model candidate found") {
+		t.Fatalf("expected model check to drop the stale pre-edit issue, got %+v", modelCheck.Issues)
+	}
+	if !hasIssueMessage(modelCheck.Issues, `model file "yolo11s.onnx" was not found`) {
+		t.Fatalf("expected model check to acknowledge the discovered loader path, got %+v", modelCheck.Issues)
+	}
+
+	if harness.snapshotCalls < 2 || harness.inspectCalls < 2 {
+		t.Fatalf(
+			"expected engine to re-snapshot and re-inspect after applied changes; snapshotCalls=%d inspectCalls=%d",
+			harness.snapshotCalls,
+			harness.inspectCalls,
+		)
+	}
+}
+
 func mustNewEngine(t *testing.T, deps Dependencies) *Engine {
 	t.Helper()
 	engine, err := NewEngine(deps)
@@ -400,4 +574,22 @@ func requireCallOrder(t *testing.T, got, expected []core.Stage) {
 	if !reflect.DeepEqual(got, expected) {
 		t.Fatalf("expected calls %v, got %v", expected, got)
 	}
+}
+
+func hasIssueMessage(issues []core.Issue, substring string) bool {
+	for _, issue := range issues {
+		if strings.Contains(issue.Message, substring) {
+			return true
+		}
+	}
+	return false
+}
+
+func findCheck(checks []core.VerifiedCheck, stepID core.EnsureStepID) (core.VerifiedCheck, bool) {
+	for _, check := range checks {
+		if check.StepID == stepID {
+			return check, true
+		}
+	}
+	return core.VerifiedCheck{}, false
 }

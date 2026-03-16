@@ -70,7 +70,7 @@ func (h *runHarness) Execute(ctx context.Context, snapshot core.WorkspaceSnapsho
 
 	return core.ExecutionResult{
 		Step:     step,
-		Applied:  true,
+		Applied:  false,
 		Summary:  "ok",
 		Evidence: append([]core.EvidenceItem(nil), h.executionEvidence...),
 	}, nil

@@ -136,6 +136,14 @@ func (e *Engine) runIteration(
 	e.emit(observe.Event{Kind: observe.EventStageFinished, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageExecute, StepID: plan.Primary.ID, Message: "Execution finished"})
 
 	finalResult := decision.FinalResult
+	postSnapshot := snapshot
+	postStatus := status
+	if shouldRefreshPostExecutionState(finalResult, decision) {
+		postSnapshot, postStatus, err = e.refreshPostExecutionState(ctx, req, iteration, finalResult.Step.ID)
+		if err != nil {
+			return core.IterationReport{}, core.WorkspaceSnapshot{}, err
+		}
+	}
 	validationStartedMessage := "Validating runtime behavior"
 	validationFinishedMessage := "Validation finished"
 	reportStartedMessage := "Writing the run report"
@@ -145,14 +153,14 @@ func (e *Engine) runIteration(
 		reportStartedMessage = "Writing the blocker summary"
 	}
 
-	e.emit(observe.Event{Kind: observe.EventValidationStarted, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageValidate, StepID: finalResult.Step.ID, Message: validationStartedMessage})
-	validation, err := e.validator.Validate(ctx, snapshot, finalResult)
+	e.emit(observe.Event{Kind: observe.EventValidationStarted, Iteration: iteration, SnapshotID: postSnapshot.ID, Stage: core.StageValidate, StepID: finalResult.Step.ID, Message: validationStartedMessage})
+	validation, err := e.validator.Validate(ctx, postSnapshot, finalResult)
 	if err != nil {
-		e.emit(observe.Event{Kind: observe.EventError, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageValidate, StepID: finalResult.Step.ID, Message: err.Error()})
+		e.emit(observe.Event{Kind: observe.EventError, Iteration: iteration, SnapshotID: postSnapshot.ID, Stage: core.StageValidate, StepID: finalResult.Step.ID, Message: err.Error()})
 		return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StageValidate, Err: err}
 	}
-	validation = mergeBlockingInspectIssues(validation, status)
-	e.emit(observe.Event{Kind: observe.EventValidationFinished, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageValidate, StepID: finalResult.Step.ID, Message: validationFinishedMessage})
+	validation = mergeBlockingInspectIssues(validation, postStatus)
+	e.emit(observe.Event{Kind: observe.EventValidationFinished, Iteration: iteration, SnapshotID: postSnapshot.ID, Stage: core.StageValidate, StepID: finalResult.Step.ID, Message: validationFinishedMessage})
 
 	evidence := append([]core.EvidenceItem(nil), finalResult.Evidence...)
 	evidence = append(evidence, decision.Evidence...)
@@ -160,33 +168,33 @@ func (e *Engine) runIteration(
 
 	report := core.IterationReport{
 		GeneratedAt:     e.clock(),
-		SnapshotID:      snapshot.ID,
+		SnapshotID:      postSnapshot.ID,
 		Step:            finalResult.Step,
 		Applied:         finalResult.Applied,
 		Evidence:        evidence,
 		Recommendations: append([]core.AuthoringRecommendation(nil), finalResult.Recommendations...),
-		Checks:          core.BuildVerifiedChecks(snapshot, status.Issues, validation.Issues, finalResult.Step.ID),
+		Checks:          core.BuildVerifiedChecks(postSnapshot, postStatus.Issues, validation.Issues, finalResult.Step.ID),
 		Validation:      validation,
 		Commit:          decision.Commit,
 		Notes:           append([]string(nil), decision.Notes...),
 	}
 
 	if beforeReport != nil {
-		if err := beforeReport(snapshot, &report); err != nil {
-			e.emit(observe.Event{Kind: observe.EventError, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageReport, StepID: finalResult.Step.ID, Message: err.Error()})
+		if err := beforeReport(postSnapshot, &report); err != nil {
+			e.emit(observe.Event{Kind: observe.EventError, Iteration: iteration, SnapshotID: postSnapshot.ID, Stage: core.StageReport, StepID: finalResult.Step.ID, Message: err.Error()})
 			return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StageReport, Err: err}
 		}
 	}
 
-	e.emit(observe.Event{Kind: observe.EventStageStarted, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageReport, StepID: finalResult.Step.ID, Message: reportStartedMessage})
+	e.emit(observe.Event{Kind: observe.EventStageStarted, Iteration: iteration, SnapshotID: postSnapshot.ID, Stage: core.StageReport, StepID: finalResult.Step.ID, Message: reportStartedMessage})
 	if err := e.reporter.Report(ctx, report); err != nil {
-		e.emit(observe.Event{Kind: observe.EventError, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageReport, StepID: finalResult.Step.ID, Message: err.Error()})
+		e.emit(observe.Event{Kind: observe.EventError, Iteration: iteration, SnapshotID: postSnapshot.ID, Stage: core.StageReport, StepID: finalResult.Step.ID, Message: err.Error()})
 		return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StageReport, Err: err}
 	}
-	e.emit(observe.Event{Kind: observe.EventStageFinished, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageReport, StepID: finalResult.Step.ID, Message: "Run report written"})
-	e.emit(observe.Event{Kind: observe.EventIterationFinished, Iteration: iteration, SnapshotID: snapshot.ID, StepID: finalResult.Step.ID, Message: "Guided round finished"})
+	e.emit(observe.Event{Kind: observe.EventStageFinished, Iteration: iteration, SnapshotID: postSnapshot.ID, Stage: core.StageReport, StepID: finalResult.Step.ID, Message: "Run report written"})
+	e.emit(observe.Event{Kind: observe.EventIterationFinished, Iteration: iteration, SnapshotID: postSnapshot.ID, StepID: finalResult.Step.ID, Message: "Guided round finished"})
 
-	return report, snapshot, nil
+	return report, postSnapshot, nil
 }
 
 func (e *Engine) emit(event observe.Event) {
@@ -232,6 +240,37 @@ func mergeBlockingInspectIssues(validation core.ValidationResult, status core.In
 	}
 
 	return merged
+}
+
+func (e *Engine) refreshPostExecutionState(
+	ctx context.Context,
+	req core.SnapshotRequest,
+	iteration int,
+	stepID core.EnsureStepID,
+) (core.WorkspaceSnapshot, core.IntegrationStatus, error) {
+	e.emit(observe.Event{Kind: observe.EventStageStarted, Iteration: iteration, Stage: core.StageSnapshot, StepID: stepID, Message: "Refreshing workspace snapshot after changes"})
+	snapshot, err := e.snapshotter.Snapshot(ctx, req)
+	if err != nil {
+		e.emit(observe.Event{Kind: observe.EventError, Iteration: iteration, Stage: core.StageSnapshot, StepID: stepID, Message: err.Error()})
+		return core.WorkspaceSnapshot{}, core.IntegrationStatus{}, &StageError{Stage: core.StageSnapshot, Err: err}
+	}
+	e.emit(observe.Event{Kind: observe.EventStageFinished, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageSnapshot, StepID: stepID, Message: "Post-change workspace snapshot captured"})
+
+	e.emit(observe.Event{Kind: observe.EventStageStarted, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageInspect, StepID: stepID, Message: "Re-inspecting changed workspace"})
+	status, err := e.inspector.Inspect(ctx, snapshot)
+	if err != nil {
+		e.emit(observe.Event{Kind: observe.EventError, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageInspect, StepID: stepID, Message: err.Error()})
+		return core.WorkspaceSnapshot{}, core.IntegrationStatus{}, &StageError{Stage: core.StageInspect, Err: err}
+	}
+	e.emit(observe.Event{Kind: observe.EventStageFinished, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageInspect, StepID: stepID, Message: "Post-change inspection finished"})
+	return snapshot, status, nil
+}
+
+func shouldRefreshPostExecutionState(result core.ExecutionResult, decision core.GitDecision) bool {
+	if result.Applied {
+		return true
+	}
+	return decision.Commit != nil
 }
 
 func executionRequiresUserAction(result core.ExecutionResult) bool {

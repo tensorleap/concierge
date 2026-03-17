@@ -3,6 +3,7 @@ package fixtures
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -113,6 +114,7 @@ func cloneCaseRepoForTest(t *testing.T, caseID string) (fixtureCaseEntry, string
 	t.Helper()
 	entry := loadFixtureCase(t, caseID)
 	repoRoot := cloneFixtureRepoForTest(t, resolveCaseRoot(t, caseID))
+	removeReadyModelArtifactsIfNeeded(t, entry, repoRoot)
 	seedModelArtifactIfNeeded(t, entry, repoRoot)
 	return entry, repoRoot
 }
@@ -330,9 +332,40 @@ func copyRepoFile(t *testing.T, sourceRoot, sourceRelPath, destinationRoot, dest
 	}
 }
 
+func removeReadyModelArtifactsIfNeeded(t *testing.T, entry fixtureCaseEntry, repoRoot string) {
+	t.Helper()
+	if strings.TrimSpace(entry.ExpectedMissingModelPath) == "" {
+		return
+	}
+
+	err := filepath.WalkDir(repoRoot, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		switch strings.ToLower(filepath.Ext(d.Name())) {
+		case ".h5", ".onnx":
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("removeReadyModelArtifactsIfNeeded failed: %v", err)
+	}
+}
+
 func seedModelArtifactIfNeeded(t *testing.T, entry fixtureCaseEntry, repoRoot string) {
 	t.Helper()
-	if core.EnsureStepID(entry.ExpectedPrimaryStep) == core.EnsureStepModelContract {
+	switch core.EnsureStepID(entry.ExpectedPrimaryStep) {
+	case core.EnsureStepModelAcquisition, core.EnsureStepModelContract:
 		return
 	}
 

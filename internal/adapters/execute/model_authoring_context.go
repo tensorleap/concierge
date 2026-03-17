@@ -1,7 +1,6 @@
 package execute
 
 import (
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -44,7 +43,7 @@ func BuildModelAuthoringRecommendation(snapshot core.WorkspaceSnapshot, status c
 	}
 
 	constraints := []string{
-		"Keep @tensorleap_load_model bound to one concrete model artifact path.",
+		"Bind @tensorleap_load_model to one concrete supported model artifact path.",
 		"Model artifact path must end with .onnx or .h5.",
 		"Model binaries are uploaded by leap CLI; leap.yaml include/exclude governs integration code.",
 		"Do not modify unrelated training/business logic.",
@@ -83,14 +82,6 @@ func collectModelRecommendationCandidates(
 		for _, candidate := range status.Contracts.ModelCandidates {
 			add(candidate.Path, 2)
 		}
-	}
-
-	fromRepo, err := scanRepoForSupportedModels(repoRoot)
-	if err != nil {
-		return nil, err
-	}
-	for _, path := range fromRepo {
-		add(path, 3)
 	}
 
 	candidates := make([]modelRecommendationCandidate, 0, len(byKey))
@@ -136,7 +127,7 @@ func selectModelRecommendationTarget(
 	supported = uniqueSortedStrings(supported)
 	switch len(supported) {
 	case 0:
-		return "", "no_supported_model_candidate"
+		return "", "no_ready_supported_model_artifact"
 	case 1:
 		return supported[0], "single_supported_candidate"
 	default:
@@ -205,35 +196,6 @@ func normalizeModelRecommendationPath(repoRoot, raw string) string {
 func isSupportedModelPath(path string) bool {
 	_, ok := supportedModelAuthoringExtensions[strings.ToLower(filepath.Ext(strings.TrimSpace(path)))]
 	return ok
-}
-
-func scanRepoForSupportedModels(repoRoot string) ([]string, error) {
-	candidates := make([]string, 0, 2)
-	err := filepath.WalkDir(repoRoot, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		name := entry.Name()
-		if entry.IsDir() {
-			if name == ".git" || name == ".concierge" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !isSupportedModelPath(name) {
-			return nil
-		}
-		rel, err := filepath.Rel(repoRoot, path)
-		if err != nil {
-			return err
-		}
-		candidates = append(candidates, filepath.ToSlash(filepath.Clean(rel)))
-		return nil
-	})
-	if err != nil {
-		return nil, core.WrapError(core.KindUnknown, "execute.model_authoring.repo_scan", err)
-	}
-	return uniqueSortedStrings(candidates), nil
 }
 
 func isPathWithinRepo(repoRoot, path string) bool {

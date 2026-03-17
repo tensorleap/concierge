@@ -55,28 +55,13 @@ type modelCandidateEvaluation struct {
 }
 
 func discoverModelCandidates(repoRoot string, contract *leapYAMLContract, contracts *core.IntegrationContracts) ([]core.ModelCandidate, error) {
-	collector := modelCandidateCollector{
-		repoRoot:  repoRoot,
-		byPathKey: make(map[string]*collectedModelCandidate),
-	}
-
-	fromDecorators, err := discoverModelCandidatesFromLoadModelDecorators(repoRoot, contract, contracts)
-	if err != nil {
-		return nil, err
-	}
-	for _, candidate := range fromDecorators {
-		collector.add(candidate.Path, candidate.Source)
-	}
-
 	fromRepo, err := discoverModelCandidatesFromRepoSearch(repoRoot)
 	if err != nil {
 		return nil, err
 	}
-	for _, candidate := range fromRepo {
-		collector.add(candidate.Path, candidate.Source)
-	}
-
-	return collector.list(), nil
+	_ = contract
+	_ = contracts
+	return fromRepo, nil
 }
 
 func (c *modelCandidateCollector) add(path string, source string) {

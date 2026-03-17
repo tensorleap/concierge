@@ -20,6 +20,29 @@ func PolicyForStep(step core.EnsureStepID, snapshot core.WorkspaceSnapshot, stat
 	allowedFiles := resolveAgentAllowedFiles(snapshot, status)
 
 	switch step {
+	case core.EnsureStepModelAcquisition:
+		return agent.AgentScopePolicy{
+			AllowedFiles: append([]string{
+				".concierge/materializers",
+				".concierge/materialized_models",
+			}, allowedFiles...),
+			ForbiddenAreas: []string{
+				"Do not modify leap_integration.py, @tensorleap_preprocess, @tensorleap_input_encoder, or @tensorleap_gt_encoder in this step",
+				"Do not modify unrelated training/business logic",
+				"Do not add durable helper scripts outside .concierge",
+			},
+			RequiredOutcomes: []string{
+				"Materialize one concrete .onnx or .h5 artifact path that Concierge can use locally",
+				"Prefer existing repository commands or entrypoints before creating a temporary helper",
+			},
+			StopAndAskTriggers: []string{
+				"Repository evidence does not reveal any viable download/export path",
+				"Materialization requires editing durable repository files outside .concierge",
+			},
+			DomainSections: []string{
+				"load_model_contract",
+			},
+		}, nil
 	case core.EnsureStepModelContract:
 		return agent.AgentScopePolicy{
 			AllowedFiles: allowedFiles,
@@ -49,15 +72,12 @@ func PolicyForStep(step core.EnsureStepID, snapshot core.WorkspaceSnapshot, stat
 			},
 			RequiredOutcomes: []string{
 				"Implement @tensorleap_preprocess with deterministic train and validation subset responses",
-				"Implement @tensorleap_load_model wiring with a supported .onnx or .h5 artifact path",
 			},
 			StopAndAskTriggers: []string{
-				"Repository evidence does not identify a model artifact path for @tensorleap_load_model",
 				"The fix requires changing input encoders, ground-truth encoders, or integration-test wiring",
 			},
 			DomainSections: []string{
 				"preprocess_contract",
-				"load_model_contract",
 			},
 		}, nil
 	case core.EnsureStepInputEncoders:

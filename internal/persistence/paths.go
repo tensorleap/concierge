@@ -73,6 +73,16 @@ func (p *Paths) EvidenceFile(snapshotID, evidenceName string) string {
 	return filepath.Join(p.EvidenceDir(snapshotID), fmt.Sprintf("%s.log", fileName))
 }
 
+// MaterializedModelsDir returns the deterministic directory for Concierge-owned model artifacts.
+func (p *Paths) MaterializedModelsDir() string {
+	return filepath.Join(p.ConciergeRoot(), "materialized_models")
+}
+
+// MaterializersDir returns the deterministic directory for Concierge-owned helper scripts.
+func (p *Paths) MaterializersDir() string {
+	return filepath.Join(p.ConciergeRoot(), "materializers")
+}
+
 func sanitizePathToken(token string) string {
 	trimmed := strings.TrimSpace(token)
 	if trimmed == "" {

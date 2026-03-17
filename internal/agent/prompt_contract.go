@@ -53,6 +53,8 @@ func BuildClaudeTaskPrompt(task AgentTask) string {
 	b.WriteString(fmt.Sprintf("- leap.yaml boundary: %s\n", nonEmptyOrFallback(repoContextValue(task, "leap_yaml_boundary"), "<unknown>")))
 	b.WriteString(fmt.Sprintf("- Selected model path: %s\n", nonEmptyOrFallback(repoContextValue(task, "selected_model_path"), "<none>")))
 	b.WriteString(fmt.Sprintf("- Model candidates: %s\n", renderInlineList(repoContextValues(task, "model_candidates"))))
+	b.WriteString(fmt.Sprintf("- Ready model artifacts: %s\n", renderInlineList(repoContextValues(task, "ready_model_artifacts"))))
+	b.WriteString(fmt.Sprintf("- Model acquisition leads: %s\n", renderInlineList(repoContextValues(task, "model_acquisition_leads"))))
 	b.WriteString(fmt.Sprintf("- Decorator inventory: %s\n", renderInlineList(repoContextValues(task, "decorator_inventory"))))
 	b.WriteString(fmt.Sprintf("- Integration-test calls: %s\n", renderInlineList(repoContextValues(task, "integration_test_calls"))))
 	b.WriteString(fmt.Sprintf("- Blocking issues: %s\n", renderInlineList(repoContextValues(task, "blocking_issues"))))
@@ -136,6 +138,10 @@ func repoContextValues(task AgentTask, key string) []string {
 	switch key {
 	case "model_candidates":
 		return task.RepoContext.ModelCandidates
+	case "ready_model_artifacts":
+		return task.RepoContext.ReadyModelArtifacts
+	case "model_acquisition_leads":
+		return task.RepoContext.ModelAcquisitionLeads
 	case "decorator_inventory":
 		return task.RepoContext.DecoratorInventory
 	case "integration_test_calls":

@@ -36,11 +36,16 @@ func BuildAgentRepoContext(
 	}
 
 	context := core.AgentRepoContext{
-		RepoRoot:           repoRoot,
-		EntryFile:          normalizeRepoContextPath(resolveEntryFile(snapshot, status)),
-		LeapYAMLBoundary:   leapYAMLBoundarySummary(snapshot),
-		SelectedModelPath:  normalizeRepoContextPath(resolveSelectedModelPath(snapshot, status)),
-		ModelCandidates:    truncateRepoContextValues(modelCandidatesForContext(snapshot, status), maxRepoContextModelCandidates),
+		RepoRoot:            repoRoot,
+		EntryFile:           normalizeRepoContextPath(resolveEntryFile(snapshot, status)),
+		LeapYAMLBoundary:    leapYAMLBoundarySummary(snapshot),
+		SelectedModelPath:   normalizeRepoContextPath(resolveSelectedModelPath(snapshot, status)),
+		ModelCandidates:     truncateRepoContextValues(modelCandidatesForContext(snapshot, status), maxRepoContextModelCandidates),
+		ReadyModelArtifacts: truncateRepoContextValues(readyModelArtifactsForContext(status), maxRepoContextModelCandidates),
+		ModelAcquisitionLeads: truncateRepoContextValues(
+			modelAcquisitionLeadsForContext(status),
+			maxRepoContextModelCandidates,
+		),
 		DecoratorInventory: truncateRepoContextValues(decoratorInventoryForContext(status.Contracts), maxRepoContextDecoratorInventory),
 		IntegrationTestCalls: truncateRepoContextValues(
 			uniqueSortedRepoContextValues(statusIntegrationTestCalls(status.Contracts)),
@@ -114,6 +119,28 @@ func modelCandidatesForContext(snapshot core.WorkspaceSnapshot, status core.Inte
 		candidates = append(candidates, selected)
 	}
 	return uniqueSortedRepoContextValues(candidates)
+}
+
+func readyModelArtifactsForContext(status core.IntegrationStatus) []string {
+	if status.Contracts == nil || status.Contracts.ModelAcquisition == nil {
+		return nil
+	}
+	values := make([]string, 0, len(status.Contracts.ModelAcquisition.ReadyArtifacts))
+	for _, candidate := range status.Contracts.ModelAcquisition.ReadyArtifacts {
+		values = append(values, candidate.Path)
+	}
+	return uniqueSortedRepoContextValues(values)
+}
+
+func modelAcquisitionLeadsForContext(status core.IntegrationStatus) []string {
+	if status.Contracts == nil || status.Contracts.ModelAcquisition == nil {
+		return nil
+	}
+	values := make([]string, 0, len(status.Contracts.ModelAcquisition.PassiveLeads))
+	for _, candidate := range status.Contracts.ModelAcquisition.PassiveLeads {
+		values = append(values, candidate.Path)
+	}
+	return uniqueSortedRepoContextValues(values)
 }
 
 func decoratorInventoryForContext(contracts *core.IntegrationContracts) []string {
@@ -206,6 +233,8 @@ func issueRelevantToStep(step core.EnsureStepID, issue core.Issue) bool {
 		return issue.Scope == core.IssueScopeIntegrationTest
 	case core.EnsureStepHarnessValidation:
 		return issue.Scope == core.IssueScopeValidation
+	case core.EnsureStepModelAcquisition:
+		return issue.Scope == core.IssueScopeModel
 	case core.EnsureStepModelContract:
 		return issue.Scope == core.IssueScopeModel
 	case core.EnsureStepInvestigate:
@@ -275,6 +304,9 @@ func applyRepoContextStepSlice(step core.EnsureStepID, context *core.AgentRepoCo
 	}
 
 	switch step {
+	case core.EnsureStepModelAcquisition:
+		context.DecoratorInventory = nil
+		context.IntegrationTestCalls = nil
 	case core.EnsureStepModelContract:
 		context.DecoratorInventory = nil
 		context.IntegrationTestCalls = nil

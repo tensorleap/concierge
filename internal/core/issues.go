@@ -52,14 +52,18 @@ const (
 	IssueCodeLeapYAMLPythonVersionInvalid        IssueCode = "leap_yaml_python_version_invalid"
 
 	// Model contract.
-	IssueCodeModelFileMissing                 IssueCode = "model_file_missing"
-	IssueCodeModelCandidatesAmbiguous         IssueCode = "model_candidates_ambiguous"
-	IssueCodeModelFormatUnsupported           IssueCode = "model_format_unsupported"
-	IssueCodeModelLoadFailed                  IssueCode = "model_load_failed"
-	IssueCodeModelInputBatchDimensionMissing  IssueCode = "model_input_batch_dimension_missing"
-	IssueCodeModelOutputBatchDimensionMissing IssueCode = "model_output_batch_dimension_missing"
-	IssueCodeModelInputShapeMismatch          IssueCode = "model_input_shape_mismatch"
-	IssueCodeModelOutputShapeMismatch         IssueCode = "model_output_shape_mismatch"
+	IssueCodeModelAcquisitionRequired          IssueCode = "model_acquisition_required"
+	IssueCodeModelAcquisitionUnresolved        IssueCode = "model_acquisition_unresolved"
+	IssueCodeModelMaterializationFailed        IssueCode = "model_materialization_failed"
+	IssueCodeModelMaterializationOutputMissing IssueCode = "model_materialization_output_missing"
+	IssueCodeModelFileMissing                  IssueCode = "model_file_missing"
+	IssueCodeModelCandidatesAmbiguous          IssueCode = "model_candidates_ambiguous"
+	IssueCodeModelFormatUnsupported            IssueCode = "model_format_unsupported"
+	IssueCodeModelLoadFailed                   IssueCode = "model_load_failed"
+	IssueCodeModelInputBatchDimensionMissing   IssueCode = "model_input_batch_dimension_missing"
+	IssueCodeModelOutputBatchDimensionMissing  IssueCode = "model_output_batch_dimension_missing"
+	IssueCodeModelInputShapeMismatch           IssueCode = "model_input_shape_mismatch"
+	IssueCodeModelOutputShapeMismatch          IssueCode = "model_output_shape_mismatch"
 
 	// Integration files and decorators.
 	IssueCodeIntegrationScriptMissing               IssueCode = "integration_script_missing"
@@ -178,6 +182,10 @@ var knownIssueCodes = []IssueCode{
 	IssueCodeLeapYAMLExcludeBlocksRequiredFiles,
 	IssueCodeLeapYAMLPythonVersionMissing,
 	IssueCodeLeapYAMLPythonVersionInvalid,
+	IssueCodeModelAcquisitionRequired,
+	IssueCodeModelAcquisitionUnresolved,
+	IssueCodeModelMaterializationFailed,
+	IssueCodeModelMaterializationOutputMissing,
 	IssueCodeModelFileMissing,
 	IssueCodeModelCandidatesAmbiguous,
 	IssueCodeModelFormatUnsupported,

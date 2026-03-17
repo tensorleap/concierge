@@ -79,7 +79,7 @@ type refreshStageHarness struct {
 func newRefreshStageHarness() *refreshStageHarness {
 	step := core.EnsureStep{
 		ID:          core.EnsureStepModelContract,
-		Description: "Ensure model path is resolved and supported",
+		Description: "Ensure @tensorleap_load_model is wired to a supported model artifact",
 	}
 
 	preSnapshot := core.WorkspaceSnapshot{
@@ -109,8 +109,8 @@ func newRefreshStageHarness() *refreshStageHarness {
 	preStatus := core.IntegrationStatus{
 		Issues: []core.Issue{
 			{
-				Code:     core.IssueCodeModelFileMissing,
-				Message:  "no model candidate found; implement @tensorleap_load_model with a supported .onnx or .h5 artifact path",
+				Code:     core.IssueCodeLoadModelDecoratorMissing,
+				Message:  "no @tensorleap_load_model function found in leap_integration.py",
 				Severity: core.SeverityError,
 				Scope:    core.IssueScopeModel,
 			},
@@ -131,15 +131,12 @@ func newRefreshStageHarness() *refreshStageHarness {
 		Contracts: &core.IntegrationContracts{
 			EntryFile:          "leap_integration.py",
 			LoadModelFunctions: []string{"load_model"},
-			ModelCandidates: []core.ModelCandidate{
-				{Path: "yolo11s.onnx", Source: "load_model.load_model"},
-			},
 		},
 	}
 
 	return &refreshStageHarness{
 		stageHarness: &stageHarness{
-			fail: make(map[core.Stage]error),
+			fail:     make(map[core.Stage]error),
 			snapshot: preSnapshot,
 			status:   preStatus,
 			plan: core.ExecutionPlan{
@@ -513,9 +510,9 @@ func TestRunIterationRefreshesInspectionAfterAppliedModelAuthoring(t *testing.T)
 		t.Fatalf("expected post-apply validation to acknowledge the discovered model loader path, got %+v", report.Validation.Issues)
 	}
 
-	modelCheck, ok := findCheck(report.Checks, core.EnsureStepModelContract)
+	modelCheck, ok := findCheck(report.Checks, core.EnsureStepModelAcquisition)
 	if !ok {
-		t.Fatalf("expected %q check in report, got %+v", core.EnsureStepModelContract, report.Checks)
+		t.Fatalf("expected %q check in report, got %+v", core.EnsureStepModelAcquisition, report.Checks)
 	}
 	if hasIssueMessage(modelCheck.Issues, "no model candidate found") {
 		t.Fatalf("expected model check to drop the stale pre-edit issue, got %+v", modelCheck.Issues)

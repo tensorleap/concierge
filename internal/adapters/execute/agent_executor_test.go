@@ -249,15 +249,37 @@ func TestAgentExecutorRejectsRemovedOptionalStepsInV1(t *testing.T) {
 	}
 }
 
-func TestAgentExecutorPreprocessObjectiveIncludesSelectedModelPath(t *testing.T) {
+func TestAgentExecutorModelAcquisitionObjectiveIncludesSelectedModelPath(t *testing.T) {
 	repoRoot := t.TempDir()
+	writeTestFile(t, filepath.Join(repoRoot, "model", "demo.pt"))
+	if err := os.WriteFile(filepath.Join(repoRoot, "leap.yaml"), []byte("entryFile: leap_integration.py\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "leap_integration.py"), []byte(strings.Join([]string{
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model, tensorleap_preprocess, tensorleap_integration_test",
+		"",
+		"@tensorleap_preprocess()",
+		"def preprocess():",
+		"    return []",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    return None",
+		"",
+		"@tensorleap_integration_test()",
+		"def integration_test(sample_id, preprocess_response):",
+		"    return None",
+	}, "\n")), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
 	runner := &fakeAgentRunner{
 		result: agent.AgentResult{Applied: true, Summary: "ok"},
 	}
 	executor := NewAgentExecutor(runner)
-	step, ok := core.EnsureStepByID(core.EnsureStepPreprocessContract)
+	step, ok := core.EnsureStepByID(core.EnsureStepModelAcquisition)
 	if !ok {
-		t.Fatalf("expected step %q to exist", core.EnsureStepPreprocessContract)
+		t.Fatalf("expected step %q to exist", core.EnsureStepModelAcquisition)
 	}
 
 	_, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
@@ -271,13 +293,13 @@ func TestAgentExecutorPreprocessObjectiveIncludesSelectedModelPath(t *testing.T)
 
 	found := false
 	for _, constraint := range runner.lastTask.Constraints {
-		if constraint == `Use model path "model/demo.onnx" for @tensorleap_load_model unless repository code proves this path is invalid` {
+		if constraint == `Materialize the supported artifact at "model/demo.onnx" unless repository evidence proves a different repo-local output path is required` {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatalf("expected model-path constraint in task constraints, got %+v", runner.lastTask.Constraints)
+		t.Fatalf("expected model-acquisition target constraint in task constraints, got %+v", runner.lastTask.Constraints)
 	}
 }
 
@@ -285,6 +307,26 @@ func TestModelAuthoringAgentTaskIncludesCandidateContext(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeTestFile(t, filepath.Join(repoRoot, "models", "z.h5"))
 	writeTestFile(t, filepath.Join(repoRoot, "models", "a.onnx"))
+	if err := os.WriteFile(filepath.Join(repoRoot, "leap.yaml"), []byte("entryFile: leap_integration.py\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "leap_integration.py"), []byte(strings.Join([]string{
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model, tensorleap_preprocess, tensorleap_integration_test",
+		"",
+		"@tensorleap_preprocess()",
+		"def preprocess():",
+		"    return []",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    return None",
+		"",
+		"@tensorleap_integration_test()",
+		"def integration_test(sample_id, preprocess_response):",
+		"    return None",
+	}, "\n")), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
 
 	runner := &fakeAgentRunner{
 		result: agent.AgentResult{Applied: true, Summary: "model contract fixed"},

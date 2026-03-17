@@ -7,20 +7,20 @@ import (
 	"github.com/tensorleap/concierge/internal/core"
 )
 
-func TestScopePolicyForPreprocessIncludesModelLoadAndPreprocessSections(t *testing.T) {
+func TestScopePolicyForPreprocessUsesOnlyPreprocessSection(t *testing.T) {
 	policy, err := PolicyForStep(core.EnsureStepPreprocessContract, core.WorkspaceSnapshot{}, core.IntegrationStatus{})
 	if err != nil {
 		t.Fatalf("PolicyForStep returned error: %v", err)
 	}
 
 	assertContains(t, policy.DomainSections, "preprocess_contract")
-	assertContains(t, policy.DomainSections, "load_model_contract")
+	assertNotContains(t, policy.DomainSections, "load_model_contract")
 	assertContainsSubstring(t, policy.ForbiddenAreas, "@tensorleap_input_encoder")
 	assertContainsSubstring(t, policy.ForbiddenAreas, "@tensorleap_integration_test")
 }
 
-func TestPolicyForPreprocessIncludesModelLoadAndPreprocessSections(t *testing.T) {
-	TestScopePolicyForPreprocessIncludesModelLoadAndPreprocessSections(t)
+func TestPolicyForPreprocessUsesOnlyPreprocessSection(t *testing.T) {
+	TestScopePolicyForPreprocessUsesOnlyPreprocessSection(t)
 }
 
 func TestScopePolicyForInputEncodersExcludesGTAndIntegrationTestSections(t *testing.T) {

@@ -14,8 +14,7 @@ func TestModelDiscoveryFromRepoSearchSingleCandidate(t *testing.T) {
 		"entryFile: leap_integration.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_integration.py", simpleIntegrationTestSource())
+	writeFixtureFile(t, root, "leap_integration.py", simpleModelIntegrationSource())
 	writeFixtureFile(t, root, "model/demo.h5", "binary")
 
 	status := inspectStatus(t, root)
@@ -26,12 +25,11 @@ func TestModelDiscoveryFromRepoSearchSingleCandidate(t *testing.T) {
 	if status.Contracts == nil || status.Contracts.ResolvedModelPath != "model/demo.h5" {
 		t.Fatalf("expected resolved model path %q, got %+v", "model/demo.h5", status.Contracts)
 	}
-	assertNoModelIssue(t, status.Issues, core.IssueCodeModelFileMissing)
-	assertNoModelIssue(t, status.Issues, core.IssueCodeModelCandidatesAmbiguous)
-	assertNoModelIssue(t, status.Issues, core.IssueCodeModelFormatUnsupported)
+	assertNoModelIssue(t, status.Issues, core.IssueCodeModelAcquisitionRequired)
+	assertNoModelIssue(t, status.Issues, core.IssueCodeLoadModelDecoratorMissing)
 }
 
-func TestModelDiscoveryFromLoadModelDecorator(t *testing.T) {
+func TestModelDiscoveryIgnoresDecoratorStringLiteralDiscovery(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
 		"entryFile: leap_integration.py",
@@ -60,96 +58,74 @@ func TestModelDiscoveryFromLoadModelDecorator(t *testing.T) {
 		t.Fatalf("expected model candidate %q, got %+v", "model/from_decorator.onnx", status.Contracts)
 	}
 	source := modelCandidateSource(status, "model/from_decorator.onnx")
-	if !strings.Contains(source, "load_model.load_model") {
-		t.Fatalf("expected candidate source to include load-model discovery, got %q", source)
+	if source != "repo_search" {
+		t.Fatalf("expected candidate source %q, got %q", "repo_search", source)
 	}
 	if status.Contracts == nil || status.Contracts.ResolvedModelPath != "model/from_decorator.onnx" {
 		t.Fatalf("expected resolved model path %q, got %+v", "model/from_decorator.onnx", status.Contracts)
 	}
-	assertNoModelIssue(t, status.Issues, core.IssueCodeModelCandidatesAmbiguous)
-	assertNoModelIssue(t, status.Issues, core.IssueCodeModelFileMissing)
+	assertNoModelIssue(t, status.Issues, core.IssueCodeModelAcquisitionRequired)
 }
 
-func TestModelDiscoveryReportsAmbiguousCandidates(t *testing.T) {
+func TestModelDiscoveryAutoSelectsDeterministicDefaultForMultipleReadyArtifacts(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
 		"entryFile: leap_integration.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
-		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_preprocess, tensorleap_integration_test",
-		"",
-		"@tensorleap_preprocess()",
-		"def preprocess_data():",
-		"    return []",
-		"",
-		"@tensorleap_integration_test()",
-		"def run_flow():",
-		"    return None",
-		"",
-	}, "\n"))
+	writeFixtureFile(t, root, "leap_integration.py", simpleModelIntegrationSource())
 	writeFixtureFile(t, root, "model/a.h5", "binary")
 	writeFixtureFile(t, root, "model/b.onnx", "binary")
 
 	status := inspectStatus(t, root)
 
-	if !hasIssueCode(status.Issues, core.IssueCodeModelCandidatesAmbiguous) {
-		t.Fatalf("expected %q issue, got %+v", core.IssueCodeModelCandidatesAmbiguous, status.Issues)
-	}
 	if !hasModelCandidatePath(status, "model/a.h5") || !hasModelCandidatePath(status, "model/b.onnx") {
 		t.Fatalf("expected both model candidates, got %+v", status.Contracts)
 	}
+	if status.Contracts == nil || status.Contracts.ResolvedModelPath != "model/a.h5" {
+		t.Fatalf("expected lexical default resolved model path %q, got %+v", "model/a.h5", status.Contracts)
+	}
+	assertNoModelIssue(t, status.Issues, core.IssueCodeModelCandidatesAmbiguous)
 }
 
-func TestModelDiscoveryRejectsUnsupportedFormat(t *testing.T) {
+func TestModelDiscoveryReportsPassiveLeadWhenOnlyUnsupportedArtifactsExist(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
 		"entryFile: leap_integration.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
-		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model",
-		"",
-		"@tensorleap_load_model()",
-		"def load_model():",
-		"    model_path = 'model/demo.pt'",
-		"    return model_path",
-		"",
-	}, "\n"))
+	writeFixtureFile(t, root, "leap_integration.py", simpleModelIntegrationSource())
+	writeFixtureFile(t, root, "model/demo.pt", "binary")
 
 	status := inspectStatus(t, root)
 
-	if !hasIssueCode(status.Issues, core.IssueCodeModelFormatUnsupported) {
-		t.Fatalf("expected %q issue, got %+v", core.IssueCodeModelFormatUnsupported, status.Issues)
+	if !hasIssueCode(status.Issues, core.IssueCodeModelAcquisitionRequired) {
+		t.Fatalf("expected %q issue, got %+v", core.IssueCodeModelAcquisitionRequired, status.Issues)
 	}
-	if !hasModelCandidatePath(status, "model/demo.pt") {
-		t.Fatalf("expected candidate %q in context, got %+v", "model/demo.pt", status.Contracts)
+	if !hasPassiveLeadPath(status, "model/demo.pt") {
+		t.Fatalf("expected passive lead %q in context, got %+v", "model/demo.pt", status.Contracts)
 	}
 }
 
-func TestModelDiscoveryRejectsOutsideRepoModelPath(t *testing.T) {
+func TestModelDiscoveryRejectsSelectedOutputPathOutsideRepo(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
 		"entryFile: leap_integration.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
-		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model",
-		"",
-		"@tensorleap_load_model()",
-		"def load_model():",
-		"    model_path = '../external/model.h5'",
-		"    return model_path",
-		"",
-	}, "\n"))
+	writeFixtureFile(t, root, "leap_integration.py", simpleModelIntegrationSource())
 
-	status := inspectStatus(t, root)
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), core.WorkspaceSnapshot{
+		Repository:        core.RepositoryState{Root: root},
+		SelectedModelPath: "../external/model.h5",
+	})
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
 
-	if !hasIssueCode(status.Issues, core.IssueCodeModelFileMissing) {
-		t.Fatalf("expected %q issue, got %+v", core.IssueCodeModelFileMissing, status.Issues)
+	if !hasIssueCode(status.Issues, core.IssueCodeModelAcquisitionUnresolved) {
+		t.Fatalf("expected %q issue, got %+v", core.IssueCodeModelAcquisitionUnresolved, status.Issues)
 	}
 }
 
@@ -160,7 +136,6 @@ func TestModelDiscoveryDefersAmbiguityWhilePreprocessMissing(t *testing.T) {
 		"",
 	}, "\n"))
 	writeFixtureFile(t, root, "leap_integration.py", "def helper():\n    return None\n")
-	writeFixtureFile(t, root, "leap_integration.py", "print('test')\n")
 	writeFixtureFile(t, root, "model/a.h5", "binary")
 	writeFixtureFile(t, root, "model/b.onnx", "binary")
 
@@ -169,9 +144,8 @@ func TestModelDiscoveryDefersAmbiguityWhilePreprocessMissing(t *testing.T) {
 	if !hasIssueCode(status.Issues, core.IssueCodePreprocessFunctionMissing) {
 		t.Fatalf("expected preprocess missing issue, got %+v", status.Issues)
 	}
-	if hasIssueCode(status.Issues, core.IssueCodeModelCandidatesAmbiguous) {
-		t.Fatalf("did not expect ambiguous model issue while preprocess is missing, got %+v", status.Issues)
-	}
+	assertNoModelIssue(t, status.Issues, core.IssueCodeModelCandidatesAmbiguous)
+	assertNoModelIssue(t, status.Issues, core.IssueCodeModelAcquisitionRequired)
 }
 
 func TestModelDiscoveryResolvesSelectedModelPath(t *testing.T) {
@@ -180,15 +154,7 @@ func TestModelDiscoveryResolvesSelectedModelPath(t *testing.T) {
 		"entryFile: leap_integration.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
-		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model",
-		"",
-		"@tensorleap_load_model()",
-		"def load_model():",
-		"    return 'model/a.h5'",
-		"",
-	}, "\n"))
+	writeFixtureFile(t, root, "leap_integration.py", simpleModelIntegrationSource())
 	writeFixtureFile(t, root, "model/a.h5", "binary")
 	writeFixtureFile(t, root, "model/b.onnx", "binary")
 
@@ -204,9 +170,7 @@ func TestModelDiscoveryResolvesSelectedModelPath(t *testing.T) {
 	if status.Contracts == nil || status.Contracts.ResolvedModelPath != "model/b.onnx" {
 		t.Fatalf("expected selected resolved model path %q, got %+v", "model/b.onnx", status.Contracts)
 	}
-	if hasIssueCode(status.Issues, core.IssueCodeModelCandidatesAmbiguous) {
-		t.Fatalf("did not expect ambiguous model issue when selected path is provided, got %+v", status.Issues)
-	}
+	assertNoModelIssue(t, status.Issues, core.IssueCodeModelCandidatesAmbiguous)
 }
 
 func TestModelDiscoveryIgnoresLeapYAMLIncludeExcludeForModelResolution(t *testing.T) {
@@ -221,16 +185,7 @@ func TestModelDiscoveryIgnoresLeapYAMLIncludeExcludeForModelResolution(t *testin
 		"  - model/private/**",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_integration.py", "print('binder')\n")
-	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
-		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model",
-		"",
-		"@tensorleap_load_model()",
-		"def load_model():",
-		"    model_path = 'model/private/model.h5'",
-		"    return model_path",
-		"",
-	}, "\n"))
+	writeFixtureFile(t, root, "leap_integration.py", simpleModelIntegrationSource())
 	writeFixtureFile(t, root, "model/private/model.h5", "binary")
 
 	status := inspectStatus(t, root)
@@ -241,7 +196,7 @@ func TestModelDiscoveryIgnoresLeapYAMLIncludeExcludeForModelResolution(t *testin
 	if status.Contracts == nil || status.Contracts.ResolvedModelPath != "model/private/model.h5" {
 		t.Fatalf("expected resolved model path %q, got %+v", "model/private/model.h5", status.Contracts)
 	}
-	assertNoModelIssue(t, status.Issues, core.IssueCodeModelFileMissing)
+	assertNoModelIssue(t, status.Issues, core.IssueCodeModelAcquisitionRequired)
 }
 
 func inspectStatus(t *testing.T, root string) core.IntegrationStatus {
@@ -254,9 +209,17 @@ func inspectStatus(t *testing.T, root string) core.IntegrationStatus {
 	return status
 }
 
-func simpleIntegrationTestSource() string {
+func simpleModelIntegrationSource() string {
 	return strings.Join([]string{
-		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_integration_test",
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_integration_test, tensorleap_load_model, tensorleap_preprocess",
+		"",
+		"@tensorleap_preprocess()",
+		"def preprocess():",
+		"    return []",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    return None",
 		"",
 		"@tensorleap_integration_test()",
 		"def run_flow():",
@@ -270,6 +233,18 @@ func hasModelCandidatePath(status core.IntegrationStatus, path string) bool {
 		return false
 	}
 	for _, candidate := range status.Contracts.ModelCandidates {
+		if candidate.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
+func hasPassiveLeadPath(status core.IntegrationStatus, path string) bool {
+	if status.Contracts == nil || status.Contracts.ModelAcquisition == nil {
+		return false
+	}
+	for _, candidate := range status.Contracts.ModelAcquisition.PassiveLeads {
 		if candidate.Path == path {
 			return true
 		}

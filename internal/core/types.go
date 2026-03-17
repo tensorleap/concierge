@@ -77,17 +77,17 @@ type RuntimeState struct {
 
 // LocalRuntimeProfile captures the persisted Poetry runtime selected for local execution.
 type LocalRuntimeProfile struct {
-	Kind              string                    `json:"kind"`
-	PoetryExecutable  string                    `json:"poetryExecutable,omitempty"`
-	PoetryVersion     string                    `json:"poetryVersion,omitempty"`
-	InterpreterPath   string                    `json:"interpreterPath,omitempty"`
-	PythonVersion     string                    `json:"pythonVersion,omitempty"`
-	ConfirmationMode  string                    `json:"confirmationMode,omitempty"`
-	DependenciesReady bool                      `json:"dependenciesReady,omitempty"`
-	CodeLoaderReady   bool                      `json:"codeLoaderReady,omitempty"`
-	CodeLoaderDeclaredInProject bool            `json:"codeLoaderDeclaredInProject,omitempty"`
-	CodeLoader        CodeLoaderCapabilityState `json:"codeLoader,omitempty"`
-	Fingerprint       RuntimeProfileFingerprint `json:"fingerprint"`
+	Kind                        string                    `json:"kind"`
+	PoetryExecutable            string                    `json:"poetryExecutable,omitempty"`
+	PoetryVersion               string                    `json:"poetryVersion,omitempty"`
+	InterpreterPath             string                    `json:"interpreterPath,omitempty"`
+	PythonVersion               string                    `json:"pythonVersion,omitempty"`
+	ConfirmationMode            string                    `json:"confirmationMode,omitempty"`
+	DependenciesReady           bool                      `json:"dependenciesReady,omitempty"`
+	CodeLoaderReady             bool                      `json:"codeLoaderReady,omitempty"`
+	CodeLoaderDeclaredInProject bool                      `json:"codeLoaderDeclaredInProject,omitempty"`
+	CodeLoader                  CodeLoaderCapabilityState `json:"codeLoader,omitempty"`
+	Fingerprint                 RuntimeProfileFingerprint `json:"fingerprint"`
 }
 
 // CodeLoaderCapabilityState captures the installed code-loader version and the
@@ -149,6 +149,69 @@ type IssueLocation struct {
 type ModelCandidate struct {
 	Path   string `json:"path"`
 	Source string `json:"source,omitempty"`
+}
+
+// ModelAcquisitionPromptBundle captures prompt material used for model acquisition investigation.
+type ModelAcquisitionPromptBundle struct {
+	SystemPrompt string `json:"systemPrompt,omitempty"`
+	UserPrompt   string `json:"userPrompt,omitempty"`
+	ReadOnly     bool   `json:"readOnly,omitempty"`
+}
+
+// ModelAcquisitionAgentRawOutput captures investigator raw payload + metadata before normalization.
+type ModelAcquisitionAgentRawOutput struct {
+	Provider string            `json:"provider,omitempty"`
+	Model    string            `json:"model,omitempty"`
+	Payload  string            `json:"payload,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+// ModelAcquisitionPlanEvidence captures one evidence item supporting a normalized acquisition plan.
+type ModelAcquisitionPlanEvidence struct {
+	Path    string `json:"path,omitempty"`
+	Line    int    `json:"line,omitempty"`
+	Detail  string `json:"detail,omitempty"`
+	Snippet string `json:"snippet,omitempty"`
+}
+
+// ModelAcquisitionPlan captures one normalized materialization recipe.
+type ModelAcquisitionPlan struct {
+	SchemaVersion      string                         `json:"schemaVersion,omitempty"`
+	CanMaterialize     bool                           `json:"canMaterialize,omitempty"`
+	DefaultChoice      string                         `json:"defaultChoice,omitempty"`
+	Strategy           string                         `json:"strategy,omitempty"`
+	RuntimeInvocation  []string                       `json:"runtimeInvocation,omitempty"`
+	WorkingDir         string                         `json:"workingDir,omitempty"`
+	ExpectedOutputPath string                         `json:"expectedOutputPath,omitempty"`
+	RequiresNetwork    bool                           `json:"requiresNetwork,omitempty"`
+	RequiresHelper     bool                           `json:"requiresHelper,omitempty"`
+	HelperPath         string                         `json:"helperPath,omitempty"`
+	Confidence         string                         `json:"confidence,omitempty"`
+	FailureReason      string                         `json:"failureReason,omitempty"`
+	Evidence           []ModelAcquisitionPlanEvidence `json:"evidence,omitempty"`
+}
+
+// ModelMaterializationResult captures the last observed model materialization outcome.
+type ModelMaterializationResult struct {
+	Applied            bool     `json:"applied,omitempty"`
+	Strategy           string   `json:"strategy,omitempty"`
+	OutputPath         string   `json:"outputPath,omitempty"`
+	WorkingDir         string   `json:"workingDir,omitempty"`
+	Command            []string `json:"command,omitempty"`
+	HelperPath         string   `json:"helperPath,omitempty"`
+	FailureReason      string   `json:"failureReason,omitempty"`
+	Notes              []string `json:"notes,omitempty"`
+	ExpectedOutputPath string   `json:"expectedOutputPath,omitempty"`
+}
+
+// ModelAcquisitionArtifacts captures staged acquisition artifacts persisted across the model pipeline.
+type ModelAcquisitionArtifacts struct {
+	ReadyArtifacts    []ModelCandidate                `json:"readyArtifacts,omitempty"`
+	PassiveLeads      []ModelCandidate                `json:"passiveLeads,omitempty"`
+	AgentPromptBundle *ModelAcquisitionPromptBundle   `json:"agentPromptBundle,omitempty"`
+	AgentRawOutput    *ModelAcquisitionAgentRawOutput `json:"agentRawOutput,omitempty"`
+	NormalizedPlan    *ModelAcquisitionPlan           `json:"normalizedPlan,omitempty"`
+	Materialization   *ModelMaterializationResult     `json:"materialization,omitempty"`
 }
 
 // InputGTEvidence is one evidence snippet supporting a discovered input/ground-truth candidate.
@@ -333,6 +396,7 @@ type IntegrationContracts struct {
 	IntegrationTestCalls         []string                   `json:"integrationTestCalls,omitempty"`
 	ModelCandidates              []ModelCandidate           `json:"modelCandidates,omitempty"`
 	ResolvedModelPath            string                     `json:"resolvedModelPath,omitempty"`
+	ModelAcquisition             *ModelAcquisitionArtifacts `json:"modelAcquisition,omitempty"`
 	DiscoveredInputSymbols       []string                   `json:"discoveredInputSymbols,omitempty"`
 	DiscoveredGroundTruthSymbols []string                   `json:"discoveredGroundTruthSymbols,omitempty"`
 	ConfirmedMapping             *EncoderMappingContract    `json:"confirmedMapping,omitempty"`
@@ -353,15 +417,17 @@ func (s IntegrationStatus) Ready() bool {
 
 // AgentRepoContext captures deterministic, step-scoped repository facts for agent tasks.
 type AgentRepoContext struct {
-	RepoRoot             string   `json:"repoRoot"`
-	EntryFile            string   `json:"entryFile,omitempty"`
-	LeapYAMLBoundary     string   `json:"leapYamlBoundary,omitempty"`
-	SelectedModelPath    string   `json:"selectedModelPath,omitempty"`
-	ModelCandidates      []string `json:"modelCandidates,omitempty"`
-	DecoratorInventory   []string `json:"decoratorInventory,omitempty"`
-	IntegrationTestCalls []string `json:"integrationTestCalls,omitempty"`
-	BlockingIssues       []string `json:"blockingIssues,omitempty"`
-	ValidationFindings   []string `json:"validationFindings,omitempty"`
+	RepoRoot              string   `json:"repoRoot"`
+	EntryFile             string   `json:"entryFile,omitempty"`
+	LeapYAMLBoundary      string   `json:"leapYamlBoundary,omitempty"`
+	SelectedModelPath     string   `json:"selectedModelPath,omitempty"`
+	ModelCandidates       []string `json:"modelCandidates,omitempty"`
+	ReadyModelArtifacts   []string `json:"readyModelArtifacts,omitempty"`
+	ModelAcquisitionLeads []string `json:"modelAcquisitionLeads,omitempty"`
+	DecoratorInventory    []string `json:"decoratorInventory,omitempty"`
+	IntegrationTestCalls  []string `json:"integrationTestCalls,omitempty"`
+	BlockingIssues        []string `json:"blockingIssues,omitempty"`
+	ValidationFindings    []string `json:"validationFindings,omitempty"`
 }
 
 // AuthoringRecommendation captures deterministic, step-scoped remediation guidance.

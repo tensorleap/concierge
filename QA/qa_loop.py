@@ -95,6 +95,7 @@ class LoopConfig:
     transcript_tail_chars: int
     latest_output_chars: int
     fixture_post_path: Path | None
+    docker_snapshots_enabled: bool
 
 
 @dataclass
@@ -539,26 +540,27 @@ class SupervisorLoop:
                     live_io=live_io,
                 )
 
-                try:
-                    snapshot = self._capture_container_snapshot(
-                        iteration=iteration,
-                        paths=paths,
-                        live_io=live_io,
-                    )
-                    docker_snapshots.append(snapshot)
-                except DockerInvocationError as exc:
-                    append_jsonl(
-                        paths.interaction_log,
-                        {
-                            "time": utc_now(),
-                            "iteration": iteration,
-                            "kind": "docker_snapshot_error",
-                            "reason": str(exc),
-                        },
-                    )
-                    loop_state = "STOP_DEADEND"
-                    stop_reason = "docker_snapshot_error"
-                    break
+                if self.config.docker_snapshots_enabled:
+                    try:
+                        snapshot = self._capture_container_snapshot(
+                            iteration=iteration,
+                            paths=paths,
+                            live_io=live_io,
+                        )
+                        docker_snapshots.append(snapshot)
+                    except DockerInvocationError as exc:
+                        append_jsonl(
+                            paths.interaction_log,
+                            {
+                                "time": utc_now(),
+                                "iteration": iteration,
+                                "kind": "docker_snapshot_error",
+                                "reason": str(exc),
+                            },
+                        )
+                        loop_state = "STOP_DEADEND"
+                        stop_reason = "docker_snapshot_error"
+                        break
 
                 loop_state = directive.loop_state
                 if loop_state != "CONTINUE":
@@ -628,6 +630,7 @@ class SupervisorLoop:
                 "container_name": self.config.container_name,
                 "container_image": self.config.container_image or "",
                 "container_workdir": self.config.command_cwd,
+                "snapshots_enabled": self.config.docker_snapshots_enabled,
                 "snapshots": docker_snapshots,
             },
             "paths": {
@@ -1011,6 +1014,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--latest-output-chars", type=int, default=DEFAULT_LATEST_OUTPUT_CHARS)
     parser.add_argument("--fixture-post-path", default=None)
     parser.add_argument(
+        "--docker-snapshots",
+        action="store_true",
+        help="Capture a docker commit plus diff/inspect metadata after each supervisor turn.",
+    )
+    parser.add_argument(
         "command",
         nargs=argparse.REMAINDER,
         help="Command to run in the PTY. Prefix with -- to stop qa_loop option parsing.",
@@ -1048,6 +1056,7 @@ def main(argv: list[str] | None = None) -> int:
         transcript_tail_chars=args.transcript_tail_chars,
         latest_output_chars=args.latest_output_chars,
         fixture_post_path=fixture_post_path,
+        docker_snapshots_enabled=args.docker_snapshots,
     )
     role_prompt = (PROMPTS_DIR / "role_prompt.md").read_text(encoding="utf-8")
     nudge_prompt = (PROMPTS_DIR / "nudge_prompt.md").read_text(encoding="utf-8")

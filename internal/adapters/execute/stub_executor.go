@@ -87,7 +87,9 @@ func (d *DispatcherExecutor) Execute(ctx context.Context, snapshot core.Workspac
 	if step.ID == core.EnsureStepPythonRuntime && d.poetry != nil {
 		return d.poetry.Execute(ctx, snapshot, step)
 	}
-	if (step.ID == core.EnsureStepPreprocessContract || step.ID == core.EnsureStepModelContract) && d.agent == nil {
+	if (step.ID == core.EnsureStepPreprocessContract ||
+		step.ID == core.EnsureStepModelAcquisition ||
+		step.ID == core.EnsureStepModelContract) && d.agent == nil {
 		return core.ExecutionResult{}, core.NewError(
 			core.KindMissingDependency,
 			"execute.dispatcher.agent_required",

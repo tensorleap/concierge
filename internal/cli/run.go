@@ -621,6 +621,50 @@ func cloneIntegrationStatus(status core.IntegrationStatus) core.IntegrationStatu
 		if len(status.Contracts.ModelCandidates) > 0 {
 			contracts.ModelCandidates = append([]core.ModelCandidate(nil), status.Contracts.ModelCandidates...)
 		}
+		if status.Contracts.ModelAcquisition != nil {
+			acquisition := *status.Contracts.ModelAcquisition
+			if len(status.Contracts.ModelAcquisition.ReadyArtifacts) > 0 {
+				acquisition.ReadyArtifacts = append([]core.ModelCandidate(nil), status.Contracts.ModelAcquisition.ReadyArtifacts...)
+			}
+			if len(status.Contracts.ModelAcquisition.PassiveLeads) > 0 {
+				acquisition.PassiveLeads = append([]core.ModelCandidate(nil), status.Contracts.ModelAcquisition.PassiveLeads...)
+			}
+			if status.Contracts.ModelAcquisition.AgentPromptBundle != nil {
+				promptBundle := *status.Contracts.ModelAcquisition.AgentPromptBundle
+				acquisition.AgentPromptBundle = &promptBundle
+			}
+			if status.Contracts.ModelAcquisition.AgentRawOutput != nil {
+				rawOutput := *status.Contracts.ModelAcquisition.AgentRawOutput
+				if len(status.Contracts.ModelAcquisition.AgentRawOutput.Metadata) > 0 {
+					rawOutput.Metadata = make(map[string]string, len(status.Contracts.ModelAcquisition.AgentRawOutput.Metadata))
+					for key, value := range status.Contracts.ModelAcquisition.AgentRawOutput.Metadata {
+						rawOutput.Metadata[key] = value
+					}
+				}
+				acquisition.AgentRawOutput = &rawOutput
+			}
+			if status.Contracts.ModelAcquisition.NormalizedPlan != nil {
+				plan := *status.Contracts.ModelAcquisition.NormalizedPlan
+				if len(status.Contracts.ModelAcquisition.NormalizedPlan.RuntimeInvocation) > 0 {
+					plan.RuntimeInvocation = append([]string(nil), status.Contracts.ModelAcquisition.NormalizedPlan.RuntimeInvocation...)
+				}
+				if len(status.Contracts.ModelAcquisition.NormalizedPlan.Evidence) > 0 {
+					plan.Evidence = append([]core.ModelAcquisitionPlanEvidence(nil), status.Contracts.ModelAcquisition.NormalizedPlan.Evidence...)
+				}
+				acquisition.NormalizedPlan = &plan
+			}
+			if status.Contracts.ModelAcquisition.Materialization != nil {
+				materialization := *status.Contracts.ModelAcquisition.Materialization
+				if len(status.Contracts.ModelAcquisition.Materialization.Command) > 0 {
+					materialization.Command = append([]string(nil), status.Contracts.ModelAcquisition.Materialization.Command...)
+				}
+				if len(status.Contracts.ModelAcquisition.Materialization.Notes) > 0 {
+					materialization.Notes = append([]string(nil), status.Contracts.ModelAcquisition.Materialization.Notes...)
+				}
+				acquisition.Materialization = &materialization
+			}
+			contracts.ModelAcquisition = &acquisition
+		}
 		if len(status.Contracts.DiscoveredInputSymbols) > 0 {
 			contracts.DiscoveredInputSymbols = append([]string(nil), status.Contracts.DiscoveredInputSymbols...)
 		}
@@ -829,7 +873,12 @@ func approvalGuidanceForStep(stepID core.EnsureStepID) stepApprovalGuidance {
 		}
 	case core.EnsureStepModelContract:
 		return stepApprovalGuidance{
-			Explanation: "I need one concrete .onnx/.h5 model path for @tensorleap_load_model before preprocessing can be completed.",
+			Explanation: "@tensorleap_load_model now needs to be wired to the materialized supported artifact so later validation can execute against a stable path.",
+			DocsURL:     stepGuideModelIntegrationURL,
+		}
+	case core.EnsureStepModelAcquisition:
+		return stepApprovalGuidance{
+			Explanation: "I need to find the repository’s model download/export path and materialize one supported .onnx/.h5 artifact locally before model wiring can be completed.",
 			DocsURL:     stepGuideModelIntegrationURL,
 		}
 	case core.EnsureStepIntegrationScript:
@@ -973,7 +1022,12 @@ func ensureModelPathSelectionForStep(
 	input *bufio.Reader,
 	out io.Writer,
 ) error {
-	if step.ID != core.EnsureStepModelContract && step.ID != core.EnsureStepPreprocessContract {
+	_ = setSelected
+	_ = repoRoot
+	_ = requireNonInteractive
+	_ = input
+	_ = out
+	if step.ID != core.EnsureStepModelAcquisition && step.ID != core.EnsureStepModelContract {
 		return nil
 	}
 	if !hasStatus || status.Contracts == nil {
@@ -986,37 +1040,6 @@ func ensureModelPathSelectionForStep(
 	}
 	if current != "" {
 		return nil
-	}
-
-	candidates := selectableModelCandidates(status.Contracts.ModelCandidates)
-	if len(candidates) == 0 {
-		return nil
-	}
-	if len(candidates) == 1 {
-		if setSelected != nil {
-			setSelected(candidates[0])
-		}
-		return nil
-	}
-
-	if requireNonInteractive {
-		return core.NewError(
-			core.KindUnknown,
-			"cli.run.model_path_selection_required",
-			"multiple model files found; rerun with --model-path <path> to choose one in non-interactive mode",
-		)
-	}
-
-	selected, err := promptModelCandidateSelection(input, out, candidates)
-	if err != nil {
-		return err
-	}
-	normalized, err := normalizeModelPathOption(repoRoot, selected)
-	if err != nil {
-		return err
-	}
-	if setSelected != nil {
-		setSelected(normalized)
 	}
 	return nil
 }

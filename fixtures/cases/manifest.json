@@ -38,8 +38,8 @@
       "source_variant": "post",
       "family": "load_model",
       "patch": "fixtures/cases/patches/mnist_load_model.patch",
-      "expected_primary_step": "ensure.model_contract",
-      "expected_issue_codes": ["model_file_missing"],
+      "expected_primary_step": "ensure.model_acquisition",
+      "expected_issue_codes": ["model_acquisition_unresolved"],
       "expected_missing_model_path": "model/missing_model.h5"
     },
     {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tensorleap/concierge/internal/core"
+	bundledscripts "github.com/tensorleap/concierge/scripts"
 )
 
 const (
@@ -17,6 +18,7 @@ const (
 )
 
 const defaultHarnessTimeout = 120 * time.Second
+const defaultHarnessScriptPath = "scripts/harness_runtime.py"
 
 // HarnessRunResult captures parsed output from a harness invocation.
 type HarnessRunResult struct {
@@ -38,7 +40,7 @@ type HarnessRunner struct {
 func NewHarnessRunner() *HarnessRunner {
 	return &HarnessRunner{
 		timeout:       defaultHarnessTimeout,
-		scriptPath:    filepath.Join("scripts", "harness_runtime.py"),
+		scriptPath:    defaultHarnessScriptPath,
 		getEnv:        os.Getenv,
 		runtimeRunner: NewPythonRuntimeRunner(),
 	}
@@ -110,7 +112,7 @@ func (r *HarnessRunner) ensureDefaults() {
 		r.timeout = defaultHarnessTimeout
 	}
 	if strings.TrimSpace(r.scriptPath) == "" {
-		r.scriptPath = filepath.Join("scripts", "harness_runtime.py")
+		r.scriptPath = defaultHarnessScriptPath
 	}
 	if r.getEnv == nil {
 		r.getEnv = os.Getenv
@@ -121,7 +123,20 @@ func (r *HarnessRunner) ensureDefaults() {
 }
 
 func (r *HarnessRunner) resolveScriptPath() (string, error) {
-	scriptPath, err := filepath.Abs(strings.TrimSpace(r.scriptPath))
+	configuredPath := strings.TrimSpace(r.scriptPath)
+	if configuredPath == "" {
+		configuredPath = defaultHarnessScriptPath
+	}
+
+	if filepath.Clean(configuredPath) == filepath.Clean(defaultHarnessScriptPath) {
+		scriptPath, err := bundledscripts.HarnessRuntimePath()
+		if err != nil {
+			return "", core.WrapError(core.KindUnknown, "validate.harness.script_materialize", err)
+		}
+		return scriptPath, nil
+	}
+
+	scriptPath, err := filepath.Abs(configuredPath)
 	if err != nil {
 		return "", core.WrapError(core.KindUnknown, "validate.harness.script_abs", err)
 	}

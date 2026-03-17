@@ -139,6 +139,44 @@ func TestHarnessRunnerRespectsEnablementEnvVar(t *testing.T) {
 	}
 }
 
+func TestHarnessRunnerResolvesDefaultScriptOutsideRepoScriptsDir(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd failed: %v", err)
+	}
+
+	repoRoot := t.TempDir()
+	if err := os.Chdir(repoRoot); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(cwd); err != nil {
+			t.Fatalf("restore cwd failed: %v", err)
+		}
+	}()
+
+	runner := NewHarnessRunner()
+
+	scriptPath, err := runner.resolveScriptPath()
+	if err != nil {
+		t.Fatalf("resolveScriptPath returned error: %v", err)
+	}
+	if !filepath.IsAbs(scriptPath) {
+		t.Fatalf("expected absolute script path, got %q", scriptPath)
+	}
+	if strings.HasPrefix(scriptPath, filepath.Join(repoRoot, "scripts")+string(os.PathSeparator)) {
+		t.Fatalf("expected harness assets outside repo scripts dir, got %q", scriptPath)
+	}
+	if _, err := os.Stat(scriptPath); err != nil {
+		t.Fatalf("expected script to exist at %q: %v", scriptPath, err)
+	}
+
+	harnessLibRunner := filepath.Join(filepath.Dir(scriptPath), "harness_lib", "runner.py")
+	if _, err := os.Stat(harnessLibRunner); err != nil {
+		t.Fatalf("expected bundled harness library at %q: %v", harnessLibRunner, err)
+	}
+}
+
 func writeHarnessStubScript(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "harness_stub.py")

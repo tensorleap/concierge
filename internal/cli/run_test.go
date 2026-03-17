@@ -625,7 +625,7 @@ func TestRunWithPersistWritesConciergeArtifacts(t *testing.T) {
 	}
 }
 
-func TestEnsureModelPathSelectionForStepNonInteractiveFailsOnAmbiguous(t *testing.T) {
+func TestEnsureModelPathSelectionForStepDoesNotPromptOnAmbiguousCandidates(t *testing.T) {
 	status := core.IntegrationStatus{
 		Contracts: &core.IntegrationContracts{
 			ModelCandidates: []core.ModelCandidate{
@@ -636,7 +636,7 @@ func TestEnsureModelPathSelectionForStepNonInteractiveFailsOnAmbiguous(t *testin
 	}
 	current := ""
 	err := ensureModelPathSelectionForStep(
-		core.EnsureStep{ID: core.EnsureStepPreprocessContract},
+		core.EnsureStep{ID: core.EnsureStepModelContract},
 		status,
 		true,
 		func() string { return current },
@@ -646,25 +646,19 @@ func TestEnsureModelPathSelectionForStepNonInteractiveFailsOnAmbiguous(t *testin
 		bufio.NewReader(strings.NewReader("")),
 		io.Discard,
 	)
-	if err == nil {
-		t.Fatal("expected model selection error in non-interactive mode")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "--model-path") {
-		t.Fatalf("expected --model-path guidance, got %v", err)
+	if current != "" {
+		t.Fatalf("expected no automatic model-path selection, got %q", current)
 	}
 }
 
-func TestEnsureModelPathSelectionForStepSelectsSingleCandidate(t *testing.T) {
-	status := core.IntegrationStatus{
-		Contracts: &core.IntegrationContracts{
-			ModelCandidates: []core.ModelCandidate{
-				{Path: "model/a.h5"},
-			},
-		},
-	}
-	current := ""
+func TestEnsureModelPathSelectionForStepPreservesExistingSelection(t *testing.T) {
+	status := core.IntegrationStatus{}
+	current := "model/a.h5"
 	err := ensureModelPathSelectionForStep(
-		core.EnsureStep{ID: core.EnsureStepPreprocessContract},
+		core.EnsureStep{ID: core.EnsureStepModelAcquisition},
 		status,
 		true,
 		func() string { return current },
@@ -678,7 +672,7 @@ func TestEnsureModelPathSelectionForStepSelectsSingleCandidate(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if current != "model/a.h5" {
-		t.Fatalf("expected selected model path %q, got %q", "model/a.h5", current)
+		t.Fatalf("expected selected model path to stay %q, got %q", "model/a.h5", current)
 	}
 }
 
@@ -726,14 +720,19 @@ func initRunTestRepoAtPath(t *testing.T, repo string, complete bool) {
 			"",
 		}, "\n"))
 		writeFile(t, filepath.Join(repo, "leap_integration.py"), strings.Join([]string{
-			"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_integration_test, tensorleap_preprocess",
+			"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_integration_test, tensorleap_load_model, tensorleap_preprocess",
 			"",
 			"@tensorleap_preprocess()",
 			"def preprocess():",
 			"    return []",
 			"",
+			"@tensorleap_load_model()",
+			"def load_model():",
+			"    return None",
+			"",
 			"@tensorleap_integration_test()",
 			"def integration_test(sample_id, preprocess_response):",
+			"    load_model()",
 			"    return None",
 			"",
 		}, "\n"))

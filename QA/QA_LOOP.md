@@ -48,7 +48,7 @@ What this does:
 - only exposes the `post` repo path if progress stalls
 - when using `make qa`, resets the chosen built-in fixture back to a clean pinned `pre`/`post` state first
 - starts a long-lived fixture container and runs Concierge inside it with `docker exec`
-- records Docker snapshots after every supervisor turn
+- keeps per-turn transcripts, turn logs, and `docker diff` / exported `.concierge` artifacts
 - renders live Codex control/report events as readable terminal text while keeping the raw JSON event logs under `QA/runs/<run-id>/codex/`
 
 ## Using A Running Container
@@ -97,6 +97,8 @@ Everything after `--` is treated as the container-internal PTY command.
   Docker CLI to use. Default: `docker`.
 - `--fixture-post-path PATH`
   Optional known-good repo path that Codex may inspect only after the blind-first phase stalls.
+- `--docker-snapshots`
+  Optional debug mode. Captures a `docker commit` plus per-turn `diff`/`inspect` metadata after each supervisor turn.
 - `--artifacts-root PATH`
   Where `runs/`, `transcripts/`, and `reports/` are written. Defaults to `QA/`.
 - `--codex-command STRING`
@@ -136,7 +138,7 @@ By default the harness writes:
 
 The harness prints the absolute path to the full-session transcript at the end of the run. The markdown report is still the easiest artifact to read first.
 
-For fixture runs, each `QA/runs/<run-id>/docker/` directory also contains per-turn `docker commit` metadata and any exported container artifacts such as `/workspace/.concierge`.
+For fixture runs, each `QA/runs/<run-id>/docker/` directory contains exported container artifacts such as `/workspace/.concierge`. If `--docker-snapshots` is enabled, it also includes per-turn `docker commit` metadata plus `docker diff` / `docker inspect` outputs.
 
 ## Exit Codes
 

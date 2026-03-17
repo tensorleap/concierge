@@ -38,6 +38,7 @@ func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOpti
 	if maxIterations > 0 {
 		reports = make([]core.IterationReport, 0, maxIterations)
 	}
+	carriedValidationIssues := []core.Issue(nil)
 	for i := 0; maxIterations <= 0 || i < maxIterations; i++ {
 		if err := ctx.Err(); err != nil {
 			return RunResult{
@@ -46,7 +47,7 @@ func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOpti
 			}, err
 		}
 
-		report, snapshot, err := e.runIteration(ctx, req, i+1, opts.BeforeReport)
+		report, snapshot, err := e.runIteration(ctx, req, i+1, carriedValidationIssues, opts.BeforeReport)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return RunResult{
@@ -58,6 +59,7 @@ func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOpti
 		}
 
 		reports = append(reports, report)
+		carriedValidationIssues = blockingIssues(report.Validation.Issues)
 		if opts.AfterReport != nil {
 			if err := opts.AfterReport(snapshot, report); err != nil {
 				return RunResult{Reports: reports}, err
@@ -87,6 +89,20 @@ func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOpti
 		Reports:    reports,
 		StopReason: RunStopReasonMaxIterations,
 	}, nil
+}
+
+func blockingIssues(issues []core.Issue) []core.Issue {
+	if len(issues) == 0 {
+		return nil
+	}
+
+	blocking := make([]core.Issue, 0, len(issues))
+	for _, issue := range issues {
+		if issue.Severity == core.SeverityError {
+			blocking = append(blocking, issue)
+		}
+	}
+	return blocking
 }
 
 func hasInterruptedAgent(report core.IterationReport) bool {

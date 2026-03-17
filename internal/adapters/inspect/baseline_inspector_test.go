@@ -54,7 +54,7 @@ func TestInspectorRequiresIntegrationTestDecoratorInCanonicalEntryFile(t *testin
 func TestInspectorNoIssuesWhenArtifactsExist(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
-	writeFixtureFile(t, root, "leap_integration.py", minimalIntegrationSource())
+	writeFixtureFile(t, root, "leap_integration.py", minimalIntegrationSourceWithLoadModel())
 	writeFixtureFile(t, root, "model/model.h5", "binary\n")
 
 	inspector := NewBaselineInspector()
@@ -182,7 +182,7 @@ func TestInspectorAllowsProjectAndSecretIdentifiersInLeapYAML(t *testing.T) {
 		"entryFile: leap_integration.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_integration.py", minimalIntegrationSource())
+	writeFixtureFile(t, root, "leap_integration.py", minimalIntegrationSourceWithLoadModel())
 	writeFixtureFile(t, root, "model/model.h5", "binary\n")
 
 	inspector := NewBaselineInspector()
@@ -207,7 +207,7 @@ func TestInspectorAllowsEntryFileExcludedByLeapYAML(t *testing.T) {
 		"  - leap_integration.py",
 		"",
 	}, "\n"))
-	writeFixtureFile(t, root, "leap_integration.py", minimalIntegrationSource())
+	writeFixtureFile(t, root, "leap_integration.py", minimalIntegrationSourceWithLoadModel())
 	writeFixtureFile(t, root, "model/model.h5", "binary\n")
 
 	inspector := NewBaselineInspector()
@@ -245,7 +245,7 @@ func TestInspectorReportsNonCanonicalEntryFile(t *testing.T) {
 	}
 }
 
-func TestInspectorDetectsUnsupportedModelFormat(t *testing.T) {
+func TestInspectorDetectsModelAcquisitionRequirementFromPassiveLead(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
 		"entryFile: leap_integration.py",
@@ -268,14 +268,15 @@ func TestInspectorDetectsUnsupportedModelFormat(t *testing.T) {
 		"    return None",
 		"",
 	}, "\n"))
+	writeFixtureFile(t, root, "model/model.pt", "binary\n")
 
 	inspector := NewBaselineInspector()
 	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))
 	if err != nil {
 		t.Fatalf("Inspect returned error: %v", err)
 	}
-	if !hasIssueCode(status.Issues, core.IssueCodeModelFormatUnsupported) {
-		t.Fatalf("expected %q issue, got %+v", core.IssueCodeModelFormatUnsupported, status.Issues)
+	if !hasIssueCode(status.Issues, core.IssueCodeModelAcquisitionRequired) {
+		t.Fatalf("expected %q issue, got %+v", core.IssueCodeModelAcquisitionRequired, status.Issues)
 	}
 }
 
@@ -300,7 +301,7 @@ func TestInspectorDetectsMissingLeapCLI(t *testing.T) {
 func TestInspectorWarnsWhenCodeLoaderLacksGuideLocalStatusTable(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
-	writeFixtureFile(t, root, "leap_integration.py", minimalIntegrationSource())
+	writeFixtureFile(t, root, "leap_integration.py", minimalIntegrationSourceWithLoadModel())
 	writeFixtureFile(t, root, "model/model.h5", "binary\n")
 
 	inspector := NewBaselineInspector()
@@ -398,6 +399,25 @@ func minimalIntegrationSource() string {
 		"@tensorleap_preprocess()",
 		"def preprocess():",
 		"    return []",
+		"",
+		"@tensorleap_integration_test()",
+		"def integration_test(sample_id, preprocess_response):",
+		"    return None",
+		"",
+	}, "\n")
+}
+
+func minimalIntegrationSourceWithLoadModel() string {
+	return strings.Join([]string{
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_integration_test, tensorleap_load_model, tensorleap_preprocess",
+		"",
+		"@tensorleap_preprocess()",
+		"def preprocess():",
+		"    return []",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    return None",
 		"",
 		"@tensorleap_integration_test()",
 		"def integration_test(sample_id, preprocess_response):",

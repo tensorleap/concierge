@@ -80,7 +80,7 @@ func TestBuildModelAuthoringRecommendationAmbiguousFallbackDeterministic(t *test
 	}
 }
 
-func TestBuildModelAuthoringRecommendationScansRepoForSupportedFormats(t *testing.T) {
+func TestBuildModelAuthoringRecommendationUsesReadyArtifactsFromContracts(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeModelFixtureFile(t, repoRoot, "model/found.h5")
 	writeModelFixtureFile(t, repoRoot, "model/ignored.pt")
@@ -89,7 +89,14 @@ func TestBuildModelAuthoringRecommendationScansRepoForSupportedFormats(t *testin
 		core.WorkspaceSnapshot{
 			Repository: core.RepositoryState{Root: repoRoot},
 		},
-		core.IntegrationStatus{},
+		core.IntegrationStatus{
+			Contracts: &core.IntegrationContracts{
+				ModelCandidates: []core.ModelCandidate{
+					{Path: "model/found.h5"},
+					{Path: "model/ignored.pt"},
+				},
+			},
+		},
 	)
 	if err != nil {
 		t.Fatalf("BuildModelAuthoringRecommendation returned error: %v", err)
@@ -124,8 +131,8 @@ func TestBuildModelAuthoringRecommendationHandlesNoSupportedCandidates(t *testin
 	if recommendation.Target != "" {
 		t.Fatalf("expected empty target when no supported candidates exist, got %q", recommendation.Target)
 	}
-	if recommendation.Rationale != "no_supported_model_candidate" {
-		t.Fatalf("expected rationale %q, got %q", "no_supported_model_candidate", recommendation.Rationale)
+	if recommendation.Rationale != "no_ready_supported_model_artifact" {
+		t.Fatalf("expected rationale %q, got %q", "no_ready_supported_model_artifact", recommendation.Rationale)
 	}
 }
 

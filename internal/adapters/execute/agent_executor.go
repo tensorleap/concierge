@@ -57,21 +57,39 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 	taskSnapshot := snapshot
 	taskStatus := core.IntegrationStatus{}
 	recommendations := make([]core.AuthoringRecommendation, 0, 1)
-	if canonicalStep.ID == core.EnsureStepIntegrationTestContract {
+	if canonicalStep.ID == core.EnsureStepIntegrationTestContract ||
+		canonicalStep.ID == core.EnsureStepModelAcquisition ||
+		canonicalStep.ID == core.EnsureStepModelContract {
 		inspector := inspect.NewBaselineInspector()
 		status, err := inspector.Inspect(ctx, taskSnapshot)
 		if err != nil {
 			return core.ExecutionResult{}, err
 		}
 		taskStatus = status
+	}
+	if canonicalStep.ID == core.EnsureStepIntegrationTestContract {
 		recommendation, err := BuildIntegrationTestAuthoringRecommendation(taskSnapshot, taskStatus)
 		if err != nil {
 			return core.ExecutionResult{}, err
 		}
 		recommendations = append(recommendations, recommendation)
 	}
+	if canonicalStep.ID == core.EnsureStepModelAcquisition {
+		recommendation, err := BuildModelAcquisitionRecommendation(taskSnapshot, taskStatus)
+		if err != nil {
+			return core.ExecutionResult{}, err
+		}
+		recommendations = append(recommendations, recommendation)
+		if strings.TrimSpace(taskSnapshot.SelectedModelPath) == "" {
+			taskSnapshot.SelectedModelPath = strings.TrimSpace(recommendation.Target)
+		}
+		if taskStatus.Contracts == nil {
+			taskStatus.Contracts = &core.IntegrationContracts{}
+		}
+		taskStatus.Contracts.ResolvedModelPath = strings.TrimSpace(taskSnapshot.SelectedModelPath)
+	}
 	if canonicalStep.ID == core.EnsureStepModelContract {
-		recommendation, err := BuildModelAuthoringRecommendation(snapshot, taskStatus)
+		recommendation, err := BuildModelAuthoringRecommendation(taskSnapshot, taskStatus)
 		if err != nil {
 			return core.ExecutionResult{}, err
 		}
@@ -212,7 +230,8 @@ func recommendationEvidence(recommendations []core.AuthoringRecommendation) []co
 	}
 	evidence := make([]core.EvidenceItem, 0, 3)
 	for _, recommendation := range recommendations {
-		if recommendation.StepID != core.EnsureStepModelContract &&
+		if recommendation.StepID != core.EnsureStepModelAcquisition &&
+			recommendation.StepID != core.EnsureStepModelContract &&
 			recommendation.StepID != core.EnsureStepPreprocessContract &&
 			recommendation.StepID != core.EnsureStepInputEncoders &&
 			recommendation.StepID != core.EnsureStepGroundTruthEncoders &&
@@ -220,6 +239,13 @@ func recommendationEvidence(recommendations []core.AuthoringRecommendation) []co
 			continue
 		}
 		switch recommendation.StepID {
+		case core.EnsureStepModelAcquisition:
+			evidence = append(evidence,
+				core.EvidenceItem{Name: "authoring.recommendation.model_acquisition.target", Value: strings.TrimSpace(recommendation.Target)},
+				core.EvidenceItem{Name: "authoring.recommendation.model_acquisition.rationale", Value: strings.TrimSpace(recommendation.Rationale)},
+				core.EvidenceItem{Name: "authoring.recommendation.model_acquisition.candidates", Value: strings.Join(recommendation.Candidates, ",")},
+				core.EvidenceItem{Name: "authoring.recommendation.model_acquisition.constraints", Value: strings.Join(recommendation.Constraints, " | ")},
+			)
 		case core.EnsureStepModelContract:
 			evidence = append(evidence,
 				core.EvidenceItem{Name: "authoring.recommendation.model.target", Value: strings.TrimSpace(recommendation.Target)},
@@ -320,6 +346,8 @@ func repoContextEvidence(context core.AgentRepoContext) []core.EvidenceItem {
 		{Name: "agent.repo_context.leap_yaml_boundary", Value: context.LeapYAMLBoundary},
 		{Name: "agent.repo_context.selected_model_path", Value: context.SelectedModelPath},
 		{Name: "agent.repo_context.model_candidates", Value: strings.Join(context.ModelCandidates, ",")},
+		{Name: "agent.repo_context.ready_model_artifacts", Value: strings.Join(context.ReadyModelArtifacts, ",")},
+		{Name: "agent.repo_context.model_acquisition_leads", Value: strings.Join(context.ModelAcquisitionLeads, ",")},
 		{Name: "agent.repo_context.decorator_inventory", Value: strings.Join(context.DecoratorInventory, ",")},
 		{Name: "agent.repo_context.integration_test_calls", Value: strings.Join(context.IntegrationTestCalls, ",")},
 		{Name: "agent.repo_context.blocking_issues", Value: strings.Join(context.BlockingIssues, " | ")},
@@ -378,9 +406,33 @@ func objectiveForStep(
 	recommendations []core.AuthoringRecommendation,
 ) (string, []string, bool) {
 	switch stepID {
+	case core.EnsureStepModelAcquisition:
+		constraints := []string{
+			"Analyze existing repository code and documentation to find how the project obtains its model.",
+			"Materialize exactly one supported .onnx or .h5 artifact locally before editing @tensorleap_load_model.",
+			"Prefer existing repository commands or Python entrypoints before creating a temporary helper under .concierge/materializers.",
+			"Do not modify unrelated training/business logic or rely on Tensorleap rerunning model acquisition on the server.",
+		}
+		if selectedModelPath := strings.TrimSpace(snapshot.SelectedModelPath); selectedModelPath != "" {
+			constraints = append(constraints, fmt.Sprintf("Materialize the supported artifact at %q unless repository evidence proves a different repo-local output path is required", selectedModelPath))
+		}
+		for _, recommendation := range recommendations {
+			if recommendation.StepID != core.EnsureStepModelAcquisition {
+				continue
+			}
+			if target := strings.TrimSpace(recommendation.Target); target != "" {
+				constraints = append(constraints, fmt.Sprintf("Recommended materialized artifact target: %q (%s)", target, recommendation.Rationale))
+			}
+			if len(recommendation.Candidates) > 0 {
+				constraints = append(constraints, fmt.Sprintf("Relevant model leads: %s", strings.Join(recommendation.Candidates, ", ")))
+			}
+			constraints = append(constraints, recommendation.Constraints...)
+			break
+		}
+		return "Investigate repository model acquisition logic and materialize one Tensorleap-compatible model artifact", constraints, true
 	case core.EnsureStepModelContract:
 		constraints := []string{
-			"Resolve @tensorleap_load_model to exactly one concrete .onnx/.h5 model path",
+			"Bind @tensorleap_load_model to exactly one concrete supported .onnx/.h5 artifact path",
 			"Do not modify unrelated training/business logic",
 			"Model binaries are uploaded by leap CLI; leap.yaml include/exclude governs integration code",
 		}
@@ -404,7 +456,6 @@ func objectiveForStep(
 		constraints := []string{
 			"Implement a preprocess function that returns both train and validation subsets.",
 			"Keep preprocess outputs deterministic and non-empty for each feasible subset.",
-			"Ensure @tensorleap_load_model exists and preprocess wiring references the resolved model path.",
 			"Avoid changing unrelated project behavior",
 		}
 		for _, recommendation := range recommendations {
@@ -418,9 +469,6 @@ func objectiveForStep(
 				constraints = append(constraints, fmt.Sprintf("Suggested preprocess symbols: %s", strings.Join(recommendation.Candidates, ", ")))
 			}
 			break
-		}
-		if selectedModelPath := strings.TrimSpace(snapshot.SelectedModelPath); selectedModelPath != "" {
-			constraints = append(constraints, fmt.Sprintf("Use model path %q for @tensorleap_load_model unless repository code proves this path is invalid", selectedModelPath))
 		}
 		return "Implement preprocess contract with required train/validation subset handling and deterministic outputs", constraints, true
 	case core.EnsureStepInputEncoders:

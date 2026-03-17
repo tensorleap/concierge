@@ -416,7 +416,11 @@ func looksLikeGroundTruthEncoderCall(call string) bool {
 func hasUnresolvedModelContractIssue(issues []core.Issue) bool {
 	for _, issue := range issues {
 		switch issue.Code {
-		case core.IssueCodeModelFileMissing,
+		case core.IssueCodeModelAcquisitionRequired,
+			core.IssueCodeModelAcquisitionUnresolved,
+			core.IssueCodeModelMaterializationFailed,
+			core.IssueCodeModelMaterializationOutputMissing,
+			core.IssueCodeModelFileMissing,
 			core.IssueCodeModelCandidatesAmbiguous,
 			core.IssueCodeModelFormatUnsupported,
 			core.IssueCodeModelLoadFailed,

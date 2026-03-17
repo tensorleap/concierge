@@ -443,7 +443,12 @@ func shouldAllowPostVariantModelGap(fixtureID string, repoRoot string, blockers 
 	if fixtureID == "" || strings.TrimSpace(repoRoot) == "" {
 		return false
 	}
-	if len(blockers) != 1 || blockers[0].Code != core.IssueCodeModelFileMissing {
+	if len(blockers) != 1 {
+		return false
+	}
+	switch blockers[0].Code {
+	case core.IssueCodeModelFileMissing, core.IssueCodeModelAcquisitionRequired, core.IssueCodeModelAcquisitionUnresolved:
+	default:
 		return false
 	}
 

@@ -14,6 +14,7 @@ const (
 	EnsureStepServerConnectivity      EnsureStepID = "ensure.server_connectivity"
 	EnsureStepSecretsContext          EnsureStepID = "ensure.secrets_context"
 	EnsureStepLeapYAML                EnsureStepID = "ensure.leap_yaml"
+	EnsureStepModelAcquisition        EnsureStepID = "ensure.model_acquisition"
 	EnsureStepModelContract           EnsureStepID = "ensure.model_contract"
 	EnsureStepIntegrationScript       EnsureStepID = "ensure.integration_script"
 	EnsureStepPreprocessContract      EnsureStepID = "ensure.preprocess_contract"
@@ -57,6 +58,10 @@ var ensureStepCatalog = map[EnsureStepID]EnsureStep{
 	EnsureStepLeapYAML: {
 		ID:          EnsureStepLeapYAML,
 		Description: "Ensure leap.yaml exists and satisfies upload boundary contract",
+	},
+	EnsureStepModelAcquisition: {
+		ID:          EnsureStepModelAcquisition,
+		Description: "Ensure a Tensorleap-compatible model artifact can be materialized locally",
 	},
 	EnsureStepModelContract: {
 		ID:          EnsureStepModelContract,
@@ -102,9 +107,10 @@ var ensureStepPriority = []EnsureStepID{
 	EnsureStepLeapCLIAuth,
 	EnsureStepSecretsContext,
 	EnsureStepLeapYAML,
-	EnsureStepModelContract,
 	EnsureStepIntegrationScript,
 	EnsureStepPreprocessContract,
+	EnsureStepModelAcquisition,
+	EnsureStepModelContract,
 	EnsureStepInputEncoders,
 	EnsureStepGroundTruthEncoders,
 	EnsureStepIntegrationTestContract,
@@ -151,8 +157,10 @@ func HumanEnsureStepLabel(stepID EnsureStepID) string {
 		return "Required secrets are configured"
 	case EnsureStepLeapYAML:
 		return "leap.yaml is present and valid"
+	case EnsureStepModelAcquisition:
+		return "A Tensorleap-compatible model artifact can be materialized locally"
 	case EnsureStepModelContract:
-		return "Model path for @tensorleap_load_model is resolved and supported"
+		return "@tensorleap_load_model is wired to a supported model artifact"
 	case EnsureStepIntegrationScript:
 		return "Root leap_integration.py is present and canonical"
 	case EnsureStepPreprocessContract:
@@ -199,8 +207,10 @@ func HumanEnsureStepRequirementLabel(stepID EnsureStepID) string {
 		return "Required secrets should be configured"
 	case EnsureStepLeapYAML:
 		return "leap.yaml should be present and valid"
+	case EnsureStepModelAcquisition:
+		return "A Tensorleap-compatible model artifact should be materialized locally"
 	case EnsureStepModelContract:
-		return "Model path for @tensorleap_load_model should be resolved and supported"
+		return "@tensorleap_load_model should be wired to a supported model artifact"
 	case EnsureStepIntegrationScript:
 		return "Root leap_integration.py should be present and canonical"
 	case EnsureStepPreprocessContract:

@@ -79,7 +79,7 @@ func NewEngine(deps Dependencies) (*Engine, error) {
 
 // RunIteration executes the canonical stage sequence for one orchestration loop.
 func (e *Engine) RunIteration(ctx context.Context, req core.SnapshotRequest) (core.IterationReport, error) {
-	report, _, err := e.runIteration(ctx, req, 1, nil)
+	report, _, err := e.runIteration(ctx, req, 1, nil, nil)
 	return report, err
 }
 
@@ -87,6 +87,7 @@ func (e *Engine) runIteration(
 	ctx context.Context,
 	req core.SnapshotRequest,
 	iteration int,
+	carriedIssues []core.Issue,
 	beforeReport func(snapshot core.WorkspaceSnapshot, report *core.IterationReport) error,
 ) (core.IterationReport, core.WorkspaceSnapshot, error) {
 	e.emit(observe.Event{Kind: observe.EventIterationStarted, Iteration: iteration, Message: "Starting a new guided round"})
@@ -104,6 +105,7 @@ func (e *Engine) runIteration(
 		e.emit(observe.Event{Kind: observe.EventError, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageInspect, Message: err.Error()})
 		return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StageInspect, Err: err}
 	}
+	status = mergeBlockingIssues(status, carriedIssues)
 	e.emit(observe.Event{Kind: observe.EventStageFinished, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageInspect, Message: "Inspection finished"})
 
 	e.emit(observe.Event{Kind: observe.EventStageStarted, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StagePlan, Message: "Choosing the next step"})
@@ -237,6 +239,34 @@ func mergeBlockingInspectIssues(validation core.ValidationResult, status core.In
 			merged.Passed = false
 			break
 		}
+	}
+
+	return merged
+}
+
+func mergeBlockingIssues(status core.IntegrationStatus, carried []core.Issue) core.IntegrationStatus {
+	if len(carried) == 0 {
+		return status
+	}
+
+	merged := status
+	merged.Issues = append([]core.Issue(nil), status.Issues...)
+	seen := make(map[string]struct{}, len(merged.Issues))
+	for _, issue := range merged.Issues {
+		key := string(issue.Code) + "|" + issue.Message + "|" + string(issue.Scope)
+		seen[key] = struct{}{}
+	}
+
+	for _, issue := range carried {
+		if issue.Severity != core.SeverityError {
+			continue
+		}
+		key := string(issue.Code) + "|" + issue.Message + "|" + string(issue.Scope)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		merged.Issues = append(merged.Issues, issue)
+		seen[key] = struct{}{}
 	}
 
 	return merged

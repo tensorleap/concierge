@@ -171,6 +171,10 @@ def qa_loop_command(
 
 
 class QALoopTest(unittest.TestCase):
+    def test_parse_args_disables_docker_snapshots_by_default(self) -> None:
+        args = qa_loop.parse_args(["--container-name", "fixture"])
+        self.assertFalse(args.docker_snapshots)
+
     def test_supervisor_loop_writes_transcript_and_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
@@ -282,6 +286,7 @@ class QALoopTest(unittest.TestCase):
                     container_name=container_name,
                     codex_command=f"{sys.executable} {codex_script}",
                     target_command=[sys.executable, str(concierge_script)],
+                    extra_args=["--docker-snapshots"],
                 ),
                 cwd=str(ROOT),
                 env=env,
@@ -306,6 +311,7 @@ class QALoopTest(unittest.TestCase):
             self.assertEqual(summary["loop_state"], "STOP_REPORT")
             self.assertEqual(summary["report_status"], "ready")
             self.assertEqual(summary["docker"]["container_name"], container_name)
+            self.assertTrue(summary["docker"]["snapshots_enabled"])
             self.assertEqual(len(summary["docker"]["snapshots"]), 2)
             first_snapshot = summary["docker"]["snapshots"][0]
             self.assertTrue(Path(first_snapshot["diff_path"]).is_file())

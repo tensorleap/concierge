@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tensorleap/concierge/internal/adapters/planner"
 	"github.com/tensorleap/concierge/internal/core"
 )
 
@@ -230,6 +231,132 @@ func TestEngineRunStopsWhenManualUserActionIsRequired(t *testing.T) {
 	}
 	if len(result.Reports) != 1 {
 		t.Fatalf("expected one report, got %d", len(result.Reports))
+	}
+}
+
+type carryoverValidationHarness struct {
+	iteration   int
+	statuses    []core.IntegrationStatus
+	validations []core.ValidationResult
+	reports     []core.IterationReport
+}
+
+func (h *carryoverValidationHarness) Snapshot(ctx context.Context, request core.SnapshotRequest) (core.WorkspaceSnapshot, error) {
+	_ = ctx
+	_ = request
+	h.iteration++
+	return core.WorkspaceSnapshot{
+		ID: fmt.Sprintf("snapshot-%d", h.iteration),
+		Repository: core.RepositoryState{
+			Root:    "/repo",
+			GitRoot: "/repo",
+			Branch:  "feature/test",
+			Head:    fmt.Sprintf("head-%d", h.iteration),
+		},
+	}, nil
+}
+
+func (h *carryoverValidationHarness) Inspect(ctx context.Context, snapshot core.WorkspaceSnapshot) (core.IntegrationStatus, error) {
+	_ = ctx
+	_ = snapshot
+	index := h.iteration - 1
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(h.statuses) {
+		index = len(h.statuses) - 1
+	}
+	return h.statuses[index], nil
+}
+
+func (h *carryoverValidationHarness) Execute(ctx context.Context, snapshot core.WorkspaceSnapshot, step core.EnsureStep) (core.ExecutionResult, error) {
+	_ = ctx
+	_ = snapshot
+	return core.ExecutionResult{
+		Step:    step,
+		Applied: false,
+		Summary: "ok",
+	}, nil
+}
+
+func (h *carryoverValidationHarness) Validate(ctx context.Context, snapshot core.WorkspaceSnapshot, result core.ExecutionResult) (core.ValidationResult, error) {
+	_ = ctx
+	_ = snapshot
+	_ = result
+	index := h.iteration - 1
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(h.validations) {
+		index = len(h.validations) - 1
+	}
+	return h.validations[index], nil
+}
+
+func (h *carryoverValidationHarness) Report(ctx context.Context, report core.IterationReport) error {
+	_ = ctx
+	h.reports = append(h.reports, report)
+	return nil
+}
+
+func TestEngineRunCarriesBlockingValidationIssuesIntoNextPlanningRound(t *testing.T) {
+	harness := &carryoverValidationHarness{
+		statuses: []core.IntegrationStatus{
+			{
+				Issues: []core.Issue{{
+					Code:     core.IssueCodePreprocessFunctionMissing,
+					Message:  "no @tensorleap_preprocess function found in leap_integration.py",
+					Severity: core.SeverityError,
+					Scope:    core.IssueScopePreprocess,
+				}},
+			},
+			{
+				Issues: []core.Issue{{
+					Code:     core.IssueCodeLoadModelDecoratorMissing,
+					Message:  "no @tensorleap_load_model function found in leap_integration.py",
+					Severity: core.SeverityError,
+					Scope:    core.IssueScopeModel,
+				}},
+			},
+		},
+		validations: []core.ValidationResult{
+			{
+				Passed: false,
+				Issues: []core.Issue{{
+					Code:     core.IssueCodePreprocessExecutionFailed,
+					Message:  "preprocess failed during Tensorleap parser validation: Invalid dataset length",
+					Severity: core.SeverityError,
+					Scope:    core.IssueScopePreprocess,
+				}},
+			},
+			{Passed: true},
+		},
+	}
+
+	engine, err := NewEngine(Dependencies{
+		Snapshotter: harness,
+		Inspector:   harness,
+		Planner:     planner.NewDeterministicPlanner(),
+		Executor:    harness,
+		Validator:   harness,
+		Reporter:    harness,
+	})
+	if err != nil {
+		t.Fatalf("NewEngine failed: %v", err)
+	}
+
+	result, err := engine.Run(context.Background(), core.SnapshotRequest{RepoRoot: "/repo"}, RunOptions{MaxIterations: 2})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(result.Reports) != 2 {
+		t.Fatalf("expected two reports, got %d", len(result.Reports))
+	}
+	if got := result.Reports[0].Step.ID; got != core.EnsureStepPreprocessContract {
+		t.Fatalf("expected first step %q, got %q", core.EnsureStepPreprocessContract, got)
+	}
+	if got := result.Reports[1].Step.ID; got != core.EnsureStepPreprocessContract {
+		t.Fatalf("expected second step to stay on %q after blocking validation failure, got %q", core.EnsureStepPreprocessContract, got)
 	}
 }
 

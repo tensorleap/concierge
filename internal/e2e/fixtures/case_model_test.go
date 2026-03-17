@@ -16,12 +16,12 @@ func TestFixtureCaseMissingModel_SelectsModelStep(t *testing.T) {
 	assertExpectedIssueCodes(t, status.Issues, entry.ExpectedIssueCodes)
 	assertCasePrimaryStep(t, entry, plan)
 
-	recommendation, err := execute.BuildModelAuthoringRecommendation(snapshotValue, status)
+	recommendation, err := execute.BuildModelAcquisitionRecommendation(snapshotValue, status)
 	if err != nil {
-		t.Fatalf("BuildModelAuthoringRecommendation failed: %v", err)
+		t.Fatalf("BuildModelAcquisitionRecommendation failed: %v", err)
 	}
-	if recommendation.StepID != core.EnsureStepModelContract {
-		t.Fatalf("expected recommendation step %q, got %q", core.EnsureStepModelContract, recommendation.StepID)
+	if recommendation.StepID != core.EnsureStepModelAcquisition {
+		t.Fatalf("expected recommendation step %q, got %q", core.EnsureStepModelAcquisition, recommendation.StepID)
 	}
 	if recommendation.Target == "" {
 		t.Fatalf("expected non-empty model recommendation target, got %+v", recommendation)

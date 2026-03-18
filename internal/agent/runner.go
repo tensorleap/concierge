@@ -19,7 +19,10 @@ import (
 	"github.com/tensorleap/concierge/internal/observe"
 )
 
-const claudeCommand = "claude"
+const (
+	claudeCommand      = "claude"
+	defaultClaudeModel = "claude-opus-4-6"
+)
 
 const (
 	defaultTimeout       = 15 * time.Minute
@@ -30,8 +33,8 @@ const (
 )
 
 var (
-	defaultClaudeArgs       = []string{"--print", "--output-format", "stream-json", "--include-partial-messages", "--verbose", "--permission-mode", "bypassPermissions"}
-	defaultClaudeBufferArgs = []string{"--print", "--output-format", "text", "--permission-mode", "bypassPermissions"}
+	defaultClaudeArgs       = []string{"--model", defaultClaudeModel, "--print", "--output-format", "stream-json", "--include-partial-messages", "--verbose", "--permission-mode", "bypassPermissions"}
+	defaultClaudeBufferArgs = []string{"--model", defaultClaudeModel, "--print", "--output-format", "text", "--permission-mode", "bypassPermissions"}
 )
 
 // Runner executes one task-scoped command invocation and writes live artifacts.

@@ -3,6 +3,7 @@ package execute
 import (
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/tensorleap/concierge/internal/core"
@@ -41,6 +42,13 @@ func TestInputEncoderRecommendationListsMissingSymbols(t *testing.T) {
 	want := []string{"image", "meta"}
 	if !reflect.DeepEqual(recommendation.Candidates, want) {
 		t.Fatalf("expected candidates %v, got %v", want, recommendation.Candidates)
+	}
+	joinedConstraints := strings.Join(recommendation.Constraints, "\n")
+	if !strings.Contains(joinedConstraints, "exact required Tensorleap symbol name") {
+		t.Fatalf("expected exact-symbol constraint, got %q", joinedConstraints)
+	}
+	if !strings.Contains(joinedConstraints, "sample_id") {
+		t.Fatalf("expected sample_id constraint, got %q", joinedConstraints)
 	}
 }
 

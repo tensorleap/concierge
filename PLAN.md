@@ -56,6 +56,8 @@ The remaining work starts from that baseline.
 - QA loop blind-first release based on only two idle turns is too eager for real runs; long but still-active Concierge work can expose the post fixture before the session has genuinely stalled.
 - Writing `summary.json` before any report artifact exists leaves the harness with misleading paths when final report synthesis blocks or times out; QA artifacts need a provisional report state.
 - The Codex CLI JSON event stream is appropriate for saved machine-readable artifacts, but it is too noisy for live `make qa` monitoring without a dedicated text renderer.
+- Tensorleap code_loader validation calls handlers with `preprocess_response.sample_ids[0]`, and when `sample_ids` are present without an explicit `sample_id_type`, the contract defaults that first argument to `str`.
+- Image repos repeatedly expose singular/plural symbol drift (`image` vs `images`); the agent prompt must treat Tensorleap-required symbol names as a hard contract distinct from raw model tensor aliases.
 
 ## Decision Log
 
@@ -71,6 +73,9 @@ The remaining work starts from that baseline.
 - Decision: Fold the old granular pending tail into a shorter phase-based backlog.
   Rationale: The remaining work is easier to reason about as runtime phase -> guide-native phase -> hardening phase.
   Date/Author: 2026-03-10 / assistant.
+- Decision: For repeated encoder-step QA, prefer deterministic generated cases on a `prewarmed` fixture image and reserve Docker container snapshots for short-lived debug checkpoints.
+  Rationale: Paused containers are fast for local iteration but they freeze incidental state; generated cases plus prewarmed images stay reproducible and easier to rerun in CI and fixture tests.
+  Date/Author: 2026-03-18 / user + assistant.
 
 ## Backlog Compression Map
 
@@ -422,6 +427,16 @@ Locked behavior:
 2. Composite cases prove deterministic end-to-end convergence across ordered steps.
 3. Agent-context assertions prove the prompt includes the right Tensorleap rules and scope boundaries for each step.
 4. Fixture E2E results are semantic-first and do not depend on exact repo diffs.
+
+Immediate change list:
+
+1. Promote required Tensorleap input and ground-truth symbols into the agent repo-context and prompt so image-class repos stop drifting from `image` to raw tensor aliases such as `images`.
+2. Replace all input/GT/integration knowledge-pack examples that imply `idx: int` with `sample_id` semantics tied to `PreprocessResponse.sample_id_type`, and keep that rule in step-scoped acceptance checks.
+3. Add prompt-quality assertions that exact required symbol names and sample-id semantics are present for encoder authoring steps.
+4. Add a guide-native ultralytics encoder-step case whose preprocess and model-acquisition stages are already satisfied and whose remaining failure is specifically missing or broken input encoders.
+5. Make repeated encoder-step QA run against `scripts/qa_fixture_run.sh --image-mode prewarmed` by default so preprocess, Poetry install, and model acquisition are not redone on every loop.
+6. Use `--docker-snapshots` only as an ephemeral local resume aid when a manual QA run has already reached the encoder step; do not treat a committed paused container as the canonical fixture substrate.
+7. Ensure any warmed ultralytics substrate contains a genuinely loadable supported model artifact; ONNX/runtime incompatibilities should be surfaced while preparing the case, not during encoder-step QA.
 
 Validation:
 

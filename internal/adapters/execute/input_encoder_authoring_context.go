@@ -46,6 +46,8 @@ func BuildInputEncoderAuthoringRecommendation(
 	missingSymbols := collectInputEncoderRecommendationSymbols(repoRoot, status)
 	constraints := []string{
 		"Implement @tensorleap_input_encoder functions for each missing input symbol.",
+		"Register each encoder with the exact required Tensorleap symbol name; do not substitute raw model tensor aliases such as \"images\" for required symbols such as \"image\".",
+		"The first encoder argument is the Tensorleap sample_id matching PreprocessResponse.sample_id_type; do not treat it as a positional index into preprocess.sample_ids.",
 		"Keep encoder output shapes and dtypes compatible with model inference inputs.",
 		"Do not modify @tensorleap_gt_encoder definitions or integration-test wiring in this step.",
 	}

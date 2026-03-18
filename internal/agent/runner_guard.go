@@ -144,9 +144,14 @@ func exposeAllowedConciergePaths(originalRoot, viewRoot string, allowedConcierge
 		return err
 	}
 
+	allowedSet := make(map[string]struct{}, len(allowedConciergePaths))
+	for _, relPath := range allowedConciergePaths {
+		allowedSet[relPath] = struct{}{}
+	}
+
 	for _, relPath := range allowedConciergePaths {
 		sourcePath := filepath.Join(originalRoot, filepath.FromSlash(relPath))
-		if err := os.MkdirAll(sourcePath, 0o755); err != nil {
+		if err := ensureAllowedConciergeSourcePath(sourcePath, relPath, allowedSet); err != nil {
 			return err
 		}
 
@@ -165,6 +170,33 @@ func exposeAllowedConciergePaths(originalRoot, viewRoot string, allowedConcierge
 	}
 
 	return nil
+}
+
+func ensureAllowedConciergeSourcePath(sourcePath, relPath string, allowedSet map[string]struct{}) error {
+	info, err := os.Lstat(sourcePath)
+	if err == nil {
+		if info.IsDir() {
+			return os.MkdirAll(sourcePath, 0o755)
+		}
+		return os.MkdirAll(filepath.Dir(sourcePath), 0o755)
+	}
+	if !os.IsNotExist(err) {
+		return err
+	}
+	if allowedConciergePathLooksLikeDirectory(relPath, allowedSet) {
+		return os.MkdirAll(sourcePath, 0o755)
+	}
+	return os.MkdirAll(filepath.Dir(sourcePath), 0o755)
+}
+
+func allowedConciergePathLooksLikeDirectory(relPath string, allowedSet map[string]struct{}) bool {
+	prefix := relPath + "/"
+	for candidate := range allowedSet {
+		if strings.HasPrefix(candidate, prefix) {
+			return true
+		}
+	}
+	return filepath.Ext(relPath) == ""
 }
 
 func rewriteAgentTaskForView(task AgentTask, originalRoot, viewRoot string) AgentTask {

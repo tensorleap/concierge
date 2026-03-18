@@ -6,12 +6,18 @@ This repository is implemented through small, issue-scoped changes.
 
 - Before any planning or implementation work, read `README.md` in its entirety.
 - Then read the relevant GitHub issue, PR description, or user-provided task context for the work you are about to do.
+- If the active work item is a child issue, also read the umbrella issue body, but treat the active child issue as the primary execution record.
 - If no GitHub issue exists yet, treat the current user request as the temporary source of truth and keep the scope narrow enough to become one issue later.
 
 ## Planning and Progress Tracking
 
 - GitHub issues are the source of truth for backlog, prioritization, and progress tracking.
+- For issue-anchored work, the issue body is the durable source of truth for scope, decisions, current status, and next step.
+- Keep issue bodies freely editable so they stay current and resumable by any agent. Do not keep an edit log inside the issue body.
+- Treat terminal chat as transient working memory. Do not rely on Codex conversations as the durable record for ongoing issue-managed work.
+- Use issue comments only for milestone-level updates such as major decisions, blockers, slice completion, PR or CI milestones, or other material progress changes. Update the issue body first, then add the milestone comment.
 - Do not create, maintain, or rely on `PLAN.md` for new work tracking.
+- Do not create local progress logs, task lists, or planning notes for ongoing issue-managed work when the same information belongs in the GitHub issue body.
 - Prefer one issue per independently reviewable bug, missing piece, or feature slice.
 - If a task spans multiple concerns, split it into separate GitHub issues instead of rebuilding a waterfall plan in-repo.
 
@@ -142,7 +148,11 @@ Both commands must pass. `prepare` must create:
 
 ## Project Skills
 
-This repository also provides a project-local skill:
+This repository also provides project-local skills:
+
+- `concierge-issue-workflow`
+  Path: `github-issue-workflow/SKILL.md`
+  Use when the conversation is anchored on one or more GitHub issues in this repository, for example "look at issue 41", "resume issue 46", or any multi-step effort whose durable state should live in GitHub issue bodies instead of plan files or terminal chat.
 
 - `concierge-qa-loop`
   Path: `QA/SKILL.md`

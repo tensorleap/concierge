@@ -48,6 +48,9 @@ func TestRunnerInvokesClaudeWithSystemPrompt(t *testing.T) {
 	if !strings.Contains(contents, "--output-format stream-json") {
 		t.Fatalf("expected stream-json invocation in transcript, got: %q", contents)
 	}
+	if !strings.Contains(contents, "--model "+defaultClaudeModel) {
+		t.Fatalf("expected default Claude model in transcript, got: %q", contents)
+	}
 	if !strings.Contains(contents, "--include-partial-messages") {
 		t.Fatalf("expected partial-message flag in transcript, got: %q", contents)
 	}
@@ -132,6 +135,9 @@ func TestRunnerRunWritesTranscript(t *testing.T) {
 	}
 	if !strings.Contains(contents, "--output-format stream-json") {
 		t.Fatalf("expected stream-json command in transcript, got: %q", contents)
+	}
+	if !strings.Contains(contents, "--model "+defaultClaudeModel) {
+		t.Fatalf("expected default Claude model in transcript, got: %q", contents)
 	}
 	if !strings.Contains(contents, "--verbose") {
 		t.Fatalf("expected verbose flag in transcript, got: %q", contents)

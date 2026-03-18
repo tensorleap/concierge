@@ -18,10 +18,11 @@ This repository is implemented through small, issue-scoped changes.
 ## Execution Rules
 
 - Implement only one issue-sized scope at a time.
-- Before any `git commit` or `git push`, stop and let the user review changes locally; proceed only after explicit user approval.
+- Run local verification before any `git commit` or `git push`. If verification passes, commit automatically on the feature branch, push automatically, and open a PR to `main` for review.
+- GitHub pull requests are the default review surface. Do not wait for a separate local review before committing or pushing unless the user explicitly asks for one.
 - If a change set does not modify code (for example markdown/docs-only edits), test execution is optional and may be skipped.
 - After finishing the scoped work, keep progress in GitHub issue / PR state rather than updating `PLAN.md`.
-- The agent may commit and push issue-scoped changes on a non-main feature branch before acceptance.
+- The agent should commit and push issue-scoped changes on a non-main feature branch once local verification passes.
 - The agent should trigger and monitor CI for the pushed branch and fix failures within the issue scope.
 - Do not treat work as accepted until it is merged to `main`.
 - A merge to `main` is the only acceptance event.
@@ -59,13 +60,14 @@ If branch is `main` or `master`, stop and do not commit.
 
 After finishing one issue-sized change:
 
-1. Request and receive explicit user approval after local review.
+1. Run local verification for the scoped change.
 2. Build the CLI binary locally: `go build -o bin/concierge ./cmd/concierge`.
-3. Commit on feature branch.
-4. Push feature branch.
-5. Open PR to `main`.
-6. Monitor CI for that PR branch and fix failures in issue scope.
-7. Link the PR to the relevant GitHub issue when one exists.
+3. Commit on the feature branch.
+4. Push the feature branch.
+5. Open a PR to `main`.
+6. Request review on the GitHub PR and treat that PR as the review surface.
+7. Monitor CI for that PR branch and fix failures in issue scope.
+8. Link the PR to the relevant GitHub issue when one exists.
 
 ### Accidental protected-branch commit protocol
 

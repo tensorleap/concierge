@@ -4,21 +4,24 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 MANIFEST_PATH="${REPO_ROOT}/fixtures/manifest.json"
+CHECKPOINT_MANIFEST_PATH="${REPO_ROOT}/fixtures/checkpoints/manifest.json"
 FIXTURES_ROOT="${REPO_ROOT}/.fixtures"
 DOCKERFILE_PATH="${REPO_ROOT}/QA/docker/fixture.Dockerfile"
+CHECKPOINT_RESOLVER_PATH="${REPO_ROOT}/scripts/qa_checkpoint_resolver.py"
 
 DEFAULT_CLAUDE_CODE_VERSION="${QA_CLAUDE_CODE_VERSION:-2.1.76}"
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/qa_fixture_run.sh [--repo <fixture-id>] [--image-mode <cold|prewarmed>] [-- <qa_loop args...>]
+Usage: bash scripts/qa_fixture_run.sh [--repo <fixture-id>] [--step <checkpoint-step>] [--image-mode <cold|prewarmed>] [-- <qa_loop args...>]
 
-Reset a prepared built-in fixture, build an isolated Docker image from its clean pre state,
+Resolve a deterministic fixture checkpoint, build an isolated Docker image from that clean state,
 start a fixture container, and run the QA loop against that container.
 
 Options:
   --repo <fixture-id>           Fixture ID from fixtures/manifest.json. Default: ultralytics
-  --image-mode <cold|prewarmed> Container image mode. Default: cold
+  --step <checkpoint-step>      Checkpoint step selector. Default: preprocess
+  --image-mode <cold|prewarmed> Override the checkpoint's internal build mode
   --help                        Show this help text.
 EOF
 }
@@ -130,30 +133,30 @@ print(digest.hexdigest())
 PY
 }
 
-compute_image_key() {
-  python3 - "$@" <<'PY'
-import hashlib
-import json
-import sys
-
-payload = {
-    "fixture_id": sys.argv[1],
-    "fixture_ref": sys.argv[2],
-    "python_version": sys.argv[3],
-    "poetry_version": sys.argv[4],
-    "claude_version": sys.argv[5],
-    "concierge_sha": sys.argv[6],
-    "image_mode": sys.argv[7],
-    "dockerfile_sha": sys.argv[8],
-    "runner_sha": sys.argv[9],
+resolve_checkpoint_json() {
+  local fixture_id="$1"
+  local step="$2"
+  local build_mode_override="${3:-}"
+  local args=(
+    "${CHECKPOINT_RESOLVER_PATH}"
+    resolve
+    --repo-root "${REPO_ROOT}"
+    --fixture-id "${fixture_id}"
+    --step "${step}"
+  )
+  if [[ -n "${build_mode_override}" ]]; then
+    args+=(--build-mode-override "${build_mode_override}")
+  fi
+  python3 "${args[@]}"
 }
-encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
-print(hashlib.sha256(encoded).hexdigest()[:16])
-PY
+
+compute_image_key() {
+  python3 "${CHECKPOINT_RESOLVER_PATH}" image-key "$@"
 }
 
 fixture_id="${REPO:-ultralytics}"
-image_mode="${QA_IMAGE_MODE:-cold}"
+step="${QA_STEP:-preprocess}"
+image_mode_override="${QA_IMAGE_MODE:-}"
 while (($# > 0)); do
   case "$1" in
     --repo)
@@ -161,9 +164,14 @@ while (($# > 0)); do
       fixture_id="$2"
       shift 2
       ;;
+    --step)
+      (($# >= 2)) || fail "--step requires a checkpoint step"
+      step="$2"
+      shift 2
+      ;;
     --image-mode)
       (($# >= 2)) || fail "--image-mode requires cold or prewarmed"
-      image_mode="$2"
+      image_mode_override="$2"
       shift 2
       ;;
     --help|-h)
@@ -182,11 +190,16 @@ done
 
 qa_args=("$@")
 
-[[ "${image_mode}" == "cold" || "${image_mode}" == "prewarmed" ]] || fail "unsupported image mode '${image_mode}'"
+[[ -n "${step}" ]] || fail "checkpoint step cannot be empty"
+if [[ -n "${image_mode_override}" && "${image_mode_override}" != "cold" && "${image_mode_override}" != "prewarmed" ]]; then
+  fail "unsupported image mode override '${image_mode_override}'"
+fi
 [[ -n "${ANTHROPIC_API_KEY:-}" ]] || fail "ANTHROPIC_API_KEY is required for Docker QA runs"
 
 [[ -f "${MANIFEST_PATH}" ]] || fail "fixture manifest not found: ${MANIFEST_PATH}"
+[[ -f "${CHECKPOINT_MANIFEST_PATH}" ]] || fail "checkpoint manifest not found: ${CHECKPOINT_MANIFEST_PATH}"
 [[ -f "${DOCKERFILE_PATH}" ]] || fail "fixture Dockerfile not found: ${DOCKERFILE_PATH}"
+[[ -f "${CHECKPOINT_RESOLVER_PATH}" ]] || fail "checkpoint resolver not found: ${CHECKPOINT_RESOLVER_PATH}"
 
 command -v docker >/dev/null 2>&1 || fail "required command 'docker' not found"
 command -v git >/dev/null 2>&1 || fail "required command 'git' not found"
@@ -200,30 +213,42 @@ jq -e --arg id "${fixture_id}" '.fixtures[] | select(.id == $id)' "${MANIFEST_PA
 fixture_root="${FIXTURES_ROOT}/${fixture_id}"
 pre_dir="${fixture_root}/pre"
 post_dir="${fixture_root}/post"
+resolution_json="$(resolve_checkpoint_json "${fixture_id}" "${step}" "${image_mode_override}")"
+selected_repo_dir="$(jq -r '.repo_path' <<<"${resolution_json}")"
+selected_source_kind="$(jq -r '.source_kind' <<<"${resolution_json}")"
+selected_source_id="$(jq -r '.source_id' <<<"${resolution_json}")"
+selected_build_mode="$(jq -r '.build_mode' <<<"${resolution_json}")"
+checkpoint_key="$(jq -r '.checkpoint_key' <<<"${resolution_json}")"
 
 if [[ ! -x "${pre_dir}/.fixture_reset.sh" || ! -x "${post_dir}/.fixture_reset.sh" ]]; then
   log "Preparing fixtures because '${fixture_id}' is not available locally yet"
   bash "${REPO_ROOT}/scripts/fixtures_prepare.sh"
 fi
 
+if [[ "${selected_source_kind}" == "case" && ! -x "${selected_repo_dir}/.fixture_reset.sh" ]]; then
+  log "Generating fixture cases because checkpoint '${checkpoint_key}' is not available locally yet"
+  bash "${REPO_ROOT}/scripts/fixtures_mutate_cases.sh"
+fi
+
 [[ -x "${pre_dir}/.fixture_reset.sh" ]] || fail "missing pre reset script for fixture '${fixture_id}': ${pre_dir}/.fixture_reset.sh"
 [[ -x "${post_dir}/.fixture_reset.sh" ]] || fail "missing post reset script for fixture '${fixture_id}': ${post_dir}/.fixture_reset.sh"
+[[ -x "${selected_repo_dir}/.fixture_reset.sh" ]] || fail "missing reset script for checkpoint '${checkpoint_key}': ${selected_repo_dir}/.fixture_reset.sh"
 
 log "Resetting fixture '${fixture_id}' post variant"
 "${post_dir}/.fixture_reset.sh"
-log "Resetting fixture '${fixture_id}' pre variant"
-"${pre_dir}/.fixture_reset.sh"
+log "Resetting checkpoint '${checkpoint_key}' from ${selected_source_kind}:${selected_source_id}"
+"${selected_repo_dir}/.fixture_reset.sh"
 
-if [[ -n "$(git -C "${pre_dir}" status --porcelain)" ]]; then
-  fail "fixture pre variant is not clean after reset: ${pre_dir}"
+if [[ -n "$(git -C "${selected_repo_dir}" status --porcelain)" ]]; then
+  fail "selected checkpoint repo is not clean after reset: ${selected_repo_dir}"
 fi
 if [[ -n "$(git -C "${post_dir}" status --porcelain)" ]]; then
   fail "fixture post variant is not clean after reset: ${post_dir}"
 fi
 
-[[ -f "${pre_dir}/pyproject.toml" ]] || fail "fixture pre variant is missing pyproject.toml: ${pre_dir}"
+[[ -f "${selected_repo_dir}/pyproject.toml" ]] || fail "selected checkpoint repo is missing pyproject.toml: ${selected_repo_dir}"
 
-python_version="$(resolve_python_version "${pre_dir}/pyproject.toml")"
+python_version="$(resolve_python_version "${selected_repo_dir}/pyproject.toml")"
 poetry_version="$(resolve_poetry_version "${python_version}")"
 docker_arch="$(docker version --format '{{.Server.Arch}}')"
 case "${docker_arch}" in
@@ -235,7 +260,7 @@ case "${docker_arch}" in
     ;;
 esac
 
-fixture_ref="$(git -C "${pre_dir}" rev-parse HEAD)"
+fixture_ref="$(git -C "${selected_repo_dir}" rev-parse HEAD)"
 safe_fixture_id="$(printf '%s' "${fixture_id}" | tr '[:upper:]_' '[:lower:]-')"
 
 tmpdir="$(mktemp -d)"
@@ -244,8 +269,8 @@ trap cleanup EXIT
 context_dir="${tmpdir}/context"
 mkdir -p "${context_dir}/workspace" "${context_dir}/bin"
 
-log "Copying clean fixture workspace into Docker build context"
-cp -a "${pre_dir}/." "${context_dir}/workspace/"
+log "Copying checkpoint workspace into Docker build context"
+cp -a "${selected_repo_dir}/." "${context_dir}/workspace/"
 
 log "Building Linux Concierge binary for ${go_arch}"
 (
@@ -257,19 +282,25 @@ chmod +x "${context_dir}/bin/concierge"
 concierge_sha="$(hash_file "${context_dir}/bin/concierge")"
 dockerfile_sha="$(hash_file "${DOCKERFILE_PATH}")"
 runner_sha="$(hash_file "${SCRIPT_DIR}/qa_fixture_run.sh")"
+resolver_sha="$(hash_file "${CHECKPOINT_RESOLVER_PATH}")"
 image_key="$(compute_image_key \
-  "${fixture_id}" \
-  "${fixture_ref}" \
-  "${python_version}" \
-  "${poetry_version}" \
-  "${DEFAULT_CLAUDE_CODE_VERSION}" \
-  "${concierge_sha}" \
-  "${image_mode}" \
-  "${dockerfile_sha}" \
-  "${runner_sha}"
+  --fixture-id "${fixture_id}" \
+  --checkpoint-key "${checkpoint_key}" \
+  --requested-step "${step}" \
+  --source-kind "${selected_source_kind}" \
+  --source-id "${selected_source_id}" \
+  --fixture-ref "${fixture_ref}" \
+  --python-version "${python_version}" \
+  --poetry-version "${poetry_version}" \
+  --claude-version "${DEFAULT_CLAUDE_CODE_VERSION}" \
+  --concierge-sha "${concierge_sha}" \
+  --build-mode "${selected_build_mode}" \
+  --dockerfile-sha "${dockerfile_sha}" \
+  --runner-sha "${runner_sha}" \
+  --resolver-sha "${resolver_sha}"
 )"
-image_ref="concierge-qa-${safe_fixture_id}:${image_mode}-py${python_version//./-}-${image_key}"
-build_target="fixture-${image_mode}"
+image_ref="concierge-qa-${safe_fixture_id}:${selected_build_mode}-py${python_version//./-}-${image_key}"
+build_target="fixture-${selected_build_mode}"
 
 if docker image inspect "${image_ref}" >/dev/null 2>&1; then
   log "Reusing cached Docker image ${image_ref}"
@@ -295,6 +326,8 @@ docker run -d \
   "${image_ref}" >/dev/null
 
 log "Starting QA loop for fixture '${fixture_id}'"
+log "Requested step: ${step}"
+log "Resolved checkpoint: ${checkpoint_key} -> ${selected_source_kind}:${selected_source_id}"
 log "Fixture image: ${image_ref}"
 log "Target container: ${container_name}"
 log "Post fixture: ${post_dir}"

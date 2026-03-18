@@ -22,6 +22,7 @@ func TestScopePolicyForPreprocessUsesOnlyPreprocessSection(t *testing.T) {
 	assertContainsSubstring(t, policy.ForbiddenAreas, "global site-packages")
 	assertContainsSubstring(t, policy.StopAndAskTriggers, "placeholder sample IDs")
 	assertContainsSubstring(t, policy.StopAndAskTriggers, "hard-code installed package defaults")
+	assertContainsSubstring(t, policy.StopAndAskTriggers, "/datasets")
 	assertContainsSubstring(t, policy.StopAndAskTriggers, "pip install")
 	assertContainsSubstring(t, policy.StopAndAskTriggers, "repo-supported dataset resolver")
 	assertContainsSubstring(t, policy.StopAndAskTriggers, "generic repo assets")

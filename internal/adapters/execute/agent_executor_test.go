@@ -477,6 +477,7 @@ func TestPreprocessAuthoringTaskPrefersRepositoryEvidenceOverInventedPaths(t *te
 	expected := []string{
 		"Prefer existing repository dataset configuration, helper code, and project metadata before inventing new dataset roots or sample conventions.",
 		"Prefer repo-local dataset and Tensorleap integration configuration over hand-coded installed-package defaults or home-directory settings.",
+		"If repository conventions point to a sibling datasets directory, verify that the resolved sibling path is writable in the current runtime; do not translate a repo mounted at /workspace into a new filesystem-root directory such as /datasets.",
 		"If the repository already declares train/validation subsets in a dataset manifest, reuse those declared subsets instead of inventing a new split from arbitrary images.",
 		"If the repository includes explicit dataset manifests, loader code, or Tensorleap integration examples, treat those as stronger evidence than arbitrary image files.",
 		"If the repository exposes a supported dataset resolver or downloader, prefer that helper over hard-coded cache roots or generic image scans.",
@@ -484,6 +485,7 @@ func TestPreprocessAuthoringTaskPrefersRepositoryEvidenceOverInventedPaths(t *te
 		"If a repo helper import fails because project dependencies are missing, do not reverse-engineer internal cache constants or framework settings paths; use explicit manifest train/val/download evidence or stop with the blocker.",
 		"Do not run pip install, poetry add, or other environment mutation commands while discovering dataset paths for preprocess; if discovery depends on missing packages, stop and surface that blocker.",
 		"Do not set deprecated `PreprocessResponse.length`; provide real `sample_ids` for each subset and let Tensorleap derive lengths from them.",
+		"Do not create or write to top-level absolute directories outside the repo/workspace just to satisfy preprocess data access; if the repo-supported path is unavailable in the current runtime, stop and surface that blocker or use a repo-local writable fallback supported by repository evidence.",
 		"Do not hard-code home-directory dataset defaults, installed-package cache roots, or new environment-variable paths unless repository evidence requires them and the repository itself uses them.",
 		"Do not fabricate placeholder sample IDs, dummy image paths, or guessed absolute dataset locations just to satisfy subset requirements.",
 		"Do not repurpose generic repository assets, screenshots, docs media, or example images as train/validation data unless repository evidence explicitly identifies them as the real dataset.",

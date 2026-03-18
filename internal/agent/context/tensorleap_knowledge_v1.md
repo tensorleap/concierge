@@ -34,6 +34,7 @@ exclude:
 - Smoke-test repository dataset helpers before depending on them; if the helper import fails in the current repo state, fall back to the manifest's explicit download/path/train/val information or stop with the blocker.
 - If a repo helper import fails because project dependencies are missing, do not reverse-engineer internal cache constants or framework settings paths; use explicit manifest train/val/download evidence or stop with the blocker.
 - If Repository Facts provide a prepared runtime interpreter, use that interpreter for Python repo checks instead of bare `python`/`python3`; treat failures under the wrong interpreter as environment mismatch evidence rather than dataset-path evidence.
+- If a repository-specific sibling-datasets convention would resolve to a top-level filesystem path in the current runtime, such as repo root `/workspace` producing `/datasets`, do not create that path unless the runtime explicitly provides it as writable; prefer a repo-local writable path backed by repository evidence or stop with the blocker.
 - Do not set deprecated `PreprocessResponse.length`; provide real `sample_ids` and `state` values for each subset instead.
 - Framework-managed dataset cache paths are acceptable only when reached through repository-supported loaders or manifest resolution; do not invent or hard-code them yourself.
 - Generic repo assets, screenshots, docs media, and example images are not valid dataset evidence unless the repository explicitly identifies them as the real train/validation data.

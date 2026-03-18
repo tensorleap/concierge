@@ -80,6 +80,7 @@ func PolicyForStep(step core.EnsureStepID, snapshot core.WorkspaceSnapshot, stat
 				"The fix requires changing input encoders, ground-truth encoders, or integration-test wiring",
 				"Repository evidence does not expose real train/validation identifiers and the only remaining option is guessed dataset paths or placeholder sample IDs",
 				"The fix would hard-code installed package defaults, home-directory dataset paths, or new environment variables not already required by the repository instead of using a repo-supported dataset resolver",
+				"The only remaining implementation path requires creating or writing to top-level absolute directories outside the repo/workspace, such as /datasets",
 				"Making repo helper imports work would require pip install, poetry add, or other environment/package mutation just to inspect dataset logic",
 				"The only concrete files available are generic repo assets, screenshots, or example images rather than an explicit dataset source",
 				"The only remaining inspection path is probing global site-packages or system directories instead of the prepared repository runtime and manifest evidence",

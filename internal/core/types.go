@@ -208,6 +208,7 @@ type ModelMaterializationResult struct {
 type ModelAcquisitionArtifacts struct {
 	ReadyArtifacts    []ModelCandidate                `json:"readyArtifacts,omitempty"`
 	PassiveLeads      []ModelCandidate                `json:"passiveLeads,omitempty"`
+	AcquisitionLeads  []string                        `json:"acquisitionLeads,omitempty"`
 	AgentPromptBundle *ModelAcquisitionPromptBundle   `json:"agentPromptBundle,omitempty"`
 	AgentRawOutput    *ModelAcquisitionAgentRawOutput `json:"agentRawOutput,omitempty"`
 	NormalizedPlan    *ModelAcquisitionPlan           `json:"normalizedPlan,omitempty"`
@@ -420,6 +421,9 @@ type AgentRepoContext struct {
 	RepoRoot              string   `json:"repoRoot"`
 	EntryFile             string   `json:"entryFile,omitempty"`
 	LeapYAMLBoundary      string   `json:"leapYamlBoundary,omitempty"`
+	RuntimeKind           string   `json:"runtimeKind,omitempty"`
+	RuntimeInterpreter    string   `json:"runtimeInterpreter,omitempty"`
+	RuntimeStatus         string   `json:"runtimeStatus,omitempty"`
 	SelectedModelPath     string   `json:"selectedModelPath,omitempty"`
 	ModelCandidates       []string `json:"modelCandidates,omitempty"`
 	ReadyModelArtifacts   []string `json:"readyModelArtifacts,omitempty"`

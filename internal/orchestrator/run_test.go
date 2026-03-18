@@ -19,6 +19,7 @@ type runHarness struct {
 	cancelAfterReports int
 	cancel             context.CancelFunc
 	executionEvidence  []core.EvidenceItem
+	validation         core.ValidationResult
 }
 
 func newRunHarness(stepSequence []core.EnsureStepID) *runHarness {
@@ -81,7 +82,13 @@ func (h *runHarness) Validate(ctx context.Context, snapshot core.WorkspaceSnapsh
 	_ = ctx
 	_ = snapshot
 	_ = result
-	return core.ValidationResult{Passed: true}, nil
+	if len(h.validation.Issues) == 0 {
+		if !h.validation.Passed {
+			return core.ValidationResult{Passed: true}, nil
+		}
+		return h.validation, nil
+	}
+	return h.validation, nil
 }
 
 func (h *runHarness) Report(ctx context.Context, report core.IterationReport) error {
@@ -234,6 +241,33 @@ func TestEngineRunStopsWhenManualUserActionIsRequired(t *testing.T) {
 	}
 }
 
+func TestEngineRunStopsWhenValidationRequiresManualUserAction(t *testing.T) {
+	harness := newRunHarness([]core.EnsureStepID{core.EnsureStepPreprocessContract, core.EnsureStepComplete})
+	harness.validation = core.ValidationResult{
+		Passed: false,
+		Issues: []core.Issue{
+			{
+				Code:     core.IssueCodeNativeSystemDependencyMissing,
+				Message:  "the current Python environment is missing native system library `libGL.so.1`, so importing integration dependencies failed during Tensorleap parser validation",
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopeEnvironment,
+			},
+		},
+	}
+	engine := newRunTestEngine(t, harness)
+
+	result, err := engine.Run(context.Background(), core.SnapshotRequest{}, RunOptions{MaxIterations: 5})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if result.StopReason != RunStopReasonNeedsUserAction {
+		t.Fatalf("expected stop reason %q, got %q", RunStopReasonNeedsUserAction, result.StopReason)
+	}
+	if len(result.Reports) != 1 {
+		t.Fatalf("expected one report, got %d", len(result.Reports))
+	}
+}
+
 type carryoverValidationHarness struct {
 	iteration   int
 	statuses    []core.IntegrationStatus
@@ -357,6 +391,63 @@ func TestEngineRunCarriesBlockingValidationIssuesIntoNextPlanningRound(t *testin
 	}
 	if got := result.Reports[1].Step.ID; got != core.EnsureStepPreprocessContract {
 		t.Fatalf("expected second step to stay on %q after blocking validation failure, got %q", core.EnsureStepPreprocessContract, got)
+	}
+}
+
+func TestEngineRunSeedsFirstPlanningRoundWithInitialBlockingIssues(t *testing.T) {
+	harness := &carryoverValidationHarness{
+		statuses: []core.IntegrationStatus{
+			{
+				Issues: []core.Issue{{
+					Code:     core.IssueCodeLoadModelDecoratorMissing,
+					Message:  "no @tensorleap_load_model function found in leap_integration.py",
+					Severity: core.SeverityError,
+					Scope:    core.IssueScopeModel,
+				}},
+			},
+		},
+		validations: []core.ValidationResult{{Passed: true}},
+	}
+
+	engine, err := NewEngine(Dependencies{
+		Snapshotter: harness,
+		Inspector:   harness,
+		Planner:     planner.NewDeterministicPlanner(),
+		Executor:    harness,
+		Validator:   harness,
+		Reporter:    harness,
+	})
+	if err != nil {
+		t.Fatalf("NewEngine failed: %v", err)
+	}
+
+	initialResolved := 0
+	result, err := engine.Run(context.Background(), core.SnapshotRequest{RepoRoot: "/repo"}, RunOptions{
+		MaxIterations: 1,
+		InitialBlockingIssues: func(snapshot core.WorkspaceSnapshot) []core.Issue {
+			initialResolved++
+			if snapshot.ID != "snapshot-1" {
+				t.Fatalf("expected first snapshot to seed initial blocking issues, got %q", snapshot.ID)
+			}
+			return []core.Issue{{
+				Code:     core.IssueCodePreprocessExecutionFailed,
+				Message:  "preprocess failed during Tensorleap parser validation: length is deprecated",
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopePreprocess,
+			}}
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if initialResolved != 1 {
+		t.Fatalf("expected initial blocking issues resolver to run once, got %d", initialResolved)
+	}
+	if len(result.Reports) != 1 {
+		t.Fatalf("expected one report, got %d", len(result.Reports))
+	}
+	if got := result.Reports[0].Step.ID; got != core.EnsureStepPreprocessContract {
+		t.Fatalf("expected first step %q after seeding initial blockers, got %q", core.EnsureStepPreprocessContract, got)
 	}
 }
 

@@ -18,6 +18,9 @@ Operating responsibilities:
 - Follow Tensorleap contract rules exactly as provided in the task prompt.
 - If repository state is ambiguous or objective conflicts appear, stop and state the blocker clearly.
 - Never run git commit/push/rebase/reset operations.
+- Never install or upgrade packages, run pip/poetry environment mutation commands, or otherwise change the project environment from an agent task; if inspection would require that, stop and report the blocker.
+- If Repository Facts provide a prepared runtime interpreter, use that interpreter for Python repo checks instead of bare python/python3.
+- Do not probe global site-packages or system directories to compensate for interpreter mismatch; stay within the repository and its prepared runtime.
 - Never access files outside the repository root unless explicitly instructed.
 `
 
@@ -51,6 +54,9 @@ func BuildClaudeTaskPrompt(task AgentTask) string {
 	)))
 	b.WriteString(fmt.Sprintf("- Entry file: %s\n", nonEmptyOrFallback(repoContextValue(task, "entry_file"), "<unknown>")))
 	b.WriteString(fmt.Sprintf("- leap.yaml boundary: %s\n", nonEmptyOrFallback(repoContextValue(task, "leap_yaml_boundary"), "<unknown>")))
+	b.WriteString(fmt.Sprintf("- Prepared runtime: %s\n", nonEmptyOrFallback(repoContextValue(task, "runtime_kind"), "<none>")))
+	b.WriteString(fmt.Sprintf("- Runtime interpreter: %s\n", nonEmptyOrFallback(repoContextValue(task, "runtime_interpreter"), "<none>")))
+	b.WriteString(fmt.Sprintf("- Runtime status: %s\n", nonEmptyOrFallback(repoContextValue(task, "runtime_status"), "<none>")))
 	b.WriteString(fmt.Sprintf("- Selected model path: %s\n", nonEmptyOrFallback(repoContextValue(task, "selected_model_path"), "<none>")))
 	b.WriteString(fmt.Sprintf("- Model candidates: %s\n", renderInlineList(repoContextValues(task, "model_candidates"))))
 	b.WriteString(fmt.Sprintf("- Ready model artifacts: %s\n", renderInlineList(repoContextValues(task, "ready_model_artifacts"))))
@@ -124,6 +130,12 @@ func repoContextValue(task AgentTask, key string) string {
 		return task.RepoContext.EntryFile
 	case "leap_yaml_boundary":
 		return task.RepoContext.LeapYAMLBoundary
+	case "runtime_kind":
+		return task.RepoContext.RuntimeKind
+	case "runtime_interpreter":
+		return task.RepoContext.RuntimeInterpreter
+	case "runtime_status":
+		return task.RepoContext.RuntimeStatus
 	case "selected_model_path":
 		return task.RepoContext.SelectedModelPath
 	default:

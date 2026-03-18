@@ -37,8 +37,15 @@ func TestSaveStateAtomicRoundTrip(t *testing.T) {
 	fixedRunAt := time.Date(2026, 2, 26, 8, 0, 0, 0, time.UTC)
 
 	input := RunState{
-		Version:                 CurrentVersion,
-		SelectedProjectRoot:     root,
+		Version:             CurrentVersion,
+		SelectedProjectRoot: root,
+		LastBlockingIssues: []core.Issue{{
+			Code:     core.IssueCodePreprocessExecutionFailed,
+			Message:  "preprocess failed during Tensorleap parser validation: deprecated length",
+			Severity: core.SeverityError,
+			Scope:    core.IssueScopePreprocess,
+			Location: &core.IssueLocation{Path: "datasetclasses.py", Line: 60},
+		}},
 		LastSnapshotID:          "snapshot-1",
 		LastHead:                "head-1",
 		LastWorktreeFingerprint: "fp-1",
@@ -145,5 +152,97 @@ func TestStatePersistsAcrossMultipleIterations(t *testing.T) {
 	}
 	if !reflect.DeepEqual(loadedAgain.InvalidationReasons, []string{InvalidationReasonGitHeadChanged, InvalidationReasonWorktreeFingerprintDiff}) {
 		t.Fatalf("expected invalidation reasons to persist, got %v", loadedAgain.InvalidationReasons)
+	}
+}
+
+func TestUpdateForIterationPersistsOnlyBlockingValidationIssues(t *testing.T) {
+	root := t.TempDir()
+	snapshot := core.WorkspaceSnapshot{
+		ID:                  "snapshot-1",
+		Repository:          core.RepositoryState{Head: "head-1"},
+		WorktreeFingerprint: "fp-1",
+	}
+	report := core.IterationReport{
+		GeneratedAt: time.Date(2026, 3, 17, 20, 0, 0, 0, time.UTC),
+		Step:        core.EnsureStep{ID: core.EnsureStepPreprocessContract},
+		Validation: core.ValidationResult{
+			Passed: false,
+			Issues: []core.Issue{
+				{
+					Code:     core.IssueCodePreprocessExecutionFailed,
+					Message:  "blocking preprocess failure",
+					Severity: core.SeverityError,
+					Scope:    core.IssueScopePreprocess,
+				},
+				{
+					Code:     core.IssueCodeUnknown,
+					Message:  "non-blocking note",
+					Severity: core.SeverityInfo,
+					Scope:    core.IssueScopeValidation,
+				},
+			},
+		},
+	}
+
+	updated := UpdateForIteration(DefaultRunState(root), snapshot, report, root, "", nil, nil, nil)
+	if len(updated.LastBlockingIssues) != 1 {
+		t.Fatalf("expected one persisted blocking issue, got %+v", updated.LastBlockingIssues)
+	}
+	if updated.LastBlockingIssues[0].Message != "blocking preprocess failure" {
+		t.Fatalf("unexpected persisted issue %+v", updated.LastBlockingIssues[0])
+	}
+}
+
+func TestFreshBlockingValidationIssuesReturnsCloneWhenSnapshotMatches(t *testing.T) {
+	previous := RunState{
+		SelectedProjectRoot:     "/repo",
+		LastHead:                "head-1",
+		LastWorktreeFingerprint: "fp-1",
+		LastBlockingIssues: []core.Issue{{
+			Code:     core.IssueCodePreprocessExecutionFailed,
+			Message:  "blocking preprocess failure",
+			Severity: core.SeverityError,
+			Scope:    core.IssueScopePreprocess,
+			Location: &core.IssueLocation{Path: "leap_integration.py", Line: 42},
+		}},
+	}
+	snapshot := core.WorkspaceSnapshot{
+		Repository:          core.RepositoryState{Head: "head-1"},
+		WorktreeFingerprint: "fp-1",
+	}
+
+	issues := FreshBlockingValidationIssues(previous, snapshot, "/repo")
+	if len(issues) != 1 {
+		t.Fatalf("expected one fresh blocking issue, got %+v", issues)
+	}
+	if issues[0].Message != "blocking preprocess failure" {
+		t.Fatalf("unexpected issue %+v", issues[0])
+	}
+	issues[0].Message = "mutated copy"
+	if previous.LastBlockingIssues[0].Message != "blocking preprocess failure" {
+		t.Fatalf("expected persisted issues to stay immutable, got %+v", previous.LastBlockingIssues)
+	}
+}
+
+func TestFreshBlockingValidationIssuesDropsPersistedIssuesWhenWorkspaceDrifts(t *testing.T) {
+	previous := RunState{
+		SelectedProjectRoot:     "/repo",
+		LastHead:                "head-1",
+		LastWorktreeFingerprint: "fp-1",
+		LastBlockingIssues: []core.Issue{{
+			Code:     core.IssueCodePreprocessExecutionFailed,
+			Message:  "blocking preprocess failure",
+			Severity: core.SeverityError,
+			Scope:    core.IssueScopePreprocess,
+		}},
+	}
+	snapshot := core.WorkspaceSnapshot{
+		Repository:          core.RepositoryState{Head: "head-2"},
+		WorktreeFingerprint: "fp-2",
+	}
+
+	issues := FreshBlockingValidationIssues(previous, snapshot, "/repo")
+	if len(issues) != 0 {
+		t.Fatalf("expected persisted blocking issues to be discarded after drift, got %+v", issues)
 	}
 }

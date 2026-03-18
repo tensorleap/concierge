@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/tensorleap/concierge/internal/core"
+	"github.com/tensorleap/concierge/internal/observe"
 )
 
 // StubExecutor is a non-mutating executor used in baseline pipeline wiring.
@@ -63,6 +64,19 @@ func NewDispatcherExecutorWithAgent(agentExecutor *AgentExecutor) *DispatcherExe
 		filesystem: NewFilesystemExecutor(),
 		agent:      agentExecutor,
 		fallback:   NewStubExecutor(),
+	}
+}
+
+// SetObserver configures shared live progress reporting for supported executors.
+func (d *DispatcherExecutor) SetObserver(sink observe.Sink) {
+	if d == nil {
+		return
+	}
+	if d.poetry != nil {
+		d.poetry.SetObserver(sink)
+	}
+	if d.agent != nil {
+		d.agent.SetObserver(sink)
 	}
 }
 

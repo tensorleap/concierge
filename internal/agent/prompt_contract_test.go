@@ -16,13 +16,16 @@ func TestBuildClaudeTaskPromptIncludesAllRequiredSections(t *testing.T) {
 			StopAndAskTriggers: []string{"Missing model path evidence"},
 		},
 		RepoContext: &core.AgentRepoContext{
-			RepoRoot:           "/tmp/repo",
-			EntryFile:          "leap_integration.py",
-			LeapYAMLBoundary:   "leap.yaml present",
-			SelectedModelPath:  "models/model.onnx",
-			ModelCandidates:    []string{"models/model.onnx"},
-			DecoratorInventory: []string{"preprocess:build_preprocess"},
-			BlockingIssues:     []string{"preprocess_function_missing"},
+			RepoRoot:              "/tmp/repo",
+			EntryFile:             "leap_integration.py",
+			LeapYAMLBoundary:      "leap.yaml present",
+			RuntimeKind:           "poetry",
+			RuntimeInterpreter:    "/tmp/repo/.venv/bin/python",
+			RuntimeStatus:         "dependencies ready; code_loader import succeeded (v1.0.166)",
+			SelectedModelPath:     "models/model.onnx",
+			ModelCandidates:       []string{"models/model.onnx"},
+			DecoratorInventory:    []string{"preprocess:build_preprocess"},
+			BlockingIssues:        []string{"preprocess_function_missing"},
 		},
 		DomainKnowledge: &AgentDomainKnowledgePack{
 			Version:    "tlkp-v1",
@@ -58,6 +61,15 @@ func TestBuildClaudeTaskPromptIncludesAllRequiredSections(t *testing.T) {
 
 	if !strings.Contains(prompt, "Knowledge pack version: tlkp-v1") {
 		t.Fatalf("expected knowledge pack version metadata in prompt, got: %q", prompt)
+	}
+	if !strings.Contains(prompt, "Prepared runtime: poetry") {
+		t.Fatalf("expected runtime kind metadata in prompt, got: %q", prompt)
+	}
+	if !strings.Contains(prompt, "Runtime interpreter: /tmp/repo/.venv/bin/python") {
+		t.Fatalf("expected runtime interpreter metadata in prompt, got: %q", prompt)
+	}
+	if !strings.Contains(prompt, "Runtime status: dependencies ready; code_loader import succeeded (v1.0.166)") {
+		t.Fatalf("expected runtime status metadata in prompt, got: %q", prompt)
 	}
 	if !strings.Contains(prompt, "[preprocess_contract]") || !strings.Contains(prompt, "[load_model_contract]") {
 		t.Fatalf("expected requested Tensorleap rule sections in prompt, got: %q", prompt)

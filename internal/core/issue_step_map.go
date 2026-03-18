@@ -12,16 +12,17 @@ var preferredEnsureStepByIssueCode = map[IssueCode]EnsureStepID{
 	IssueCodeIntegrationBranchMissing: EnsureStepRepositoryContext,
 
 	// Runtime dependencies.
-	IssueCodePoetryNotFound:              EnsureStepPythonRuntime,
-	IssueCodeRuntimeProjectUnsupported:   EnsureStepPythonRuntime,
-	IssueCodePoetryEnvironmentUnresolved: EnsureStepPythonRuntime,
-	IssueCodeRuntimeProfileDrifted:       EnsureStepPythonRuntime,
-	IssueCodePoetryCheckFailed:           EnsureStepPythonRuntime,
-	IssueCodeCodeLoaderMissing:           EnsureStepPythonRuntime,
-	IssueCodeCodeLoaderLegacy:            EnsureStepPythonRuntime,
-	IssueCodePythonVersionUnsupported:    EnsureStepPythonRuntime,
-	IssueCodeRequirementsMissing:         EnsureStepPythonRuntime,
-	IssueCodeRequirementsParseFailed:     EnsureStepPythonRuntime,
+	IssueCodePoetryNotFound:                EnsureStepPythonRuntime,
+	IssueCodeRuntimeProjectUnsupported:     EnsureStepPythonRuntime,
+	IssueCodePoetryEnvironmentUnresolved:   EnsureStepPythonRuntime,
+	IssueCodeRuntimeProfileDrifted:         EnsureStepPythonRuntime,
+	IssueCodePoetryCheckFailed:             EnsureStepPythonRuntime,
+	IssueCodeCodeLoaderMissing:             EnsureStepPythonRuntime,
+	IssueCodeCodeLoaderLegacy:              EnsureStepPythonRuntime,
+	IssueCodeNativeSystemDependencyMissing: EnsureStepPythonRuntime,
+	IssueCodePythonVersionUnsupported:      EnsureStepPythonRuntime,
+	IssueCodeRequirementsMissing:           EnsureStepPythonRuntime,
+	IssueCodeRequirementsParseFailed:       EnsureStepPythonRuntime,
 
 	// Tensorleap CLI, auth, server, and secrets.
 	IssueCodeLeapCLINotFound:                 EnsureStepLeapCLIAuth,

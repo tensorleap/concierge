@@ -434,6 +434,107 @@ func TestPreprocessAuthoringTaskIncludesTrainValidationConstraint(t *testing.T) 
 	}
 }
 
+func TestPreprocessAuthoringTaskPrefersRepositoryEvidenceOverInventedPaths(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeTextFixtureFile(t, filepath.Join(repoRoot, "ultralytics", "cfg", "datasets", "coco8.yaml"), strings.Join([]string{
+		"path: coco8",
+		"train: images/train",
+		"val: images/val",
+		"download: https://example.invalid/coco8.zip",
+		"",
+	}, "\n"))
+	writeTextFixtureFile(t, filepath.Join(repoRoot, "ultralytics", "data", "utils.py"), strings.Join([]string{
+		"def check_det_dataset(dataset, autodownload=True):",
+		"    return dataset",
+		"",
+	}, "\n"))
+	runner := &fakeAgentRunner{
+		result: agent.AgentResult{
+			Applied: true,
+			Summary: "preprocess contract fixed",
+		},
+	}
+	executor := NewAgentExecutor(runner)
+	step, ok := core.EnsureStepByID(core.EnsureStepPreprocessContract)
+	if !ok {
+		t.Fatalf("expected step %q to exist", core.EnsureStepPreprocessContract)
+	}
+
+	_, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		ID: "snapshot-preprocess-repo-evidence",
+		FileHashes: map[string]string{
+			"ultralytics/tensorleap_folder/README.md":           "hash-readme",
+			"ultralytics/tensorleap_folder/pose/leap_binder.py": "hash-binder",
+			"ultralytics/cfg/default.yaml":                      "hash-default",
+			"ultralytics/cfg/datasets/coco8.yaml":               "hash-coco8",
+		},
+		Repository: core.RepositoryState{Root: repoRoot},
+	}, step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	expected := []string{
+		"Prefer existing repository dataset configuration, helper code, and project metadata before inventing new dataset roots or sample conventions.",
+		"Prefer repo-local dataset and Tensorleap integration configuration over hand-coded installed-package defaults or home-directory settings.",
+		"If the repository already declares train/validation subsets in a dataset manifest, reuse those declared subsets instead of inventing a new split from arbitrary images.",
+		"If the repository includes explicit dataset manifests, loader code, or Tensorleap integration examples, treat those as stronger evidence than arbitrary image files.",
+		"If the repository exposes a supported dataset resolver or downloader, prefer that helper over hard-coded cache roots or generic image scans.",
+		"Smoke-test any repository dataset resolver before wiring it into preprocess; if the helper import fails in the current repo state, fall back to manifest-driven resolution/download instead of keeping a broken import.",
+		"If a repo helper import fails because project dependencies are missing, do not reverse-engineer internal cache constants or framework settings paths; use explicit manifest train/val/download evidence or stop with the blocker.",
+		"Do not run pip install, poetry add, or other environment mutation commands while discovering dataset paths for preprocess; if discovery depends on missing packages, stop and surface that blocker.",
+		"Do not set deprecated `PreprocessResponse.length`; provide real `sample_ids` for each subset and let Tensorleap derive lengths from them.",
+		"Do not hard-code home-directory dataset defaults, installed-package cache roots, or new environment-variable paths unless repository evidence requires them and the repository itself uses them.",
+		"Do not fabricate placeholder sample IDs, dummy image paths, or guessed absolute dataset locations just to satisfy subset requirements.",
+		"Do not repurpose generic repository assets, screenshots, docs media, or example images as train/validation data unless repository evidence explicitly identifies them as the real dataset.",
+		"If repository evidence does not expose real train/validation identifiers and no repo-supported acquisition path exists, stop and surface the missing data requirement instead of guessing.",
+	}
+	for _, want := range expected {
+		found := false
+		for _, constraint := range runner.lastTask.Constraints {
+			if constraint == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected constraint %q in %+v", want, runner.lastTask.Constraints)
+		}
+	}
+
+	foundEvidencePaths := false
+	for _, constraint := range runner.lastTask.Constraints {
+		if strings.Contains(constraint, "ultralytics/tensorleap_folder/README.md") &&
+			strings.Contains(constraint, "ultralytics/tensorleap_folder/pose/leap_binder.py") &&
+			strings.Contains(constraint, "ultralytics/cfg/default.yaml") {
+			foundEvidencePaths = true
+			break
+		}
+	}
+	if !foundEvidencePaths {
+		t.Fatalf("expected preprocess task to include repository evidence paths, got %+v", runner.lastTask.Constraints)
+	}
+
+	foundManifestHint := false
+	foundResolverHint := false
+	for _, constraint := range runner.lastTask.Constraints {
+		if strings.Contains(constraint, "ultralytics/cfg/datasets/coco8.yaml") &&
+			strings.Contains(constraint, "train=images/train") &&
+			strings.Contains(constraint, "val=images/val") {
+			foundManifestHint = true
+		}
+		if strings.Contains(constraint, "ultralytics/data/utils.py:check_det_dataset") {
+			foundResolverHint = true
+		}
+	}
+	if !foundManifestHint {
+		t.Fatalf("expected preprocess task to include dataset manifest hint, got %+v", runner.lastTask.Constraints)
+	}
+	if !foundResolverHint {
+		t.Fatalf("expected preprocess task to include dataset resolver hint, got %+v", runner.lastTask.Constraints)
+	}
+}
+
 func TestPreprocessAuthoringEvidenceCapturesTargetSymbols(t *testing.T) {
 	repoRoot := t.TempDir()
 	binderPath := filepath.Join(repoRoot, "leap_integration.py")
@@ -460,6 +561,46 @@ func TestPreprocessAuthoringEvidenceCapturesTargetSymbols(t *testing.T) {
 	}
 
 	assertEvidence(t, result.Evidence, "authoring.recommendation.preprocess.target_symbols", "preprocess_data")
+}
+
+func TestPreprocessAgentRepoContextIncludesBlockingIssues(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeTextFixtureFile(t, filepath.Join(repoRoot, "leap.yaml"), "entryFile: leap_integration.py\n")
+	writeTextFixtureFile(t, filepath.Join(repoRoot, "leap_integration.py"), "\"\"\"baseline\"\"\"\n")
+
+	runner := &fakeAgentRunner{
+		result: agent.AgentResult{
+			Applied: true,
+			Summary: "preprocess contract fixed",
+		},
+	}
+	executor := NewAgentExecutor(runner)
+	step, ok := core.EnsureStepByID(core.EnsureStepPreprocessContract)
+	if !ok {
+		t.Fatalf("expected step %q to exist", core.EnsureStepPreprocessContract)
+	}
+
+	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		ID:         "snapshot-preprocess-blockers",
+		Repository: core.RepositoryState{Root: repoRoot},
+	}, step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	found := false
+	for _, item := range result.Evidence {
+		if item.Name != "agent.repo_context.blocking_issues" {
+			continue
+		}
+		if strings.Contains(item.Value, "no @tensorleap_preprocess function found") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected preprocess blocking issue in repo context evidence, got %+v", result.Evidence)
+	}
 }
 
 func TestInputEncoderAuthoringTaskCarriesSymbolList(t *testing.T) {
@@ -663,6 +804,16 @@ func writePreprocessFixtureFile(t *testing.T, path, functionName string) {
 def ` + functionName + `():
     return []`
 	writeTestFile(t, path)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile failed for %q: %v", path, err)
+	}
+}
+
+func writeTextFixtureFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed for %q: %v", path, err)
+	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile failed for %q: %v", path, err)
 	}

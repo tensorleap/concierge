@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tensorleap/concierge/internal/core"
 )
@@ -25,6 +26,69 @@ func TestHighlightsRendererDeduplicatesRepeatedLines(t *testing.T) {
 	}
 	if strings.Count(output, "Working on: leap.yaml is present and valid") != 1 {
 		t.Fatalf("expected deduped step line, got %q", output)
+	}
+}
+
+func TestHighlightsRendererShowsRateLimitedHeartbeatAfterLongSilence(t *testing.T) {
+	var sink strings.Builder
+	renderer := NewHighlightsRenderer(&sink, RenderOptions{NoColor: true})
+	startedAt := time.Date(2026, time.March, 17, 12, 0, 0, 0, time.UTC)
+
+	renderer.Emit(Event{Kind: EventIterationStarted, Iteration: 1, Time: startedAt})
+	renderer.Emit(Event{Kind: EventAgentStarted, Message: "Claude started", Time: startedAt})
+	renderer.Emit(Event{
+		Kind:    EventAgentTool,
+		Message: "Editing /workspace/leap_integration.py",
+		Time:    startedAt.Add(1 * time.Second),
+	})
+	renderer.Emit(Event{
+		Kind:    EventAgentHeartbeat,
+		Message: "Editing /workspace/leap_integration.py",
+		Time:    startedAt.Add(10 * time.Second),
+	})
+	renderer.Emit(Event{
+		Kind:    EventAgentHeartbeat,
+		Message: "Editing /workspace/leap_integration.py",
+		Time:    startedAt.Add(18 * time.Second),
+	})
+
+	output := sink.String()
+	if !strings.Contains(output, "Claude still working: Editing /workspace/leap_integration.py") {
+		t.Fatalf("expected heartbeat line in output, got %q", output)
+	}
+	if strings.Count(output, "Claude still working: Editing /workspace/leap_integration.py") != 1 {
+		t.Fatalf("expected a single rate-limited heartbeat line, got %q", output)
+	}
+}
+
+func TestHighlightsRendererShowsRateLimitedExecutorHeartbeatAfterLongSilence(t *testing.T) {
+	var sink strings.Builder
+	renderer := NewHighlightsRenderer(&sink, RenderOptions{NoColor: true})
+	startedAt := time.Date(2026, time.March, 17, 12, 0, 0, 0, time.UTC)
+
+	renderer.Emit(Event{Kind: EventIterationStarted, Iteration: 1, Time: startedAt})
+	renderer.Emit(Event{
+		Kind:    EventExecutorProgress,
+		Message: "Running poetry install to repair the Poetry environment",
+		Time:    startedAt.Add(1 * time.Second),
+	})
+	renderer.Emit(Event{
+		Kind:    EventExecutorHeartbeat,
+		Message: "Running poetry install to repair the Poetry environment",
+		Time:    startedAt.Add(10 * time.Second),
+	})
+	renderer.Emit(Event{
+		Kind:    EventExecutorHeartbeat,
+		Message: "Running poetry install to repair the Poetry environment",
+		Time:    startedAt.Add(18 * time.Second),
+	})
+
+	output := sink.String()
+	if !strings.Contains(output, "Still working: Running poetry install to repair the Poetry environment") {
+		t.Fatalf("expected executor heartbeat line in output, got %q", output)
+	}
+	if strings.Count(output, "Still working: Running poetry install to repair the Poetry environment") != 1 {
+		t.Fatalf("expected a single rate-limited executor heartbeat line, got %q", output)
 	}
 }
 

@@ -3,9 +3,12 @@ package execute
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/tensorleap/concierge/internal/core"
+	"github.com/tensorleap/concierge/internal/observe"
 )
 
 func TestPoetryDependencyExecutorInstallsWhenCodeLoaderDeclaredButMissingFromEnv(t *testing.T) {
@@ -33,8 +36,8 @@ func TestPoetryDependencyExecutorInstallsWhenCodeLoaderDeclaredButMissingFromEnv
 	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
 		Repository: core.RepositoryState{Root: "/repo"},
 		RuntimeProfile: &core.LocalRuntimeProfile{
-			InterpreterPath:            "/repo/.venv/bin/python",
-			CodeLoaderReady:            false,
+			InterpreterPath:             "/repo/.venv/bin/python",
+			CodeLoaderReady:             false,
 			CodeLoaderDeclaredInProject: true,
 		},
 	}, core.EnsureStep{ID: core.EnsureStepPythonRuntime})
@@ -81,8 +84,8 @@ func TestPoetryDependencyExecutorAddsCodeLoaderWhenProjectDoesNotDeclareIt(t *te
 	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
 		Repository: core.RepositoryState{Root: "/repo"},
 		RuntimeProfile: &core.LocalRuntimeProfile{
-			InterpreterPath:            "/repo/.venv/bin/python",
-			CodeLoaderReady:            false,
+			InterpreterPath:             "/repo/.venv/bin/python",
+			CodeLoaderReady:             false,
 			CodeLoaderDeclaredInProject: false,
 		},
 	}, core.EnsureStep{ID: core.EnsureStepPythonRuntime})
@@ -123,8 +126,8 @@ func TestPoetryDependencyExecutorReturnsErrorWhenCodeLoaderVerificationStillFail
 	_, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
 		Repository: core.RepositoryState{Root: "/repo"},
 		RuntimeProfile: &core.LocalRuntimeProfile{
-			InterpreterPath:            "/repo/.venv/bin/python",
-			CodeLoaderReady:            false,
+			InterpreterPath:             "/repo/.venv/bin/python",
+			CodeLoaderReady:             false,
 			CodeLoaderDeclaredInProject: true,
 		},
 	}, core.EnsureStep{ID: core.EnsureStepPythonRuntime})
@@ -133,6 +136,70 @@ func TestPoetryDependencyExecutorReturnsErrorWhenCodeLoaderVerificationStillFail
 	}
 	if got := err.Error(); !strings.Contains(got, "code_loader import still failed after runtime repair") {
 		t.Fatalf("expected verification failure message, got %v", err)
+	}
+}
+
+func TestPoetryDependencyExecutorEmitsProgressHeartbeatWhilePoetryRuns(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu     sync.Mutex
+		events []observe.Event
+	)
+	executor := &PoetryDependencyExecutor{
+		progressInterval: 10 * time.Millisecond,
+		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
+			_ = ctx
+			_ = dir
+			call := name + " " + strings.Join(args, " ")
+			switch call {
+			case "poetry install":
+				time.Sleep(35 * time.Millisecond)
+				return []byte("Installing dependencies\n"), nil, nil
+			case "/repo/.venv/bin/python -c import code_loader":
+				return nil, nil, nil
+			default:
+				t.Fatalf("unexpected command: %q", call)
+				return nil, nil, nil
+			}
+		},
+	}
+	executor.SetObserver(observe.NewSafeSink(observe.SinkFunc(func(event observe.Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		events = append(events, event)
+	})))
+
+	_, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		Repository: core.RepositoryState{Root: "/repo"},
+		RuntimeProfile: &core.LocalRuntimeProfile{
+			InterpreterPath:             "/repo/.venv/bin/python",
+			CodeLoaderReady:             false,
+			CodeLoaderDeclaredInProject: true,
+		},
+	}, core.EnsureStep{ID: core.EnsureStepPythonRuntime})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	progressSeen := false
+	heartbeatSeen := false
+	for _, event := range events {
+		if event.Kind == observe.EventExecutorProgress && strings.Contains(event.Message, "poetry install") {
+			progressSeen = true
+		}
+		if event.Kind == observe.EventExecutorHeartbeat && strings.Contains(event.Message, "poetry install") {
+			heartbeatSeen = true
+		}
+	}
+	if !progressSeen {
+		t.Fatalf("expected executor progress event, got %+v", events)
+	}
+	if !heartbeatSeen {
+		t.Fatalf("expected executor heartbeat event, got %+v", events)
 	}
 }
 

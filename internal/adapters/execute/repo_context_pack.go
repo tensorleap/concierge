@@ -39,6 +39,9 @@ func BuildAgentRepoContext(
 		RepoRoot:            repoRoot,
 		EntryFile:           normalizeRepoContextPath(resolveEntryFile(snapshot, status)),
 		LeapYAMLBoundary:    leapYAMLBoundarySummary(snapshot),
+		RuntimeKind:         runtimeKindForContext(snapshot.RuntimeProfile),
+		RuntimeInterpreter:  normalizeRepoContextPath(runtimeInterpreterForContext(snapshot.RuntimeProfile)),
+		RuntimeStatus:       runtimeStatusForContext(snapshot.RuntimeProfile),
 		SelectedModelPath:   normalizeRepoContextPath(resolveSelectedModelPath(snapshot, status)),
 		ModelCandidates:     truncateRepoContextValues(modelCandidatesForContext(snapshot, status), maxRepoContextModelCandidates),
 		ReadyModelArtifacts: truncateRepoContextValues(readyModelArtifactsForContext(status), maxRepoContextModelCandidates),
@@ -136,10 +139,11 @@ func modelAcquisitionLeadsForContext(status core.IntegrationStatus) []string {
 	if status.Contracts == nil || status.Contracts.ModelAcquisition == nil {
 		return nil
 	}
-	values := make([]string, 0, len(status.Contracts.ModelAcquisition.PassiveLeads))
+	values := make([]string, 0, len(status.Contracts.ModelAcquisition.PassiveLeads)+len(status.Contracts.ModelAcquisition.AcquisitionLeads))
 	for _, candidate := range status.Contracts.ModelAcquisition.PassiveLeads {
 		values = append(values, candidate.Path)
 	}
+	values = append(values, status.Contracts.ModelAcquisition.AcquisitionLeads...)
 	return uniqueSortedRepoContextValues(values)
 }
 
@@ -292,6 +296,46 @@ func leapYAMLBoundarySummary(snapshot core.WorkspaceSnapshot) string {
 	return fmt.Sprintf("leap.yaml present; tracked boundary files: %s", strings.Join(boundaryPaths, ", "))
 }
 
+func runtimeKindForContext(profile *core.LocalRuntimeProfile) string {
+	if profile == nil {
+		return ""
+	}
+	return strings.TrimSpace(profile.Kind)
+}
+
+func runtimeInterpreterForContext(profile *core.LocalRuntimeProfile) string {
+	if profile == nil {
+		return ""
+	}
+	return strings.TrimSpace(profile.InterpreterPath)
+}
+
+func runtimeStatusForContext(profile *core.LocalRuntimeProfile) string {
+	if profile == nil {
+		return ""
+	}
+
+	parts := make([]string, 0, 3)
+	if profile.DependenciesReady {
+		parts = append(parts, "dependencies ready")
+	} else {
+		parts = append(parts, "dependencies not ready")
+	}
+
+	switch {
+	case profile.CodeLoaderReady || profile.CodeLoader.ProbeSucceeded:
+		status := "code_loader import succeeded"
+		if version := strings.TrimSpace(profile.CodeLoader.Version); version != "" {
+			status = fmt.Sprintf("%s (%s)", status, version)
+		}
+		parts = append(parts, status)
+	case profile.CodeLoaderDeclaredInProject:
+		parts = append(parts, "code_loader import unavailable")
+	}
+
+	return strings.Join(parts, "; ")
+}
+
 func validateRequiredRepoContext(step core.EnsureStepID, context core.AgentRepoContext) error {
 	_ = step
 	_ = context
@@ -380,6 +424,9 @@ func normalizeRepoContextPath(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return ""
+	}
+	if strings.Contains(trimmed, "://") {
+		return trimmed
 	}
 	cleaned := filepath.ToSlash(filepath.Clean(filepath.FromSlash(trimmed)))
 	if cleaned == "." {

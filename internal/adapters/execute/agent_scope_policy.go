@@ -69,12 +69,20 @@ func PolicyForStep(step core.EnsureStepID, snapshot core.WorkspaceSnapshot, stat
 				"Do not modify @tensorleap_input_encoder definitions or registrations",
 				"Do not modify @tensorleap_gt_encoder definitions or registrations",
 				"Do not rewire @tensorleap_integration_test calls in this step",
+				"Do not inspect or depend on .concierge internal state in this step",
+				"Do not install packages or mutate the Poetry/Python environment while discovering dataset paths for this step",
+				"Do not probe global site-packages or system directories to infer dataset paths when repository helpers fail under the wrong interpreter",
 			},
 			RequiredOutcomes: []string{
 				"Implement @tensorleap_preprocess with deterministic train and validation subset responses",
 			},
 			StopAndAskTriggers: []string{
 				"The fix requires changing input encoders, ground-truth encoders, or integration-test wiring",
+				"Repository evidence does not expose real train/validation identifiers and the only remaining option is guessed dataset paths or placeholder sample IDs",
+				"The fix would hard-code installed package defaults, home-directory dataset paths, or new environment variables not already required by the repository instead of using a repo-supported dataset resolver",
+				"Making repo helper imports work would require pip install, poetry add, or other environment/package mutation just to inspect dataset logic",
+				"The only concrete files available are generic repo assets, screenshots, or example images rather than an explicit dataset source",
+				"The only remaining inspection path is probing global site-packages or system directories instead of the prepared repository runtime and manifest evidence",
 			},
 			DomainSections: []string{
 				"preprocess_contract",
@@ -208,8 +216,12 @@ func resolveAgentAllowedFiles(snapshot core.WorkspaceSnapshot, status core.Integ
 	if status.Contracts != nil {
 		add(status.Contracts.EntryFile)
 		add(status.Contracts.ResolvedModelPath)
+		modelCandidates := make([]string, 0, len(status.Contracts.ModelCandidates))
 		for _, candidate := range status.Contracts.ModelCandidates {
-			add(candidate.Path)
+			modelCandidates = append(modelCandidates, candidate.Path)
+		}
+		for _, candidatePath := range truncateCandidatePaths(modelCandidates, "", maxRepoContextModelCandidates) {
+			add(candidatePath)
 		}
 	}
 

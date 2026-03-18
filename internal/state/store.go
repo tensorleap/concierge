@@ -42,6 +42,7 @@ func LoadState(projectRoot string) (RunState, error) {
 	if state.RuntimeProfile != nil {
 		state.RuntimeProfile.Fingerprint.ProjectRoot = normalizeRoot(state.RuntimeProfile.Fingerprint.ProjectRoot)
 	}
+	state.LastBlockingIssues = cloneIssues(state.LastBlockingIssues)
 
 	return state, nil
 }
@@ -66,6 +67,7 @@ func SaveState(projectRoot string, state RunState) error {
 	if toWrite.RuntimeProfile != nil {
 		toWrite.RuntimeProfile.Fingerprint.ProjectRoot = normalizeRoot(toWrite.RuntimeProfile.Fingerprint.ProjectRoot)
 	}
+	toWrite.LastBlockingIssues = cloneIssues(toWrite.LastBlockingIssues)
 	toWrite.InvalidationReasons = append([]string(nil), toWrite.InvalidationReasons...)
 
 	if err := persistence.WriteJSONAtomic(paths.StateFile(), toWrite); err != nil {

@@ -16,10 +16,10 @@ func TestGitManagerRejectsMainBranchCommit(t *testing.T) {
 	runGit(t, repo, "checkout", "-B", "main")
 	writeFile(t, filepath.Join(repo, "tracked.txt"), "changed\n")
 
-	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (bool, error) {
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (ReviewDecision, error) {
 		_ = step
 		_ = review
-		return true, nil
+		return ReviewDecision{KeepChanges: true, Commit: true}, nil
 	})
 
 	_, err := manager.Handle(context.Background(), core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: repo}}, executionResult(core.EnsureStepLeapYAML))
@@ -36,7 +36,7 @@ func TestGitManagerApproveCreatesCommit(t *testing.T) {
 	runGit(t, repo, "checkout", "-B", "feature/test")
 	writeFile(t, filepath.Join(repo, "tracked.txt"), "changed\n")
 
-	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (bool, error) {
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (ReviewDecision, error) {
 		_ = step
 		if strings.TrimSpace(review.Stat) == "" {
 			t.Fatalf("expected non-empty diff summary")
@@ -44,7 +44,7 @@ func TestGitManagerApproveCreatesCommit(t *testing.T) {
 		if strings.TrimSpace(review.Patch) == "" {
 			t.Fatalf("expected non-empty patch output")
 		}
-		return true, nil
+		return ReviewDecision{KeepChanges: true, Commit: true}, nil
 	})
 
 	decision, err := manager.Handle(context.Background(), core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: repo}}, executionResult(core.EnsureStepLeapYAML))
@@ -78,10 +78,10 @@ func TestGitManagerRejectRestoresTree(t *testing.T) {
 	writeFile(t, filepath.Join(repo, "tracked.txt"), "changed\n")
 	writeFile(t, filepath.Join(repo, "new.txt"), "new\n")
 
-	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (bool, error) {
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (ReviewDecision, error) {
 		_ = step
 		_ = review
-		return false, nil
+		return ReviewDecision{}, nil
 	})
 
 	decision, err := manager.Handle(context.Background(), core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: repo}}, executionResult(core.EnsureStepIntegrationScript))
@@ -118,11 +118,11 @@ func TestGitManagerSkipsConciergeOnlyChanges(t *testing.T) {
 	writeFile(t, filepath.Join(repo, ".concierge", "reports", "snapshot.json"), "{}\n")
 
 	approvalCalled := false
-	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (bool, error) {
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (ReviewDecision, error) {
 		_ = step
 		_ = review
 		approvalCalled = true
-		return true, nil
+		return ReviewDecision{KeepChanges: true, Commit: true}, nil
 	})
 
 	decision, err := manager.Handle(context.Background(), core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: repo}}, executionResult(core.EnsureStepIntegrationScript))
@@ -143,7 +143,7 @@ func TestGitManagerCommitExcludesConciergeArtifacts(t *testing.T) {
 	writeFile(t, filepath.Join(repo, "tracked.txt"), "changed\n")
 	writeFile(t, filepath.Join(repo, ".concierge", "reports", "snapshot.json"), "{}\n")
 
-	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (bool, error) {
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (ReviewDecision, error) {
 		_ = step
 		if strings.Contains(review.Stat, ".concierge") {
 			t.Fatalf("expected diff summary to exclude .concierge, got %q", review.Stat)
@@ -156,7 +156,7 @@ func TestGitManagerCommitExcludesConciergeArtifacts(t *testing.T) {
 				t.Fatalf("expected changed files list to exclude .concierge, got %v", review.Files)
 			}
 		}
-		return true, nil
+		return ReviewDecision{KeepChanges: true, Commit: true}, nil
 	})
 
 	decision, err := manager.Handle(context.Background(), core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: repo}}, executionResult(core.EnsureStepLeapYAML))
@@ -189,10 +189,10 @@ func TestGitManagerRejectKeepsConciergeArtifacts(t *testing.T) {
 	conciergeReport := filepath.Join(repo, ".concierge", "reports", "snapshot.json")
 	writeFile(t, conciergeReport, "{}\n")
 
-	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (bool, error) {
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (ReviewDecision, error) {
 		_ = step
 		_ = review
-		return false, nil
+		return ReviewDecision{}, nil
 	})
 
 	decision, err := manager.Handle(context.Background(), core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: repo}}, executionResult(core.EnsureStepIntegrationScript))
@@ -215,6 +215,42 @@ func TestGitManagerRejectKeepsConciergeArtifacts(t *testing.T) {
 	}
 	if string(trackedContents) != "initial\n" {
 		t.Fatalf("expected tracked file to be restored, got %q", string(trackedContents))
+	}
+}
+
+func TestGitManagerKeepsUncommittedChangesForReview(t *testing.T) {
+	repo := initGitRepo(t)
+	runGit(t, repo, "checkout", "-B", "feature/test")
+	writeFile(t, filepath.Join(repo, "tracked.txt"), "changed\n")
+
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (ReviewDecision, error) {
+		_ = step
+		_ = review
+		return ReviewDecision{KeepChanges: true, Commit: false}, nil
+	})
+
+	decision, err := manager.Handle(context.Background(), core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: repo}}, executionResult(core.EnsureStepLeapYAML))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if decision.Commit != nil {
+		t.Fatalf("expected no commit metadata when commit is deferred, got %+v", decision.Commit)
+	}
+	if !decision.FinalResult.Applied {
+		t.Fatalf("expected applied result to remain true, got %+v", decision.FinalResult)
+	}
+	if !hasEvidence(decision.Evidence, "git.commit_pending_review", "true") {
+		t.Fatalf("expected pending-review evidence, got %+v", decision.Evidence)
+	}
+
+	status := runGit(t, repo, "status", "--porcelain")
+	if !strings.Contains(status, "M tracked.txt") {
+		t.Fatalf("expected modified file to remain in working tree, got %q", status)
+	}
+
+	latestMessage := runGit(t, repo, "log", "-1", "--pretty=%s")
+	if latestMessage != "initial" {
+		t.Fatalf("expected no new commit, got latest message %q", latestMessage)
 	}
 }
 
@@ -266,4 +302,13 @@ func writeFile(t *testing.T, path string, contents string) {
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("WriteFile failed for %q: %v", path, err)
 	}
+}
+
+func hasEvidence(items []core.EvidenceItem, name, value string) bool {
+	for _, item := range items {
+		if item.Name == name && item.Value == value {
+			return true
+		}
+	}
+	return false
 }

@@ -103,6 +103,47 @@ func TestContractDiscoveryCapturesIntegrationTestCalls(t *testing.T) {
 	}
 }
 
+func TestContractDiscoveryHandlesMultilineFunctionDefinitions(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
+		"from typing import List",
+		"from code_loader.contract.datasetclasses import PreprocessResponse",
+		"",
+		"@tensorleap_preprocess()",
+		"def preprocess_data(",
+		") -> List[PreprocessResponse]:",
+		"    return []",
+		"",
+		"@tensorleap_integration_test()",
+		"def run_integration(",
+		") -> None:",
+		"    load_model()",
+		"",
+	}, "\n"))
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if status.Contracts == nil {
+		t.Fatalf("expected discovered contracts, got nil")
+	}
+	if !reflect.DeepEqual(status.Contracts.PreprocessFunctions, []string{"preprocess_data"}) {
+		t.Fatalf("expected preprocess functions %v, got %v", []string{"preprocess_data"}, status.Contracts.PreprocessFunctions)
+	}
+	if !reflect.DeepEqual(status.Contracts.IntegrationTestFunctions, []string{"run_integration"}) {
+		t.Fatalf("expected integration test functions %v, got %v", []string{"run_integration"}, status.Contracts.IntegrationTestFunctions)
+	}
+	if !reflect.DeepEqual(status.Contracts.IntegrationTestCalls, []string{"load_model"}) {
+		t.Fatalf("expected integration test calls %v, got %v", []string{"load_model"}, status.Contracts.IntegrationTestCalls)
+	}
+	if issue, ok := firstIssueByCode(status.Issues, core.IssueCodeIntegrationScriptImportFailed); ok {
+		t.Fatalf("did not expect import-failed issue for multiline def, got %+v", issue)
+	}
+}
+
 func TestContractDiscoveryGracefullyHandlesMissingEntryFile(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", "entryFile: missing_entry.py\n")

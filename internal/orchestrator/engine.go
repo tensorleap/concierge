@@ -79,7 +79,7 @@ func NewEngine(deps Dependencies) (*Engine, error) {
 
 // RunIteration executes the canonical stage sequence for one orchestration loop.
 func (e *Engine) RunIteration(ctx context.Context, req core.SnapshotRequest) (core.IterationReport, error) {
-	report, _, err := e.runIteration(ctx, req, 1, nil, nil)
+	report, _, err := e.runIteration(ctx, req, 1, nil, nil, nil)
 	return report, err
 }
 
@@ -88,6 +88,7 @@ func (e *Engine) runIteration(
 	req core.SnapshotRequest,
 	iteration int,
 	carriedIssues []core.Issue,
+	initialBlockingIssues func(snapshot core.WorkspaceSnapshot) []core.Issue,
 	beforeReport func(snapshot core.WorkspaceSnapshot, report *core.IterationReport) error,
 ) (core.IterationReport, core.WorkspaceSnapshot, error) {
 	e.emit(observe.Event{Kind: observe.EventIterationStarted, Iteration: iteration, Message: "Starting a new guided round"})
@@ -106,6 +107,9 @@ func (e *Engine) runIteration(
 		return core.IterationReport{}, core.WorkspaceSnapshot{}, &StageError{Stage: core.StageInspect, Err: err}
 	}
 	status = mergeBlockingIssues(status, carriedIssues)
+	if iteration == 1 && initialBlockingIssues != nil {
+		status = mergeBlockingIssues(status, initialBlockingIssues(snapshot))
+	}
 	e.emit(observe.Event{Kind: observe.EventStageFinished, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageInspect, Message: "Inspection finished"})
 
 	e.emit(observe.Event{Kind: observe.EventStageStarted, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StagePlan, Message: "Choosing the next step"})
@@ -306,6 +310,9 @@ func shouldRefreshPostExecutionState(result core.ExecutionResult, decision core.
 func executionRequiresUserAction(result core.ExecutionResult) bool {
 	for _, item := range result.Evidence {
 		if item.Name == "executor.mode" && item.Value == "self_service" {
+			return true
+		}
+		if item.Name == "git.commit_pending_review" && item.Value == "true" {
 			return true
 		}
 	}

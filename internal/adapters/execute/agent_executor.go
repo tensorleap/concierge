@@ -57,9 +57,7 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 	taskSnapshot := snapshot
 	taskStatus := core.IntegrationStatus{}
 	recommendations := make([]core.AuthoringRecommendation, 0, 1)
-	if canonicalStep.ID == core.EnsureStepIntegrationTestContract ||
-		canonicalStep.ID == core.EnsureStepModelAcquisition ||
-		canonicalStep.ID == core.EnsureStepModelContract {
+	if stepRequiresInspectStatus(canonicalStep.ID) {
 		inspector := inspect.NewBaselineInspector()
 		status, err := inspector.Inspect(ctx, taskSnapshot)
 		if err != nil {
@@ -200,6 +198,20 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		Evidence:        evidence,
 		Recommendations: append([]core.AuthoringRecommendation(nil), recommendations...),
 	}, nil
+}
+
+func stepRequiresInspectStatus(stepID core.EnsureStepID) bool {
+	switch stepID {
+	case core.EnsureStepPreprocessContract,
+		core.EnsureStepInputEncoders,
+		core.EnsureStepGroundTruthEncoders,
+		core.EnsureStepIntegrationTestContract,
+		core.EnsureStepModelAcquisition,
+		core.EnsureStepModelContract:
+		return true
+	default:
+		return false
+	}
 }
 
 func (e *AgentExecutor) emit(event observe.Event) {
@@ -344,6 +356,9 @@ func repoContextEvidence(context core.AgentRepoContext) []core.EvidenceItem {
 	return []core.EvidenceItem{
 		{Name: "agent.repo_context.entry_file", Value: context.EntryFile},
 		{Name: "agent.repo_context.leap_yaml_boundary", Value: context.LeapYAMLBoundary},
+		{Name: "agent.repo_context.runtime_kind", Value: context.RuntimeKind},
+		{Name: "agent.repo_context.runtime_interpreter", Value: context.RuntimeInterpreter},
+		{Name: "agent.repo_context.runtime_status", Value: context.RuntimeStatus},
 		{Name: "agent.repo_context.selected_model_path", Value: context.SelectedModelPath},
 		{Name: "agent.repo_context.model_candidates", Value: strings.Join(context.ModelCandidates, ",")},
 		{Name: "agent.repo_context.ready_model_artifacts", Value: strings.Join(context.ReadyModelArtifacts, ",")},
@@ -468,6 +483,7 @@ func objectiveForStep(
 			if len(recommendation.Candidates) > 0 {
 				constraints = append(constraints, fmt.Sprintf("Suggested preprocess symbols: %s", strings.Join(recommendation.Candidates, ", ")))
 			}
+			constraints = append(constraints, recommendation.Constraints...)
 			break
 		}
 		return "Implement preprocess contract with required train/validation subset handling and deterministic outputs", constraints, true

@@ -147,8 +147,9 @@ print(json.dumps(payload, sort_keys=True))
 `
 
 var (
-	guideCrashPattern     = regexp.MustCompile(`Script crashed before completing all steps\. crashed at function '([^']+)'`)
-	guideStatusRowPattern = regexp.MustCompile(`^(tensorleap_[^|]+?)\s+\|\s+([✅❌❔])\s*$`)
+	guideCrashPattern        = regexp.MustCompile(`Script crashed before completing all steps\. crashed at function '([^']+)'`)
+	guideStatusRowPattern    = regexp.MustCompile(`^(tensorleap_[^|]+?)\s+\|\s+([✅❌❔])\s*$`)
+	sharedLibraryNamePattern = regexp.MustCompile(`([A-Za-z0-9._+-]+\.(?:so(?:\.[0-9]+)*|dylib|dll))`)
 )
 
 type guideRuntimeRunner interface {
@@ -509,6 +510,18 @@ func deriveGuideRecommendation(summary core.GuideValidationSummary) core.GuideRe
 	if summary.Skipped {
 		return core.GuideRecommendation{}
 	}
+	if library := missingNativeSystemLibrary(summary.Parser.GeneralError); library != "" {
+		return core.GuideRecommendation{
+			Stage:   "runtime_native_dependency",
+			Message: runtimeNativeDependencyRecommendationMessage(library),
+		}
+	}
+	if isNativeSystemDependencyError(summary.Parser.GeneralError) {
+		return core.GuideRecommendation{
+			Stage:   "runtime_native_dependency",
+			Message: runtimeNativeDependencyRecommendationMessage(""),
+		}
+	}
 
 	hasLocalStatusTable := len(summary.Local.StatusRows) > 0 || summary.LocalStatusTableSupported
 
@@ -758,18 +771,21 @@ func collectGuideIssues(
 	issues = append(issues, astIssues...)
 
 	if summary.Parser.Available {
-		if issue, ok := issueFromGuideParserGeneralError(summary.Parser.GeneralError); ok {
-			issues = append(issues, issue)
-		}
+		payloadIssues := make([]core.Issue, 0, len(summary.Parser.Payloads))
 		for _, payload := range summary.Parser.Payloads {
 			if payload.Passed {
 				continue
 			}
 			issue, ok := issueFromGuidePayloadFailure(payload, handlerKinds)
 			if ok {
-				issues = append(issues, issue)
+				payloadIssues = append(payloadIssues, issue)
 			}
 		}
+		if issue, ok := issueFromGuideParserGeneralError(summary.Parser.GeneralError); ok &&
+			!suppressGuideParserGeneralIssue(issue, payloadIssues) {
+			issues = append(issues, issue)
+		}
+		issues = append(issues, payloadIssues...)
 		return issues
 	}
 
@@ -788,6 +804,13 @@ func collectGuideIssues(
 	}
 
 	return issues
+}
+
+func suppressGuideParserGeneralIssue(issue core.Issue, payloadIssues []core.Issue) bool {
+	if issue.Code != core.IssueCodeIntegrationScriptImportFailed {
+		return false
+	}
+	return len(payloadIssues) > 0
 }
 
 func hasSpecificIntegrationTestIssue(issues []core.Issue) bool {
@@ -811,6 +834,22 @@ func issueFromGuideParserGeneralError(message string) (core.Issue, bool) {
 	trimmed := strings.TrimSpace(message)
 	if trimmed == "" {
 		return core.Issue{}, false
+	}
+	if library := missingNativeSystemLibrary(trimmed); library != "" {
+		return core.Issue{
+			Code:     core.IssueCodeNativeSystemDependencyMissing,
+			Message:  nativeSystemDependencyIssueMessage(library),
+			Severity: core.SeverityError,
+			Scope:    core.IssueScopeEnvironment,
+		}, true
+	}
+	if isNativeSystemDependencyError(trimmed) {
+		return core.Issue{
+			Code:     core.IssueCodeNativeSystemDependencyMissing,
+			Message:  nativeSystemDependencyIssueMessage(""),
+			Severity: core.SeverityError,
+			Scope:    core.IssueScopeEnvironment,
+		}, true
 	}
 
 	lower := strings.ToLower(trimmed)
@@ -836,6 +875,42 @@ func issueFromGuideParserGeneralError(message string) (core.Issue, bool) {
 		Severity: core.SeverityError,
 		Scope:    scope,
 	}, true
+}
+
+func runtimeNativeDependencyRecommendationMessage(library string) string {
+	if strings.TrimSpace(library) == "" {
+		return "Next prerequisite: install the missing native system library required by this Python environment, then rerun `concierge run`."
+	}
+	return fmt.Sprintf("Next prerequisite: install the system package that provides `%s`, then rerun `concierge run`.", library)
+}
+
+func nativeSystemDependencyIssueMessage(library string) string {
+	if strings.TrimSpace(library) == "" {
+		return "importing integration dependencies failed because a required native system library is missing from the current Python environment"
+	}
+	return fmt.Sprintf("the current Python environment is missing native system library `%s`, so importing integration dependencies failed during Tensorleap parser validation", library)
+}
+
+func missingNativeSystemLibrary(message string) string {
+	if !isNativeSystemDependencyError(message) {
+		return ""
+	}
+	matches := sharedLibraryNamePattern.FindStringSubmatch(message)
+	if len(matches) != 2 {
+		return ""
+	}
+	return strings.TrimSpace(matches[1])
+}
+
+func isNativeSystemDependencyError(message string) bool {
+	lower := strings.ToLower(strings.TrimSpace(message))
+	if lower == "" {
+		return false
+	}
+	return strings.Contains(lower, "cannot open shared object file") ||
+		strings.Contains(lower, "library not loaded") ||
+		strings.Contains(lower, "image not found") ||
+		strings.Contains(lower, "dll load failed")
 }
 
 func issueFromGuidePayloadFailure(

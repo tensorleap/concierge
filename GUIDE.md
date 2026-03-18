@@ -672,7 +672,7 @@ You returned the same object instance more than once. Build distinct subset obje
 
 `length is deprecated, please use sample_ids instead.`
 
-You initialized `PreprocessResponse` incorrectly. In the current implementation, valid construction is either `length` alone or `sample_ids` alone. New code should prefer `sample_ids`.
+You initialized `PreprocessResponse` incorrectly. Do not set `length` in new code. Return real `sample_ids` for each subset and let Tensorleap derive the subset size from those IDs.
 
 `Sample id should be of type str. Got: ...`
 

@@ -481,26 +481,8 @@ class SupervisorLoop:
                     )
                     idle_turns = 0
                 elif directive.action == "RUN_COMMAND" and directive.input_text:
-                    command_result = self._run_external_command(
-                        command_text=directive.input_text,
-                        iteration=iteration,
-                        paths=paths,
-                        remaining_runtime_seconds=max(
-                            self.config.max_runtime_seconds - (time.monotonic() - started_monotonic),
-                            EXTERNAL_COMMAND_TIMEOUT_FLOOR_SECONDS,
-                        ),
-                        live_io=live_io,
-                    )
-                    transcript_raw, transcript_clean = append_terminal_output(
-                        paths,
-                        transcript_raw,
-                        transcript_clean,
-                        command_result["transcript"],
-                        live_io=live_io,
-                        echo_live=False,
-                    )
                     idle_turns = 0
-                    if not self.driver.is_running() and command_result["returncode"] == 0:
+                    if not self.driver.is_running() and self._command_matches_target(directive.input_text):
                         self.driver.stop()
                         append_jsonl(
                             paths.interaction_log,
@@ -508,14 +490,53 @@ class SupervisorLoop:
                                 "time": utc_now(),
                                 "iteration": iteration,
                                 "kind": "process_restart",
-                                "command": self.config.command,
+                                "command": directive.input_text,
                             },
                         )
                         live_io.stdout(
                             f"[qa-loop] restarting target command in {self.config.command_cwd}: "
-                            f"{shlex.join(self.config.command)}\n"
+                            f"{directive.input_text}\n"
                         )
-                        self.driver.start(self._target_command(), cwd=self.config.host_cwd, env=os.environ.copy())
+                        self.driver.start(
+                            self._docker_exec_command(["bash", "-lc", directive.input_text], tty=True),
+                            cwd=self.config.host_cwd,
+                            env=os.environ.copy(),
+                        )
+                    else:
+                        command_result = self._run_external_command(
+                            command_text=directive.input_text,
+                            iteration=iteration,
+                            paths=paths,
+                            remaining_runtime_seconds=max(
+                                self.config.max_runtime_seconds - (time.monotonic() - started_monotonic),
+                                EXTERNAL_COMMAND_TIMEOUT_FLOOR_SECONDS,
+                            ),
+                            live_io=live_io,
+                        )
+                        transcript_raw, transcript_clean = append_terminal_output(
+                            paths,
+                            transcript_raw,
+                            transcript_clean,
+                            command_result["transcript"],
+                            live_io=live_io,
+                            echo_live=False,
+                        )
+                        if not self.driver.is_running() and command_result["returncode"] == 0:
+                            self.driver.stop()
+                            append_jsonl(
+                                paths.interaction_log,
+                                {
+                                    "time": utc_now(),
+                                    "iteration": iteration,
+                                    "kind": "process_restart",
+                                    "command": self.config.command,
+                                },
+                            )
+                            live_io.stdout(
+                                f"[qa-loop] restarting target command in {self.config.command_cwd}: "
+                                f"{shlex.join(self.config.command)}\n"
+                            )
+                            self.driver.start(self._target_command(), cwd=self.config.host_cwd, env=os.environ.copy())
                     latest_output = visible_terminal_output(self._read_until_actionable(patience=True))
                     transcript_raw, transcript_clean = append_terminal_output(
                         paths,
@@ -843,6 +864,13 @@ class SupervisorLoop:
             cmd.append("-t")
         cmd.extend(["-w", self.config.command_cwd, self.config.container_name, *inner_command])
         return cmd
+
+    def _command_matches_target(self, command_text: str) -> bool:
+        try:
+            requested = shlex.split(command_text)
+        except ValueError:
+            return False
+        return requested == self.config.command
 
     def _docker_capture(self, command: list[str], *, timeout_seconds: float = 30.0) -> subprocess.CompletedProcess[str]:
         completed = subprocess.run(

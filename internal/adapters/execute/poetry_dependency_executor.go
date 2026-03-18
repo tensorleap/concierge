@@ -6,22 +6,32 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/tensorleap/concierge/internal/core"
+	"github.com/tensorleap/concierge/internal/observe"
 )
 
 type poetryDependencyCommandRunner func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error)
 
 // PoetryDependencyExecutor repairs Poetry runtime readiness for the selected repo.
 type PoetryDependencyExecutor struct {
-	runCommand poetryDependencyCommandRunner
+	runCommand       poetryDependencyCommandRunner
+	observer         observe.Sink
+	progressInterval time.Duration
 }
 
 const minimumCodeLoaderConstraint = "code-loader@^1.0.165"
+const poetryDependencyProgressInterval = 15 * time.Second
 
 // NewPoetryDependencyExecutor creates a Poetry-backed runtime executor.
 func NewPoetryDependencyExecutor() *PoetryDependencyExecutor {
 	return &PoetryDependencyExecutor{runCommand: runPoetryDependencyCommand}
+}
+
+// SetObserver configures the live event sink used for deterministic runtime-repair updates.
+func (e *PoetryDependencyExecutor) SetObserver(sink observe.Sink) {
+	e.observer = sink
 }
 
 // Execute applies deterministic Poetry repair actions for ensure.python_runtime.
@@ -58,7 +68,8 @@ func (e *PoetryDependencyExecutor) Execute(ctx context.Context, snapshot core.Wo
 		summary = fmt.Sprintf("added %s through Poetry", minimumCodeLoaderConstraint)
 	}
 
-	stdout, stderr, err := e.runCommand(ctx, repoRoot, "poetry", commandArgs...)
+	commandMessage := fmt.Sprintf("Running poetry %s to repair the Poetry environment", strings.Join(commandArgs, " "))
+	stdout, stderr, err := e.runCommandWithProgress(ctx, repoRoot, commandMessage, "poetry", commandArgs...)
 	if err != nil {
 		errText := strings.TrimSpace(strings.TrimSpace(string(stdout)) + "\n" + strings.TrimSpace(string(stderr)))
 		if errText == "" {
@@ -97,9 +108,9 @@ func (e *PoetryDependencyExecutor) Execute(ctx context.Context, snapshot core.Wo
 	}
 
 	return core.ExecutionResult{
-		Step:    step,
-		Applied: true,
-		Summary: summary,
+		Step:     step,
+		Applied:  true,
+		Summary:  summary,
 		Evidence: evidence,
 	}, nil
 }
@@ -126,4 +137,75 @@ func runtimeSelfServiceSummary(snapshot core.WorkspaceSnapshot) string {
 	default:
 		return "Concierge cannot continue until this project has an existing Poetry environment"
 	}
+}
+
+func (e *PoetryDependencyExecutor) runCommandWithProgress(
+	ctx context.Context,
+	dir string,
+	message string,
+	name string,
+	args ...string,
+) ([]byte, []byte, error) {
+	if e == nil || e.runCommand == nil {
+		return nil, nil, core.NewError(core.KindUnknown, "execute.poetry.run_command", "poetry command runner is not configured")
+	}
+
+	e.emit(observe.Event{
+		Kind:    observe.EventExecutorProgress,
+		Stage:   core.StageExecute,
+		StepID:  core.EnsureStepPythonRuntime,
+		Message: message,
+	})
+	if e.observer == nil {
+		return e.runCommand(ctx, dir, name, args...)
+	}
+
+	type commandResult struct {
+		stdout []byte
+		stderr []byte
+		err    error
+	}
+	done := make(chan commandResult, 1)
+	go func() {
+		stdout, stderr, err := e.runCommand(ctx, dir, name, args...)
+		done <- commandResult{stdout: stdout, stderr: stderr, err: err}
+	}()
+
+	ticker := time.NewTicker(e.heartbeatInterval())
+	defer ticker.Stop()
+
+	for {
+		select {
+		case result := <-done:
+			return result.stdout, result.stderr, result.err
+		case tickAt := <-ticker.C:
+			e.emit(observe.Event{
+				Time:    tickAt.UTC(),
+				Kind:    observe.EventExecutorHeartbeat,
+				Stage:   core.StageExecute,
+				StepID:  core.EnsureStepPythonRuntime,
+				Message: message,
+			})
+		case <-ctx.Done():
+			result := <-done
+			return result.stdout, result.stderr, result.err
+		}
+	}
+}
+
+func (e *PoetryDependencyExecutor) heartbeatInterval() time.Duration {
+	if e == nil || e.progressInterval <= 0 {
+		return poetryDependencyProgressInterval
+	}
+	return e.progressInterval
+}
+
+func (e *PoetryDependencyExecutor) emit(event observe.Event) {
+	if e == nil || e.observer == nil {
+		return
+	}
+	if event.Time.IsZero() {
+		event.Time = time.Now().UTC()
+	}
+	e.observer.Emit(event)
 }

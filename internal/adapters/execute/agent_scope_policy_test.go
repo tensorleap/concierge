@@ -17,6 +17,15 @@ func TestScopePolicyForPreprocessUsesOnlyPreprocessSection(t *testing.T) {
 	assertNotContains(t, policy.DomainSections, "load_model_contract")
 	assertContainsSubstring(t, policy.ForbiddenAreas, "@tensorleap_input_encoder")
 	assertContainsSubstring(t, policy.ForbiddenAreas, "@tensorleap_integration_test")
+	assertContainsSubstring(t, policy.ForbiddenAreas, ".concierge")
+	assertContainsSubstring(t, policy.ForbiddenAreas, "install packages")
+	assertContainsSubstring(t, policy.ForbiddenAreas, "global site-packages")
+	assertContainsSubstring(t, policy.StopAndAskTriggers, "placeholder sample IDs")
+	assertContainsSubstring(t, policy.StopAndAskTriggers, "hard-code installed package defaults")
+	assertContainsSubstring(t, policy.StopAndAskTriggers, "pip install")
+	assertContainsSubstring(t, policy.StopAndAskTriggers, "repo-supported dataset resolver")
+	assertContainsSubstring(t, policy.StopAndAskTriggers, "generic repo assets")
+	assertContainsSubstring(t, policy.StopAndAskTriggers, "system directories")
 }
 
 func TestPolicyForPreprocessUsesOnlyPreprocessSection(t *testing.T) {
@@ -47,6 +56,40 @@ func TestScopePolicyForModelContractUsesLoadModelSection(t *testing.T) {
 	assertContains(t, policy.DomainSections, "load_model_contract")
 	assertNotContains(t, policy.DomainSections, "preprocess_contract")
 	assertContainsSubstring(t, policy.ForbiddenAreas, "training/business logic")
+}
+
+func TestResolveAgentAllowedFilesTruncatesModelCandidates(t *testing.T) {
+	snapshot := core.WorkspaceSnapshot{
+		SelectedModelPath: "models/selected.onnx",
+	}
+	status := core.IntegrationStatus{
+		Contracts: &core.IntegrationContracts{
+			ResolvedModelPath: "models/resolved.onnx",
+			ModelCandidates: []core.ModelCandidate{
+				{Path: "models/a.onnx"},
+				{Path: "models/b.onnx"},
+				{Path: "models/c.onnx"},
+				{Path: "models/d.onnx"},
+				{Path: "models/e.onnx"},
+				{Path: "models/f.onnx"},
+				{Path: "models/g.onnx"},
+				{Path: "models/h.onnx"},
+				{Path: "models/i.onnx"},
+				{Path: "models/j.onnx"},
+			},
+		},
+	}
+
+	allowed := resolveAgentAllowedFiles(snapshot, status)
+
+	assertContains(t, allowed, "leap.yaml")
+	assertContains(t, allowed, "leap_integration.py")
+	assertContains(t, allowed, "models/selected.onnx")
+	assertContains(t, allowed, "models/resolved.onnx")
+	assertContains(t, allowed, "models/a.onnx")
+	assertContains(t, allowed, "models/h.onnx")
+	assertNotContains(t, allowed, "models/i.onnx")
+	assertNotContains(t, allowed, "models/j.onnx")
 }
 
 func TestScopePolicyForIntegrationTestUsesNarrowWiringSection(t *testing.T) {

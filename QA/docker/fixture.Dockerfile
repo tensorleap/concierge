@@ -21,6 +21,11 @@ RUN apt-get update \
     ca-certificates \
     curl \
     git \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
     nodejs \
     npm \
  && rm -rf /var/lib/apt/lists/*

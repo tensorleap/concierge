@@ -25,11 +25,16 @@ func inspectModelAcquisition(repoRoot string, contract *leapYAMLContract, select
 	if err != nil {
 		return err
 	}
+	acquisitionLeads, err := discoverModelAcquisitionLeads(repoRoot)
+	if err != nil {
+		return err
+	}
 
 	status.Contracts.ModelCandidates = append([]core.ModelCandidate(nil), readyArtifacts...)
 	status.Contracts.ModelAcquisition = &core.ModelAcquisitionArtifacts{
-		ReadyArtifacts: append([]core.ModelCandidate(nil), readyArtifacts...),
-		PassiveLeads:   append([]core.ModelCandidate(nil), passiveLeads...),
+		ReadyArtifacts:   append([]core.ModelCandidate(nil), readyArtifacts...),
+		PassiveLeads:     append([]core.ModelCandidate(nil), passiveLeads...),
+		AcquisitionLeads: append([]string(nil), acquisitionLeads...),
 	}
 
 	selectedEvaluation, selectedProvided, err := evaluateSelectedModelPath(repoRoot, selectedModelPath)
@@ -80,14 +85,11 @@ func inspectModelAcquisition(repoRoot string, contract *leapYAMLContract, select
 		}
 	}
 
-	if len(passiveLeads) > 0 {
+	if len(passiveLeads) > 0 || len(acquisitionLeads) > 0 {
 		appendModelIssue(
 			status,
 			core.IssueCodeModelAcquisitionRequired,
-			fmt.Sprintf(
-				"no ready .onnx/.h5 model artifact was found; model-like files were discovered: %s. Concierge needs to materialize one supported artifact before wiring @tensorleap_load_model",
-				joinRawModelCandidatePaths(passiveLeads),
-			),
+			modelAcquisitionIssueMessage(passiveLeads, acquisitionLeads),
 			core.SeverityError,
 		)
 		return nil
@@ -102,6 +104,24 @@ func inspectModelAcquisition(repoRoot string, contract *leapYAMLContract, select
 	return nil
 }
 
+func modelAcquisitionIssueMessage(passiveLeads []core.ModelCandidate, acquisitionLeads []string) string {
+	values := make([]string, 0, len(passiveLeads)+len(acquisitionLeads))
+	for _, candidate := range passiveLeads {
+		if path := strings.TrimSpace(candidate.Path); path != "" {
+			values = append(values, path)
+		}
+	}
+	values = append(values, acquisitionLeads...)
+	values = uniqueSortedStrings(values)
+	if len(values) == 0 {
+		return "no ready .onnx/.h5 model artifact was found and no model-like files were discovered. Concierge needs existing repository download/export logic or manual instructions to materialize a supported artifact"
+	}
+	return fmt.Sprintf(
+		"no ready .onnx/.h5 model artifact was found; repository model acquisition leads were discovered: %s. Concierge needs to materialize one supported artifact before wiring @tensorleap_load_model",
+		strings.Join(values, ", "),
+	)
+}
+
 func discoverPassiveModelLeads(repoRoot string) ([]core.ModelCandidate, error) {
 	leads := make([]core.ModelCandidate, 0, 4)
 	err := filepath.WalkDir(repoRoot, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -109,7 +129,7 @@ func discoverPassiveModelLeads(repoRoot string) ([]core.ModelCandidate, error) {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if entry.Name() == ".git" {
+			if shouldSkipModelScanDir(entry.Name()) {
 				return filepath.SkipDir
 			}
 			return nil

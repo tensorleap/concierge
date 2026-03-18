@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -635,6 +636,170 @@ class QALoopTest(unittest.TestCase):
             transcript = transcript_path.read_text(encoding="utf-8")
             self.assertIn("[qa-loop] external command", transcript)
             self.assertIn("Type YES to continue:", transcript)
+            self.assertIn("Integration complete", transcript)
+
+    def test_supervisor_loop_restarts_target_for_interactive_rerun_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            artifacts_root = tmp / "artifacts"
+            command_cwd = tmp / "fixture"
+            artifacts_root.mkdir()
+            command_cwd.mkdir()
+            fake_docker = write_fake_docker(tmp)
+            container_name = "fixture"
+
+            concierge_script = tmp / "fake_concierge_rerun.py"
+            concierge_script.write_text(
+                textwrap.dedent(
+                    """
+                    from pathlib import Path
+
+                    marker = Path("rerun-ready.txt")
+                    if not marker.exists():
+                        marker.write_text("ready\\n", encoding="utf-8")
+                        print("Changes are in your working tree for local review. After reviewing or committing them, rerun `concierge run`.", flush=True)
+                        raise SystemExit(0)
+
+                    print("Continue to the next step? [y/N]: ", end="", flush=True)
+                    answer = input()
+                    print(f"Input received: {answer}", flush=True)
+                    print("Integration complete", flush=True)
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            codex_script = tmp / "fake_codex_rerun.py"
+            codex_script.write_text(
+                textwrap.dedent(
+                    """
+                    import json
+                    import os
+                    import sys
+                    from pathlib import Path
+
+                    args = sys.argv[1:]
+                    output_path = None
+                    for index, value in enumerate(args):
+                        if value == "-o":
+                            output_path = Path(args[index + 1])
+                            break
+                    if output_path is None:
+                        raise SystemExit("missing -o")
+
+                    prompt = sys.stdin.read()
+                    state_path = Path(os.environ["FAKE_CODEX_STATE"])
+                    if state_path.exists():
+                        state = json.loads(state_path.read_text(encoding="utf-8"))
+                    else:
+                        state = {"turn": 0}
+
+                    if "final qualitative QA report" in prompt:
+                        payload = {
+                            "title": "Interactive rerun report",
+                            "overall_outcome": "The supervisor restarted the target command as a PTY-backed interactive session.",
+                            "loop_state": "STOP_REPORT",
+                            "integration_progress": "The rerun prompt was followed by an interactive second session that reached completion.",
+                            "ux_clarity": [],
+                            "product_issues": [],
+                            "agent_interaction_issues": [],
+                            "suggestions": [],
+                            "notable_moments": ["The rerun command became the new interactive target instead of blocking as a one-off subprocess."]
+                        }
+                    else:
+                        state["turn"] += 1
+                        if state["turn"] == 1:
+                            payload = {
+                                "action": "RUN_COMMAND",
+                                "input_text": os.environ["FAKE_TARGET_COMMAND"],
+                                "loop_state": "CONTINUE",
+                                "summary": "Rerun Concierge interactively after the review-only stop.",
+                                "issues": [],
+                                "next_focus": "Wait for the next prompt in the restarted session."
+                            }
+                        elif state["turn"] == 2:
+                            if "Continue to the next step? [y/N]:" not in prompt:
+                                payload = {
+                                    "action": "WAIT",
+                                    "input_text": "",
+                                    "loop_state": "STOP_FIX",
+                                    "summary": "The restarted target prompt was not visible to the supervisor.",
+                                    "issues": ["Interactive rerun did not surface the next prompt."],
+                                    "next_focus": "Restart the target command in PTY mode so prompts remain interactive."
+                                }
+                            else:
+                                payload = {
+                                    "action": "SEND_INPUT",
+                                    "input_text": "y",
+                                    "loop_state": "CONTINUE",
+                                    "summary": "Approve the restarted interactive prompt.",
+                                    "issues": [],
+                                    "next_focus": "Wait for completion."
+                                }
+                        else:
+                            payload = {
+                                "action": "WAIT",
+                                "input_text": "",
+                                "loop_state": "STOP_REPORT",
+                                "summary": "The restarted session completed cleanly.",
+                                "issues": [],
+                                "next_focus": "Write the final report."
+                            }
+                        state_path.write_text(json.dumps(state), encoding="utf-8")
+
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    output_path.write_text(json.dumps(payload), encoding="utf-8")
+                    print(json.dumps({"type": "thread.started", "thread_id": "fake-thread"}))
+                    print(json.dumps({"type": "item.completed", "item": {"id": "item-1", "type": "agent_message", "text": json.dumps(payload)}}))
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            codex_script.chmod(0o755)
+
+            target_command = [sys.executable, str(concierge_script)]
+
+            env = os.environ.copy()
+            env["FAKE_CODEX_STATE"] = str(tmp / "fake_codex_rerun_state.json")
+            env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
+            env["FAKE_TARGET_COMMAND"] = shlex.join(target_command)
+
+            completed = subprocess.run(
+                qa_loop_command(
+                    artifacts_root=artifacts_root,
+                    fake_docker=fake_docker,
+                    container_name=container_name,
+                    codex_command=f"{sys.executable} {codex_script}",
+                    target_command=target_command,
+                    extra_args=["--max-runtime-seconds", "10"],
+                ),
+                cwd=str(ROOT),
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                msg=f"stdout:\n{completed.stdout}\n\nstderr:\n{completed.stderr}",
+            )
+
+            run_dir = next((artifacts_root / "runs").iterdir())
+            summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["loop_state"], "STOP_REPORT")
+            self.assertEqual(summary["report_status"], "ready")
+
+            interaction_log = artifacts_root / "transcripts" / f"{run_dir.name}.interaction.jsonl"
+            interaction_body = interaction_log.read_text(encoding="utf-8")
+            self.assertIn('"kind": "process_restart"', interaction_body)
+
+            transcript_path = artifacts_root / "transcripts" / f"{run_dir.name}.terminal.txt"
+            transcript = transcript_path.read_text(encoding="utf-8")
+            self.assertIn("rerun `concierge run`", transcript)
+            self.assertIn("Continue to the next step? [y/N]:", transcript)
             self.assertIn("Integration complete", transcript)
 
     def test_supervisor_loop_waits_for_delayed_followup_prompt(self) -> None:

@@ -16,16 +16,17 @@ const (
 	IssueCodeIntegrationBranchMissing IssueCode = "integration_branch_missing"
 
 	// Runtime dependencies.
-	IssueCodePoetryNotFound              IssueCode = "poetry_not_found"
-	IssueCodeRuntimeProjectUnsupported   IssueCode = "runtime_project_unsupported"
-	IssueCodePoetryEnvironmentUnresolved IssueCode = "poetry_environment_unresolved"
-	IssueCodeRuntimeProfileDrifted       IssueCode = "runtime_profile_drifted"
-	IssueCodePoetryCheckFailed           IssueCode = "poetry_check_failed"
-	IssueCodeCodeLoaderMissing           IssueCode = "code_loader_missing"
-	IssueCodeCodeLoaderLegacy            IssueCode = "code_loader_legacy"
-	IssueCodePythonVersionUnsupported    IssueCode = "python_version_unsupported"
-	IssueCodeRequirementsMissing         IssueCode = "requirements_missing"
-	IssueCodeRequirementsParseFailed     IssueCode = "requirements_parse_failed"
+	IssueCodePoetryNotFound                IssueCode = "poetry_not_found"
+	IssueCodeRuntimeProjectUnsupported     IssueCode = "runtime_project_unsupported"
+	IssueCodePoetryEnvironmentUnresolved   IssueCode = "poetry_environment_unresolved"
+	IssueCodeRuntimeProfileDrifted         IssueCode = "runtime_profile_drifted"
+	IssueCodePoetryCheckFailed             IssueCode = "poetry_check_failed"
+	IssueCodeCodeLoaderMissing             IssueCode = "code_loader_missing"
+	IssueCodeCodeLoaderLegacy              IssueCode = "code_loader_legacy"
+	IssueCodeNativeSystemDependencyMissing IssueCode = "native_system_dependency_missing"
+	IssueCodePythonVersionUnsupported      IssueCode = "python_version_unsupported"
+	IssueCodeRequirementsMissing           IssueCode = "requirements_missing"
+	IssueCodeRequirementsParseFailed       IssueCode = "requirements_parse_failed"
 
 	// Tensorleap CLI, auth, server, and secrets.
 	IssueCodeLeapCLINotFound                 IssueCode = "leap_cli_not_found"
@@ -159,6 +160,7 @@ var knownIssueCodes = []IssueCode{
 	IssueCodePoetryCheckFailed,
 	IssueCodeCodeLoaderMissing,
 	IssueCodeCodeLoaderLegacy,
+	IssueCodeNativeSystemDependencyMissing,
 	IssueCodePythonVersionUnsupported,
 	IssueCodeRequirementsMissing,
 	IssueCodeRequirementsParseFailed,
@@ -259,4 +261,29 @@ func KnownIssueCodes() []IssueCode {
 func IsKnownIssueCode(code IssueCode) bool {
 	_, ok := knownIssueCodeSet[code]
 	return ok
+}
+
+// IssueRequiresManualAction reports whether Concierge should stop and hand off
+// because the blocker cannot be repaired from repository code alone.
+func IssueRequiresManualAction(issue Issue) bool {
+	switch issue.Code {
+	case IssueCodeNativeSystemDependencyMissing:
+		return true
+	default:
+		return false
+	}
+}
+
+// IssuesRequireManualAction reports whether any blocking issue needs an
+// external manual step before Concierge can continue.
+func IssuesRequireManualAction(issues []Issue) bool {
+	for _, issue := range issues {
+		if issue.Severity != SeverityError {
+			continue
+		}
+		if IssueRequiresManualAction(issue) {
+			return true
+		}
+	}
+	return false
 }

@@ -1,6 +1,7 @@
 package execute
 
 import (
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -17,11 +18,21 @@ func TestBuildAgentRepoContextIncludesSelectedModelAndCandidates(t *testing.T) {
 		core.WorkspaceSnapshot{
 			Repository: core.RepositoryState{Root: repoRoot},
 			FileHashes: map[string]string{
-				"leap.yaml":        "hash-leap",
+				"leap.yaml":           "hash-leap",
 				"leap_integration.py": "hash-entry",
-				"requirements.txt": "hash-req",
+				"requirements.txt":    "hash-req",
 			},
 			SelectedModelPath: "models/selected.onnx",
+			RuntimeProfile: &core.LocalRuntimeProfile{
+				Kind:              "poetry",
+				InterpreterPath:   filepath.ToSlash(filepath.Join(repoRoot, ".venv", "bin", "python")),
+				DependenciesReady: true,
+				CodeLoaderReady:   true,
+				CodeLoader: core.CodeLoaderCapabilityState{
+					ProbeSucceeded: true,
+					Version:        "1.0.166",
+				},
+			},
 		},
 		core.IntegrationStatus{
 			Contracts: &core.IntegrationContracts{
@@ -52,6 +63,15 @@ func TestBuildAgentRepoContextIncludesSelectedModelAndCandidates(t *testing.T) {
 	}
 	if !strings.Contains(context.LeapYAMLBoundary, "leap.yaml present") {
 		t.Fatalf("expected leap.yaml boundary summary, got %q", context.LeapYAMLBoundary)
+	}
+	if context.RuntimeKind != "poetry" {
+		t.Fatalf("expected runtime kind %q, got %q", "poetry", context.RuntimeKind)
+	}
+	if !strings.HasSuffix(context.RuntimeInterpreter, "/.venv/bin/python") {
+		t.Fatalf("expected runtime interpreter path in context, got %q", context.RuntimeInterpreter)
+	}
+	if context.RuntimeStatus != "dependencies ready; code_loader import succeeded (1.0.166)" {
+		t.Fatalf("unexpected runtime status %q", context.RuntimeStatus)
 	}
 }
 
@@ -98,7 +118,7 @@ func TestBuildAgentRepoContextDeterministicOrderingAndTruncation(t *testing.T) {
 	snapshot := core.WorkspaceSnapshot{
 		Repository: core.RepositoryState{Root: repoRoot},
 		FileHashes: map[string]string{
-			"leap.yaml":            "hash-leap",
+			"leap.yaml":           "hash-leap",
 			"leap_integration.py": "hash-entry",
 		},
 	}
@@ -161,6 +181,42 @@ func TestBuildAgentRepoContextAllowsModelStepWithoutResolvedCandidates(t *testin
 	}
 	if len(context.ModelCandidates) != 0 {
 		t.Fatalf("expected no model candidates, got %+v", context.ModelCandidates)
+	}
+}
+
+func TestBuildAgentRepoContextIncludesAcquisitionLeads(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	context, err := BuildAgentRepoContext(
+		core.EnsureStepModelAcquisition,
+		core.WorkspaceSnapshot{
+			Repository: core.RepositoryState{Root: repoRoot},
+			FileHashes: map[string]string{"leap.yaml": "hash-leap"},
+		},
+		core.IntegrationStatus{
+			Contracts: &core.IntegrationContracts{
+				ModelAcquisition: &core.ModelAcquisitionArtifacts{
+					PassiveLeads: []core.ModelCandidate{{Path: "weights/model.pt"}},
+					AcquisitionLeads: []string{
+						"project_config.yaml",
+						"docker/Dockerfile-cpu -> https://example.com/releases/model.onnx",
+					},
+				},
+			},
+		},
+		core.ValidationResult{},
+	)
+	if err != nil {
+		t.Fatalf("BuildAgentRepoContext returned error: %v", err)
+	}
+
+	want := []string{
+		"docker/Dockerfile-cpu -> https://example.com/releases/model.onnx",
+		"project_config.yaml",
+		"weights/model.pt",
+	}
+	if !reflect.DeepEqual(context.ModelAcquisitionLeads, want) {
+		t.Fatalf("expected acquisition leads %+v, got %+v", want, context.ModelAcquisitionLeads)
 	}
 }
 

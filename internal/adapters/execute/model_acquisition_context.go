@@ -39,6 +39,7 @@ func BuildModelAcquisitionRecommendation(snapshot core.WorkspaceSnapshot, status
 	target = filepath.ToSlash(filepath.Clean(target))
 
 	candidates := make([]string, 0, 8)
+	leadHints := make([]string, 0, 8)
 	if status.Contracts != nil {
 		if status.Contracts.ModelAcquisition != nil {
 			for _, candidate := range status.Contracts.ModelAcquisition.PassiveLeads {
@@ -47,26 +48,36 @@ func BuildModelAcquisitionRecommendation(snapshot core.WorkspaceSnapshot, status
 			for _, candidate := range status.Contracts.ModelAcquisition.ReadyArtifacts {
 				candidates = append(candidates, strings.TrimSpace(candidate.Path))
 			}
+			leadHints = append(leadHints, status.Contracts.ModelAcquisition.AcquisitionLeads...)
 		}
 		for _, candidate := range status.Contracts.ModelCandidates {
 			candidates = append(candidates, strings.TrimSpace(candidate.Path))
 		}
 	}
 	candidates = ensureValuePresent(uniqueSortedStrings(candidates), target)
+	candidates = truncateCandidatePaths(candidates, target, maxRepoContextModelCandidates)
+	leadHints = truncateRepoContextValues(uniqueSortedStrings(leadHints), maxRepoContextModelCandidates)
+
+	constraints := []string{
+		fmt.Sprintf("Prefer existing repository commands or Python entrypoints to materialize %q.", target),
+		"If no single runnable path exists, create a temporary helper only under .concierge/materializers.",
+		fmt.Sprintf("If a helper is required, use %q or another path under .concierge/materializers.", helperPath),
+		"Materialize the final supported artifact under .concierge/materialized_models unless repository evidence proves a stable repo-local output path already exists.",
+		"Do not modify unrelated training/business logic or commit model binaries.",
+		"Model binaries are uploaded separately by leap CLI; do not rely on Tensorleap rerunning model acquisition on the server.",
+		"If repository-local export or model imports fail under the prepared runtime, treat that export path as unavailable in the current repo state instead of debugging package imports or mutating the environment.",
+		"If repository evidence includes a direct supported .onnx/.h5 artifact or a documented public example artifact, prefer materializing that direct artifact over exporting from unsupported weight files.",
+	}
+	if len(leadHints) > 0 {
+		constraints = append(constraints, fmt.Sprintf("Inspect and reuse repository model acquisition leads before inventing helpers: %s", strings.Join(leadHints, ", ")))
+	}
 
 	return core.AuthoringRecommendation{
-		StepID:     core.EnsureStepModelAcquisition,
-		Target:     target,
-		Rationale:  "materialize one supported .onnx/.h5 artifact before wiring @tensorleap_load_model",
-		Candidates: candidates,
-		Constraints: []string{
-			fmt.Sprintf("Prefer existing repository commands or Python entrypoints to materialize %q.", target),
-			"If no single runnable path exists, create a temporary helper only under .concierge/materializers.",
-			fmt.Sprintf("If a helper is required, use %q or another path under .concierge/materializers.", helperPath),
-			"Materialize the final supported artifact under .concierge/materialized_models unless repository evidence proves a stable repo-local output path already exists.",
-			"Do not modify unrelated training/business logic or commit model binaries.",
-			"Model binaries are uploaded separately by leap CLI; do not rely on Tensorleap rerunning model acquisition on the server.",
-		},
+		StepID:      core.EnsureStepModelAcquisition,
+		Target:      target,
+		Rationale:   "materialize one supported .onnx/.h5 artifact before wiring @tensorleap_load_model",
+		Candidates:  candidates,
+		Constraints: constraints,
 	}, nil
 }
 

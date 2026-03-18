@@ -22,6 +22,18 @@ var (
 		".h5":   {},
 	}
 
+	modelScanSkipDirs = map[string]struct{}{
+		".git":          {},
+		".venv":         {},
+		"venv":          {},
+		"env":           {},
+		".tox":          {},
+		"__pycache__":   {},
+		"site-packages": {},
+		"dist-packages": {},
+		"node_modules":  {},
+	}
+
 	modelLikeExtensions = map[string]struct{}{
 		".onnx":   {},
 		".h5":     {},
@@ -264,7 +276,7 @@ func discoverModelCandidatesFromRepoSearch(repoRoot string) ([]core.ModelCandida
 			return walkErr
 		}
 		if entry.IsDir() {
-			if entry.Name() == ".git" {
+			if shouldSkipModelScanDir(entry.Name()) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -337,5 +349,10 @@ func evaluateModelCandidate(repoRoot string, candidate core.ModelCandidate) (mod
 
 func isSupportedModelExtension(ext string) bool {
 	_, ok := supportedModelExtensions[strings.ToLower(strings.TrimSpace(ext))]
+	return ok
+}
+
+func shouldSkipModelScanDir(name string) bool {
+	_, ok := modelScanSkipDirs[strings.TrimSpace(name)]
 	return ok
 }

@@ -41,6 +41,7 @@ func BuildModelAuthoringRecommendation(snapshot core.WorkspaceSnapshot, status c
 	if target != "" {
 		candidatePaths = ensureValuePresent(candidatePaths, target)
 	}
+	candidatePaths = truncateCandidatePaths(candidatePaths, target, maxRepoContextModelCandidates)
 
 	constraints := []string{
 		"Bind @tensorleap_load_model to one concrete supported model artifact path.",
@@ -244,4 +245,30 @@ func uniqueSortedStrings(values []string) []string {
 		return result[i] < result[j]
 	})
 	return result
+}
+
+func truncateCandidatePaths(values []string, preserve string, limit int) []string {
+	unique := uniqueSortedStrings(values)
+	if limit <= 0 || len(unique) <= limit {
+		return unique
+	}
+
+	preserve = strings.TrimSpace(preserve)
+	truncated := append([]string(nil), unique[:limit]...)
+	if preserve == "" {
+		return truncated
+	}
+
+	for _, value := range truncated {
+		if strings.EqualFold(value, preserve) {
+			return truncated
+		}
+	}
+
+	if limit == 1 {
+		return []string{preserve}
+	}
+
+	truncated = append(truncated[:limit-1], preserve)
+	return uniqueSortedStrings(truncated)
 }

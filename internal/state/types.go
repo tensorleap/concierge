@@ -28,6 +28,7 @@ type RunState struct {
 	SelectedModelPath       string                       `json:"selectedModelPath,omitempty"`
 	ConfirmedEncoderMapping *core.EncoderMappingContract `json:"confirmedEncoderMapping,omitempty"`
 	RuntimeProfile          *core.LocalRuntimeProfile    `json:"runtimeProfile,omitempty"`
+	LastBlockingIssues      []core.Issue                 `json:"lastBlockingIssues,omitempty"`
 	LastSnapshotID          string                       `json:"lastSnapshotId,omitempty"`
 	LastHead                string                       `json:"lastHead,omitempty"`
 	LastWorktreeFingerprint string                       `json:"lastWorktreeFingerprint,omitempty"`
@@ -114,6 +115,7 @@ func UpdateForIteration(
 	next.SelectedModelPath = normalizeModelPath(selectedModelPath)
 	next.ConfirmedEncoderMapping = cloneEncoderMappingContract(confirmedMapping)
 	next.RuntimeProfile = cloneRuntimeProfile(runtimeProfile)
+	next.LastBlockingIssues = filterBlockingIssues(report.Validation.Issues)
 	next.LastSnapshotID = snapshot.ID
 	next.LastHead = snapshot.Repository.Head
 	next.LastWorktreeFingerprint = snapshot.WorktreeFingerprint
@@ -121,6 +123,19 @@ func UpdateForIteration(
 	next.LastRunAt = report.GeneratedAt
 	next.InvalidationReasons = append([]string(nil), invalidationReasons...)
 	return next
+}
+
+// FreshBlockingValidationIssues returns the last known blocking validation
+// issues only when the current snapshot still matches the previously persisted
+// workspace identity.
+func FreshBlockingValidationIssues(previous RunState, snapshot core.WorkspaceSnapshot, selectedProjectRoot string) []core.Issue {
+	if len(previous.LastBlockingIssues) == 0 {
+		return nil
+	}
+	if len(ComputeInvalidationReasons(previous, snapshot, selectedProjectRoot)) > 0 {
+		return nil
+	}
+	return cloneIssues(previous.LastBlockingIssues)
 }
 
 func normalizeModelPath(modelPath string) string {
@@ -166,4 +181,41 @@ func cloneRuntimeProfile(profile *core.LocalRuntimeProfile) *core.LocalRuntimePr
 	cloned := *profile
 	cloned.Fingerprint = profile.Fingerprint
 	return &cloned
+}
+
+func filterBlockingIssues(issues []core.Issue) []core.Issue {
+	if len(issues) == 0 {
+		return nil
+	}
+	filtered := make([]core.Issue, 0, len(issues))
+	for _, issue := range issues {
+		if issue.Severity != core.SeverityError {
+			continue
+		}
+		filtered = append(filtered, cloneIssue(issue))
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
+func cloneIssues(issues []core.Issue) []core.Issue {
+	if len(issues) == 0 {
+		return nil
+	}
+	cloned := make([]core.Issue, 0, len(issues))
+	for _, issue := range issues {
+		cloned = append(cloned, cloneIssue(issue))
+	}
+	return cloned
+}
+
+func cloneIssue(issue core.Issue) core.Issue {
+	cloned := issue
+	if issue.Location != nil {
+		location := *issue.Location
+		cloned.Location = &location
+	}
+	return cloned
 }

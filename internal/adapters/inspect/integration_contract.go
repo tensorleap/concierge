@@ -120,7 +120,8 @@ func discoverContractsFromPythonSource(entryFilePath string, source string) (*co
 
 	lines := strings.Split(source, "\n")
 	pendingDecorators := make([]string, 0, 4)
-	for index, rawLine := range lines {
+	for index := 0; index < len(lines); index++ {
+		rawLine := lines[index]
 		line := strings.TrimSpace(rawLine)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -140,7 +141,7 @@ func discoverContractsFromPythonSource(entryFilePath string, source string) (*co
 		}
 
 		if strings.HasPrefix(line, "def") {
-			functionName, ok := extractFunctionName(line)
+			functionName, defEndIndex, ok := extractFunctionDefinition(lines, index)
 			if !ok {
 				return contracts, contractDiscoverySyntaxError{
 					Line:    index + 1,
@@ -163,13 +164,14 @@ func discoverContractsFromPythonSource(entryFilePath string, source string) (*co
 			}
 			if hasDecorator(pendingDecorators, "tensorleap_integration_test") {
 				contracts.IntegrationTestFunctions = appendUnique(contracts.IntegrationTestFunctions, functionName)
-				calls := extractFunctionCalls(lines, index)
+				calls := extractFunctionCalls(lines, index, defEndIndex)
 				for _, call := range calls {
 					contracts.IntegrationTestCalls = appendUnique(contracts.IntegrationTestCalls, call)
 				}
 			}
 
 			pendingDecorators = pendingDecorators[:0]
+			index = defEndIndex
 			continue
 		}
 
@@ -203,6 +205,35 @@ func extractFunctionName(line string) (string, bool) {
 	return matches[1], true
 }
 
+func extractFunctionDefinition(lines []string, startIndex int) (string, int, bool) {
+	if startIndex < 0 || startIndex >= len(lines) {
+		return "", startIndex, false
+	}
+
+	headerParts := make([]string, 0, 4)
+	parenDepth := 0
+	sawOpenParen := false
+	for index := startIndex; index < len(lines); index++ {
+		line := strings.TrimSpace(lines[index])
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		headerParts = append(headerParts, line)
+		if strings.Contains(line, "(") {
+			sawOpenParen = true
+		}
+		parenDepth += strings.Count(line, "(") - strings.Count(line, ")")
+
+		header := strings.Join(headerParts, " ")
+		if sawOpenParen && parenDepth <= 0 && strings.HasSuffix(line, ":") {
+			name, ok := extractFunctionName(header)
+			return name, index, ok
+		}
+	}
+
+	return "", startIndex, false
+}
+
 func hasDecorator(decorators []string, name string) bool {
 	target := strings.ToLower(strings.TrimSpace(name))
 	for _, decorator := range decorators {
@@ -213,11 +244,11 @@ func hasDecorator(decorators []string, name string) bool {
 	return false
 }
 
-func extractFunctionCalls(lines []string, defLineIndex int) []string {
+func extractFunctionCalls(lines []string, defLineIndex int, defEndIndex int) []string {
 	defIndent := indentationLevel(lines[defLineIndex])
 	calls := make([]string, 0, 8)
 
-	for i := defLineIndex + 1; i < len(lines); i++ {
+	for i := defEndIndex + 1; i < len(lines); i++ {
 		rawLine := lines[i]
 		line := strings.TrimSpace(rawLine)
 		if line == "" || strings.HasPrefix(line, "#") {

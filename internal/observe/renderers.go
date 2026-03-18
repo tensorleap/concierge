@@ -19,6 +19,8 @@ const (
 	ansiDim    = "\033[2m"
 	ansiCyan   = "\033[36m"
 	ansiYellow = "\033[33m"
+
+	highlightsHeartbeatInterval = 15 * time.Second
 )
 
 // SpinnerRenderer renders one live status line for long-running work.
@@ -48,7 +50,7 @@ func (r *SpinnerRenderer) Emit(event Event) {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	if event.Kind != EventAgentHeartbeat {
+	if event.Kind != EventAgentHeartbeat && event.Kind != EventExecutorHeartbeat {
 		r.lastActivityAt = now
 	}
 
@@ -59,9 +61,17 @@ func (r *SpinnerRenderer) Emit(event Event) {
 		r.status = nonEmpty(event.Message, "Working on "+strings.ToLower(stepLabel(event.StepID)))
 	case EventWaitingApproval, EventGitReviewStarted:
 		r.status = event.Message
+	case EventExecutorProgress:
+		r.status = event.Message
 	case EventAgentStarted:
 		r.status = event.Message
 	case EventAgentHeartbeat:
+		idle := "unknown"
+		if !r.lastActivityAt.IsZero() {
+			idle = fmt.Sprintf("%ds", int(now.Sub(r.lastActivityAt).Seconds()))
+		}
+		r.status = fmt.Sprintf("%s · still running · last activity %s ago", nonEmpty(event.Message, r.status), idle)
+	case EventExecutorHeartbeat:
 		idle := "unknown"
 		if !r.lastActivityAt.IsZero() {
 			idle = fmt.Sprintf("%ds", int(now.Sub(r.lastActivityAt).Seconds()))
@@ -84,11 +94,13 @@ func (r *SpinnerRenderer) Emit(event Event) {
 
 // HighlightsRenderer renders concise milestone lines.
 type HighlightsRenderer struct {
-	writer      io.Writer
-	options     RenderOptions
-	mu          sync.Mutex
-	lastLine    string
-	seenCurrent map[string]struct{}
+	writer          io.Writer
+	options         RenderOptions
+	mu              sync.Mutex
+	lastLine        string
+	seenCurrent     map[string]struct{}
+	lastProgressAt  time.Time
+	lastHeartbeatAt time.Time
 }
 
 func NewHighlightsRenderer(writer io.Writer, options RenderOptions) *HighlightsRenderer {
@@ -106,25 +118,45 @@ func (r *HighlightsRenderer) Emit(event Event) {
 	if r == nil {
 		return
 	}
-	line := r.lineForEvent(event)
-	if strings.TrimSpace(line) == "" {
-		return
-	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	now := event.Time
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
 	if event.Kind == EventIterationStarted {
 		r.seenCurrent = make(map[string]struct{})
+		r.lastProgressAt = time.Time{}
+		r.lastHeartbeatAt = time.Time{}
 	}
+
+	line := r.lineForEvent(event, now)
+	if strings.TrimSpace(line) == "" {
+		if event.Kind != EventAgentHeartbeat && event.Kind != EventExecutorHeartbeat {
+			r.lastProgressAt = now
+		}
+		return
+	}
+
 	if _, exists := r.seenCurrent[line]; exists {
+		if event.Kind != EventAgentHeartbeat && event.Kind != EventExecutorHeartbeat {
+			r.lastProgressAt = now
+		}
 		return
 	}
 	r.seenCurrent[line] = struct{}{}
 	r.lastLine = line
+	if event.Kind == EventAgentHeartbeat || event.Kind == EventExecutorHeartbeat {
+		r.lastHeartbeatAt = now
+	} else {
+		r.lastProgressAt = now
+	}
 	_, _ = fmt.Fprintln(r.writer, line)
 }
 
-func (r *HighlightsRenderer) lineForEvent(event Event) string {
+func (r *HighlightsRenderer) lineForEvent(event Event, now time.Time) string {
 	switch event.Kind {
 	case EventIterationStarted:
 		return paint(fmt.Sprintf("Iteration %d", maxInt(event.Iteration, 1)), ansiBold+ansiCyan, !r.options.NoColor)
@@ -134,10 +166,16 @@ func (r *HighlightsRenderer) lineForEvent(event Event) string {
 		return "• " + nonEmpty(event.Message, "Working on: "+stepLabel(event.StepID))
 	case EventWaitingApproval, EventGitReviewStarted:
 		return "• " + nonEmpty(event.Message, "Waiting for your approval")
+	case EventExecutorProgress:
+		return "• " + nonEmpty(event.Message, "Working through the selected step")
 	case EventAgentTaskPrepared:
 		return "• Preparing Claude task"
 	case EventAgentStarted:
 		return "• " + nonEmpty(event.Message, "Claude started")
+	case EventAgentHeartbeat:
+		return r.heartbeatLine(event, now)
+	case EventExecutorHeartbeat:
+		return r.executorHeartbeatLine(event, now)
 	case EventAgentTool:
 		return "• " + nonEmpty(event.Message, "Claude is working")
 	case EventAgentMessage:
@@ -159,6 +197,50 @@ func (r *HighlightsRenderer) lineForEvent(event Event) string {
 	default:
 		return ""
 	}
+}
+
+func (r *HighlightsRenderer) heartbeatLine(event Event, now time.Time) string {
+	if r.lastProgressAt.IsZero() {
+		return ""
+	}
+	if now.Sub(r.lastProgressAt) < highlightsHeartbeatInterval {
+		return ""
+	}
+	if !r.lastHeartbeatAt.IsZero() && now.Sub(r.lastHeartbeatAt) < highlightsHeartbeatInterval {
+		return ""
+	}
+
+	idleSeconds := int(now.Sub(r.lastProgressAt).Seconds())
+	if idleSeconds < 1 {
+		idleSeconds = 1
+	}
+	return fmt.Sprintf(
+		"• Claude still working: %s (%ds since last visible update)",
+		nonEmpty(event.Message, "Claude is working"),
+		idleSeconds,
+	)
+}
+
+func (r *HighlightsRenderer) executorHeartbeatLine(event Event, now time.Time) string {
+	if r.lastProgressAt.IsZero() {
+		return ""
+	}
+	if now.Sub(r.lastProgressAt) < highlightsHeartbeatInterval {
+		return ""
+	}
+	if !r.lastHeartbeatAt.IsZero() && now.Sub(r.lastHeartbeatAt) < highlightsHeartbeatInterval {
+		return ""
+	}
+
+	idleSeconds := int(now.Sub(r.lastProgressAt).Seconds())
+	if idleSeconds < 1 {
+		idleSeconds = 1
+	}
+	return fmt.Sprintf(
+		"• Still working: %s (%ds since last visible update)",
+		nonEmpty(event.Message, "The current step is still running"),
+		idleSeconds,
+	)
 }
 
 // PassthroughRenderer prints the live Claude stream with minimal decoration.
@@ -185,6 +267,8 @@ func (r *PassthroughRenderer) Emit(event Event) {
 	switch event.Kind {
 	case EventIterationStarted:
 		_, _ = fmt.Fprintln(r.writer, paint(fmt.Sprintf("Iteration %d", maxInt(event.Iteration, 1)), ansiBold+ansiCyan, !r.options.NoColor))
+	case EventExecutorProgress:
+		_, _ = fmt.Fprintln(r.writer, event.Message)
 	case EventAgentStarted:
 		_, _ = fmt.Fprintln(r.writer, paint(nonEmpty(event.Message, "Claude started"), ansiCyan, !r.options.NoColor))
 		_, _ = fmt.Fprintln(r.writer, paint("Press b + Enter to stop Claude for this step.", ansiDim, !r.options.NoColor))

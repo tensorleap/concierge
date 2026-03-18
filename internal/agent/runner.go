@@ -22,10 +22,10 @@ import (
 const claudeCommand = "claude"
 
 const (
-	defaultTimeout      = 15 * time.Minute
-	streamProbeTimeout  = 5 * time.Second
-	heartbeatInterval   = 1 * time.Second
-	transcriptFileMode  = 0o644
+	defaultTimeout       = 15 * time.Minute
+	streamProbeTimeout   = 5 * time.Second
+	heartbeatInterval    = 1 * time.Second
+	transcriptFileMode   = 0o644
 	transcriptFolderMode = 0o755
 )
 
@@ -95,6 +95,13 @@ func (r *Runner) Run(ctx context.Context, task AgentTask) (AgentResult, error) {
 		return AgentResult{}, err
 	}
 
+	task, env, cleanupPreparedTask, err := prepareAgentTask(task)
+	if err != nil {
+		return AgentResult{}, err
+	}
+	defer cleanupPreparedTask()
+	repoRoot = strings.TrimSpace(task.RepoRoot)
+
 	runCtx := ctx
 	cancel := func() {}
 	if _, ok := ctx.Deadline(); !ok && r.timeout > 0 {
@@ -109,10 +116,10 @@ func (r *Runner) Run(ctx context.Context, task AgentTask) (AgentResult, error) {
 
 	if !r.streamingSupported(runCtx, commandPath) {
 		r.emit(observe.Event{Kind: observe.EventFallback, Message: "Claude CLI does not support stream-json; falling back to buffered execution"})
-		return r.runBuffered(runCtx, repoRoot, commandPath, systemPrompt, taskPrompt, transcriptPath)
+		return r.runBuffered(runCtx, repoRoot, commandPath, systemPrompt, taskPrompt, transcriptPath, env)
 	}
 
-	return r.runStreaming(runCtx, repoRoot, commandPath, args, systemPrompt, taskPrompt, transcriptPath, rawStreamPath)
+	return r.runStreaming(runCtx, repoRoot, commandPath, args, systemPrompt, taskPrompt, transcriptPath, rawStreamPath, env)
 }
 
 func (r *Runner) ensureDefaults() {
@@ -155,9 +162,10 @@ func (r *Runner) streamingSupported(ctx context.Context, commandPath string) boo
 func (r *Runner) runBuffered(
 	ctx context.Context,
 	repoRoot, commandPath, systemPrompt, taskPrompt, transcriptPath string,
+	env []string,
 ) (AgentResult, error) {
 	args := append(append([]string(nil), defaultClaudeBufferArgs...), "--system-prompt", systemPrompt, taskPrompt)
-	stdout, stderr, runErr := runAgentCommand(ctx, repoRoot, commandPath, args)
+	stdout, stderr, runErr := runAgentCommand(ctx, repoRoot, commandPath, args, env)
 	if writeErr := writeTranscript(transcriptPath, commandPath, args, systemPrompt, taskPrompt, stdout, stderr, runErr); writeErr != nil {
 		return AgentResult{}, core.WrapError(core.KindUnknown, "agent.runner.transcript_write", writeErr)
 	}
@@ -181,6 +189,7 @@ func (r *Runner) runStreaming(
 	repoRoot, commandPath string,
 	args []string,
 	systemPrompt, taskPrompt, transcriptPath, rawStreamPath string,
+	env []string,
 ) (AgentResult, error) {
 	if err := os.MkdirAll(filepath.Dir(transcriptPath), transcriptFolderMode); err != nil {
 		return AgentResult{}, core.WrapError(core.KindUnknown, "agent.runner.transcript_dir", err)
@@ -204,7 +213,7 @@ func (r *Runner) runStreaming(
 
 	cmd := exec.CommandContext(ctx, commandPath, args...)
 	cmd.Dir = repoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = append([]string(nil), env...)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -318,10 +327,10 @@ func (r *Runner) emit(event observe.Event) {
 	r.observer.Emit(event)
 }
 
-func runAgentCommand(ctx context.Context, dir, command string, args []string) ([]byte, []byte, error) {
+func runAgentCommand(ctx context.Context, dir, command string, args []string, env []string) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Dir = dir
-	cmd.Env = os.Environ()
+	cmd.Env = append([]string(nil), env...)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

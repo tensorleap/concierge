@@ -471,6 +471,64 @@ func TestReporterShowsLegacyCodeLoaderGuidance(t *testing.T) {
 	}
 }
 
+func TestReporterShowsNativeSystemDependencyGuidanceWithoutInteractiveHelp(t *testing.T) {
+	var sink strings.Builder
+	reporter := NewStdoutReporter(&sink)
+
+	err := reporter.Report(context.Background(), core.IterationReport{
+		SnapshotID: "snapshot-123",
+		Step:       core.EnsureStep{ID: core.EnsureStepPreprocessContract},
+		Checks: []core.VerifiedCheck{
+			{
+				StepID:   core.EnsureStepPythonRuntime,
+				Label:    core.HumanEnsureStepRequirementLabel(core.EnsureStepPythonRuntime),
+				Status:   core.CheckStatusFail,
+				Blocking: true,
+				Issues: []core.Issue{
+					{
+						Code:     core.IssueCodeNativeSystemDependencyMissing,
+						Message:  "the current Python environment is missing native system library `libGL.so.1`, so importing integration dependencies failed during Tensorleap parser validation",
+						Severity: core.SeverityError,
+						Scope:    core.IssueScopeEnvironment,
+					},
+				},
+			},
+		},
+		Validation: core.ValidationResult{
+			Passed: false,
+			Issues: []core.Issue{
+				{
+					Code:     core.IssueCodeNativeSystemDependencyMissing,
+					Message:  "the current Python environment is missing native system library `libGL.so.1`, so importing integration dependencies failed during Tensorleap parser validation",
+					Severity: core.SeverityError,
+					Scope:    core.IssueScopeEnvironment,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	output := sink.String()
+	expectedSnippets := []string{
+		"Missing integration step: Poetry environment should be available and have the required packages",
+		"The missing library reported by Python was `libGL.so.1`.",
+		"I cannot apply an automated fix for this check in the current run.",
+		"Next step: install the missing native system library required by this Poetry environment, then rerun `concierge run`.",
+		"Concierge cannot repair missing OS shared libraries from repository code.",
+		"On Debian/Ubuntu, `libGL.so.1` is commonly provided by `libgl1`.",
+	}
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(output, snippet) {
+			t.Fatalf("expected output to contain %q, got %q", snippet, output)
+		}
+	}
+	if strings.Contains(output, "I can help with this step interactively and will ask before making any changes.") {
+		t.Fatalf("did not expect interactive-help claim for native system dependency blockers, got %q", output)
+	}
+}
+
 func TestReporterShowsGuideValidationLegacyLocalMode(t *testing.T) {
 	var sink strings.Builder
 	reporter := NewStdoutReporter(&sink)

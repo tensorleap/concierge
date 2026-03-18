@@ -28,6 +28,16 @@ exclude:
 - Preprocess returns `PreprocessResponse` items for dataset subsets.
 - Train and validation subsets are mandatory.
 - Preprocess should prepare deterministic dataset access used by encoders.
+- Prefer explicit dataset manifests, loader code, or existing Tensorleap integration examples over arbitrary repository files.
+- If the repository already declares train/validation subsets in a dataset manifest, reuse those declared subsets instead of inventing a new split from arbitrary images.
+- If the repository exposes a dataset manifest and a supported resolver/downloader, use that repo-supported path instead of hard-coding cache directories or scanning generic assets.
+- Smoke-test repository dataset helpers before depending on them; if the helper import fails in the current repo state, fall back to the manifest's explicit download/path/train/val information or stop with the blocker.
+- If a repo helper import fails because project dependencies are missing, do not reverse-engineer internal cache constants or framework settings paths; use explicit manifest train/val/download evidence or stop with the blocker.
+- If Repository Facts provide a prepared runtime interpreter, use that interpreter for Python repo checks instead of bare `python`/`python3`; treat failures under the wrong interpreter as environment mismatch evidence rather than dataset-path evidence.
+- Do not set deprecated `PreprocessResponse.length`; provide real `sample_ids` and `state` values for each subset instead.
+- Framework-managed dataset cache paths are acceptable only when reached through repository-supported loaders or manifest resolution; do not invent or hard-code them yourself.
+- Generic repo assets, screenshots, docs media, and example images are not valid dataset evidence unless the repository explicitly identifies them as the real train/validation data.
+- If real train/validation identifiers cannot be derived from repository evidence or a repo-supported acquisition flow, stop and surface the data blocker instead of guessing.
 - Canonical type definitions:
 
 ```python
@@ -43,7 +53,6 @@ class DataStateType(Enum):
 
 @dataclass
 class PreprocessResponse:
-    length: Optional[int] = None
     data: Any = None
     sample_ids: Optional[Union[List[str], List[int]]] = None
     state: Optional[DataStateType] = None
@@ -132,6 +141,10 @@ def integration_test(idx: int, subset: PreprocessResponse) -> None:
 - Model loading must be declared with `@tensorleap_load_model`.
 - Supported artifact formats are `.onnx` and `.h5`.
 - Model inputs/outputs must follow Tensorleap batch-dimension expectations (`[Batch, ...]`).
+- Analyze repository docs, scripts, config files, and public example assets to find how the project obtains or exports its model before inventing new helpers.
+- If repository-local model export requires importing the workspace package and that import fails under the prepared runtime, treat that export path as unavailable in the current repo state instead of debugging package imports or mutating the environment.
+- If repository evidence exposes a direct supported `.onnx`/`.h5` artifact or a documented public example artifact, prefer materializing that direct artifact over exporting from unsupported weight files.
+- Public example models are acceptable acquisition evidence when the repository itself uses them for tutorials, Docker images, examples, or onboarding flows.
 - Canonical output descriptor:
 
 ```python

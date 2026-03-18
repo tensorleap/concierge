@@ -136,6 +136,55 @@ func TestBuildModelAuthoringRecommendationHandlesNoSupportedCandidates(t *testin
 	}
 }
 
+func TestBuildModelAuthoringRecommendationTruncatesCandidatesAndPreservesTarget(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	modelCandidates := make([]core.ModelCandidate, 0, 10)
+	for _, path := range []string{
+		"models/a.onnx",
+		"models/b.onnx",
+		"models/c.onnx",
+		"models/d.onnx",
+		"models/e.onnx",
+		"models/f.onnx",
+		"models/g.onnx",
+		"models/h.onnx",
+		"models/i.onnx",
+		"models/j.onnx",
+	} {
+		writeModelFixtureFile(t, repoRoot, path)
+		modelCandidates = append(modelCandidates, core.ModelCandidate{Path: path})
+	}
+
+	recommendation, err := BuildModelAuthoringRecommendation(
+		core.WorkspaceSnapshot{
+			Repository:        core.RepositoryState{Root: repoRoot},
+			SelectedModelPath: "models/j.onnx",
+		},
+		core.IntegrationStatus{
+			Contracts: &core.IntegrationContracts{
+				ModelCandidates: modelCandidates,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("BuildModelAuthoringRecommendation returned error: %v", err)
+	}
+
+	if got := len(recommendation.Candidates); got != maxRepoContextModelCandidates {
+		t.Fatalf("expected %d truncated candidates, got %d (%+v)", maxRepoContextModelCandidates, got, recommendation.Candidates)
+	}
+	if recommendation.Target != "models/j.onnx" {
+		t.Fatalf("expected selected target to be preserved, got %q", recommendation.Target)
+	}
+	if !containsString(recommendation.Candidates, "models/j.onnx") {
+		t.Fatalf("expected selected target in truncated candidates, got %+v", recommendation.Candidates)
+	}
+	if containsString(recommendation.Candidates, "models/i.onnx") {
+		t.Fatalf("expected truncation to drop non-target tail candidates, got %+v", recommendation.Candidates)
+	}
+}
+
 func writeModelFixtureFile(t *testing.T, repoRoot, relativePath string) {
 	t.Helper()
 	path := filepath.Join(repoRoot, filepath.FromSlash(relativePath))
@@ -145,4 +194,13 @@ func writeModelFixtureFile(t *testing.T, repoRoot, relativePath string) {
 	if err := os.WriteFile(path, []byte("binary"), 0o644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

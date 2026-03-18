@@ -204,6 +204,7 @@ func newRunCommand() *cobra.Command {
 			agentExecutor := execute.NewAgentExecutor(agentRunner)
 			agentExecutor.SetObserver(liveEvents)
 			baseExecutor := execute.NewDispatcherExecutorWithAgent(agentExecutor)
+			baseExecutor.SetObserver(liveEvents)
 
 			stepApproval := func(step core.EnsureStep) (bool, error) {
 				snapshotValue, hasSnapshot := plannerAdapter.LastSnapshot()
@@ -264,21 +265,21 @@ func newRunCommand() *cobra.Command {
 				)
 			}
 
-			gitApproval := func(step core.EnsureStep, review gitmanager.ChangeReview) (bool, error) {
+			gitApproval := func(step core.EnsureStep, review gitmanager.ChangeReview) (gitmanager.ReviewDecision, error) {
 				if yes {
-					return true, nil
+					return gitmanager.ReviewDecision{KeepChanges: true, Commit: true}, nil
 				}
 				if nonInteractive {
-					return false, core.NewError(
+					return gitmanager.ReviewDecision{}, core.NewError(
 						core.KindUnknown,
 						"cli.run.non_interactive.approval_required",
-						"this run requires approval to commit changes; rerun with --yes to auto-approve in non-interactive mode",
+						"this run requires approval to keep or commit changes; rerun with --yes to auto-approve in non-interactive mode",
 					)
 				}
 				liveEvents.Emit(observe.Event{
 					Kind:    observe.EventGitReviewStarted,
 					StepID:  step.ID,
-					Message: "Waiting for your approval to review and commit changes",
+					Message: "Waiting for your approval to review changes",
 				})
 				return promptChangeReviewApproval(
 					promptInput,
@@ -326,6 +327,9 @@ func newRunCommand() *cobra.Command {
 				core.SnapshotRequest{RepoRoot: repoRoot},
 				orchestrator.RunOptions{
 					MaxIterations: maxIterations,
+					InitialBlockingIssues: func(snapshotValue core.WorkspaceSnapshot) []core.Issue {
+						return state.FreshBlockingValidationIssues(initialState, snapshotValue, repoRoot)
+					},
 					BeforeReport: func(snapshotValue core.WorkspaceSnapshot, report *core.IterationReport) error {
 						if !initializedStateNotes {
 							invalidationReasons = state.ComputeInvalidationReasons(initialState, snapshotValue, repoRoot)
@@ -375,6 +379,12 @@ func newRunCommand() *cobra.Command {
 			case orchestrator.RunStopReasonInterrupted:
 				return fmt.Errorf("the current Claude step was interrupted. review the latest output and rerun `concierge run` when you're ready to continue")
 			case orchestrator.RunStopReasonNeedsUserAction:
+				if lastReportHasEvidence(runResult.Reports, "git.commit_pending_review", "true") {
+					if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Changes are in your working tree for local review. After reviewing or committing them, rerun `concierge run`."); err != nil {
+						return err
+					}
+					return nil
+				}
 				if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Manual step required outside Concierge. After completing the step above, rerun `concierge run`."); err != nil {
 					return err
 				}
@@ -402,6 +412,18 @@ func newRunCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colorized output")
 	cmd.Flags().BoolVar(&debugOutput, "debug-output", false, "Show internal debug details in run output")
 	return cmd
+}
+
+func lastReportHasEvidence(reports []core.IterationReport, name, value string) bool {
+	if len(reports) == 0 {
+		return false
+	}
+	for _, item := range reports[len(reports)-1].Evidence {
+		if item.Name == name && item.Value == value {
+			return true
+		}
+	}
+	return false
 }
 
 func stepApprovalMessage(
@@ -628,6 +650,9 @@ func cloneIntegrationStatus(status core.IntegrationStatus) core.IntegrationStatu
 			}
 			if len(status.Contracts.ModelAcquisition.PassiveLeads) > 0 {
 				acquisition.PassiveLeads = append([]core.ModelCandidate(nil), status.Contracts.ModelAcquisition.PassiveLeads...)
+			}
+			if len(status.Contracts.ModelAcquisition.AcquisitionLeads) > 0 {
+				acquisition.AcquisitionLeads = append([]string(nil), status.Contracts.ModelAcquisition.AcquisitionLeads...)
 			}
 			if status.Contracts.ModelAcquisition.AgentPromptBundle != nil {
 				promptBundle := *status.Contracts.ModelAcquisition.AgentPromptBundle

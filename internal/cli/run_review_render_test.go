@@ -23,7 +23,7 @@ func TestPromptChangeReviewApprovalRendersUserFacingReview(t *testing.T) {
 	}
 
 	output := new(bytes.Buffer)
-	approved, err := promptChangeReviewApproval(
+	decision, err := promptChangeReviewApproval(
 		bytes.NewBufferString("n\n"),
 		output,
 		step,
@@ -33,8 +33,8 @@ func TestPromptChangeReviewApprovalRendersUserFacingReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("promptChangeReviewApproval returned error: %v", err)
 	}
-	if approved {
-		t.Fatal("expected rejection for explicit no response")
+	if decision.KeepChanges {
+		t.Fatal("expected keep=false for explicit no response")
 	}
 
 	rendered := output.String()
@@ -43,21 +43,24 @@ func TestPromptChangeReviewApprovalRendersUserFacingReview(t *testing.T) {
 	assertContains(t, rendered, "Files changed:")
 	assertContains(t, rendered, "Diff summary:")
 	assertContains(t, rendered, "Patch:")
-	assertContains(t, rendered, "Apply and commit these changes? [Y/n]:")
+	assertContains(t, rendered, "Keep these changes in your working tree for local review? [Y/n]:")
+	if strings.Contains(rendered, "Create a commit for these reviewed changes now? [y/N]:") {
+		t.Fatalf("did not expect commit prompt after rejecting changes, got: %q", rendered)
+	}
 	if strings.Contains(rendered, "Step:") {
 		t.Fatalf("expected internal Step label to be omitted, got: %q", rendered)
 	}
 }
 
-func TestPromptChangeReviewApprovalDefaultsToYes(t *testing.T) {
+func TestPromptChangeReviewApprovalDefaultsKeepWithoutCommit(t *testing.T) {
 	step, ok := core.EnsureStepByID(core.EnsureStepLeapYAML)
 	if !ok {
 		t.Fatal("expected leap.yaml ensure-step in catalog")
 	}
 
 	output := new(bytes.Buffer)
-	approved, err := promptChangeReviewApproval(
-		bytes.NewBufferString("\n"),
+	decision, err := promptChangeReviewApproval(
+		bytes.NewBufferString("\n\n"),
 		output,
 		step,
 		gitmanager.ChangeReview{Focus: "leap.yaml should be present and valid"},
@@ -66,8 +69,11 @@ func TestPromptChangeReviewApprovalDefaultsToYes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("promptChangeReviewApproval returned error: %v", err)
 	}
-	if !approved {
-		t.Fatal("expected empty input to default to yes")
+	if !decision.KeepChanges {
+		t.Fatal("expected empty keep input to default to yes")
+	}
+	if decision.Commit {
+		t.Fatal("expected empty commit input to default to no")
 	}
 }
 

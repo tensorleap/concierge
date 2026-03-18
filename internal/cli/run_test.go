@@ -202,7 +202,7 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	repo := initRunTestRepo(t, false)
 	withWorkingDir(t, repo)
 
-	output, err := executeCLIWithInput(t, "y\ny\n", "run", "--max-iterations=1")
+	output, err := executeCLIWithInput(t, "y\ny\ny\n", "run", "--max-iterations=1")
 	if err == nil {
 		t.Fatal("expected max-iterations stop to return error")
 	}
@@ -227,14 +227,20 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	if !strings.Contains(output, "Patch:") {
 		t.Fatalf("expected patch section, got output: %q", output)
 	}
-	if !strings.Contains(output, "Apply and commit these changes? [Y/n]:") {
-		t.Fatalf("expected single final approval prompt, got output: %q", output)
+	if !strings.Contains(output, "Keep these changes in your working tree for local review? [Y/n]:") {
+		t.Fatalf("expected keep-changes prompt, got output: %q", output)
 	}
-	if strings.Count(output, "[y/N]:") != 1 {
-		t.Fatalf("expected exactly one [y/N] prompt before edits, got output: %q", output)
+	if !strings.Contains(output, "Create a commit for these reviewed changes now? [y/N]:") {
+		t.Fatalf("expected explicit commit prompt, got output: %q", output)
 	}
-	if strings.Count(output, "[Y/n]:") != 1 {
-		t.Fatalf("expected exactly one [Y/n] prompt, got output: %q", output)
+	if strings.Count(output, "Continue now? [y/N]:") != 1 {
+		t.Fatalf("expected exactly one pre-change approval prompt, got output: %q", output)
+	}
+	if strings.Count(output, "Keep these changes in your working tree for local review? [Y/n]:") != 1 {
+		t.Fatalf("expected exactly one keep-changes prompt, got output: %q", output)
+	}
+	if strings.Count(output, "Create a commit for these reviewed changes now? [y/N]:") != 1 {
+		t.Fatalf("expected exactly one explicit commit prompt, got output: %q", output)
 	}
 	if strings.Contains(output, "Step:") {
 		t.Fatalf("expected internal step label to be omitted, got output: %q", output)
@@ -246,6 +252,35 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	latestMessage := runGit(t, repo, "log", "-1", "--pretty=%s")
 	if !strings.HasPrefix(latestMessage, "concierge(ensure.leap_yaml):") {
 		t.Fatalf("expected structured commit message, got %q", latestMessage)
+	}
+}
+
+func TestRunDeclineCommitApprovalKeepsChangesForLocalReview(t *testing.T) {
+	disableHarness(t)
+	repo := initRunTestRepo(t, false)
+	withWorkingDir(t, repo)
+
+	output, err := executeCLIWithInput(t, "y\ny\nn\n", "run", "--max-iterations=1")
+	if err != nil {
+		t.Fatalf("expected clean handoff after declining commit, got err=%v output=%q", err, output)
+	}
+	if !strings.Contains(output, "Keep these changes in your working tree for local review? [Y/n]:") {
+		t.Fatalf("expected keep-changes prompt, got output: %q", output)
+	}
+	if !strings.Contains(output, "Create a commit for these reviewed changes now? [y/N]:") {
+		t.Fatalf("expected explicit commit prompt, got output: %q", output)
+	}
+	if !strings.Contains(output, "Changes are in your working tree for local review. After reviewing or committing them, rerun `concierge run`.") {
+		t.Fatalf("expected local-review handoff, got output: %q", output)
+	}
+
+	status := runGit(t, repo, "status", "--porcelain")
+	if !strings.Contains(status, "leap.yaml") || !strings.Contains(status, "leap_integration.py") {
+		t.Fatalf("expected generated files to remain for review, got %q", status)
+	}
+	latestMessage := runGit(t, repo, "log", "-1", "--pretty=%s")
+	if latestMessage != "initial commit" {
+		t.Fatalf("expected no new commit after declining commit prompt, got %q", latestMessage)
 	}
 }
 
@@ -493,7 +528,7 @@ func TestRunDeclineStepApprovalLeavesRepoUnchanged(t *testing.T) {
 	if !strings.Contains(output, "You > Continue now? [y/N]:") {
 		t.Fatalf("expected pre-change approval prompt, got output: %q", output)
 	}
-	if strings.Contains(output, "Apply and commit these changes? [Y/n]:") {
+	if strings.Contains(output, "Keep these changes in your working tree for local review? [Y/n]:") {
 		t.Fatalf("did not expect commit approval prompt after declining pre-change prompt, got output: %q", output)
 	}
 
@@ -561,7 +596,7 @@ func TestRunRepairsDeclaredCodeLoaderMissingWithoutCommitPrompt(t *testing.T) {
 	if !strings.Contains(output, "You > Continue now? [y/N]:") {
 		t.Fatalf("expected runtime repair approval prompt, got output: %q", output)
 	}
-	if strings.Contains(output, "Apply and commit these changes? [Y/n]:") {
+	if strings.Contains(output, "Keep these changes in your working tree for local review? [Y/n]:") {
 		t.Fatalf("did not expect commit approval prompt for environment-only runtime repair, got output: %q", output)
 	}
 

@@ -15,7 +15,13 @@ import (
 const conciergePathExclude = ":(exclude).concierge/**"
 
 // ApprovalFunc decides whether to approve committing the current diff.
-type ApprovalFunc func(step core.EnsureStep, review ChangeReview) (bool, error)
+type ApprovalFunc func(step core.EnsureStep, review ChangeReview) (ReviewDecision, error)
+
+// ReviewDecision captures what to do with an applied working-tree diff after review.
+type ReviewDecision struct {
+	KeepChanges bool
+	Commit      bool
+}
 
 // ManagerOptions controls review behavior.
 type ManagerOptions struct {
@@ -33,10 +39,10 @@ type Manager struct {
 // NewManager creates a git manager with approval callback.
 func NewManager(approve ApprovalFunc, opts ...ManagerOptions) *Manager {
 	if approve == nil {
-		approve = func(step core.EnsureStep, review ChangeReview) (bool, error) {
+		approve = func(step core.EnsureStep, review ChangeReview) (ReviewDecision, error) {
 			_ = step
 			_ = review
-			return false, nil
+			return ReviewDecision{}, nil
 		}
 	}
 
@@ -91,7 +97,7 @@ func (m *Manager) Handle(ctx context.Context, snapshot core.WorkspaceSnapshot, r
 		return core.GitDecision{}, core.WrapError(core.KindUnknown, "gitmanager.handle.review", err)
 	}
 
-	approved, err := m.approve(result.Step, review)
+	reviewDecision, err := m.approve(result.Step, review)
 	if err != nil {
 		if restoreErr := m.restoreWorkingTree(ctx, repoRoot); restoreErr != nil {
 			return core.GitDecision{}, core.WrapError(core.KindUnknown, "gitmanager.handle.approval_restore", restoreErr)
@@ -115,7 +121,7 @@ func (m *Manager) Handle(ctx context.Context, snapshot core.WorkspaceSnapshot, r
 		})
 	}
 
-	if !approved {
+	if !reviewDecision.KeepChanges {
 		if err := m.restoreWorkingTree(ctx, repoRoot); err != nil {
 			return core.GitDecision{}, err
 		}
@@ -126,7 +132,20 @@ func (m *Manager) Handle(ctx context.Context, snapshot core.WorkspaceSnapshot, r
 			Evidence: append([]core.EvidenceItem(nil), result.Evidence...),
 		}
 		decision.Notes = append(decision.Notes, fmt.Sprintf("changes for %s were rejected and reverted", result.Step.ID))
-		decision.Evidence = append(decision.Evidence, core.EvidenceItem{Name: "git.approval", Value: "rejected"})
+		decision.Evidence = append(decision.Evidence,
+			core.EvidenceItem{Name: "git.approval", Value: "rejected"},
+			core.EvidenceItem{Name: "git.review_action", Value: "reverted"},
+		)
+		return decision, nil
+	}
+
+	if !reviewDecision.Commit {
+		decision.Notes = append(decision.Notes, "changes kept in your working tree for local review; no commit was created")
+		decision.Evidence = append(decision.Evidence,
+			core.EvidenceItem{Name: "git.approval", Value: "review_pending"},
+			core.EvidenceItem{Name: "git.review_action", Value: "kept_uncommitted"},
+			core.EvidenceItem{Name: "git.commit_pending_review", Value: "true"},
+		)
 		return decision, nil
 	}
 
@@ -151,6 +170,7 @@ func (m *Manager) Handle(ctx context.Context, snapshot core.WorkspaceSnapshot, r
 	decision.Notes = append(decision.Notes, fmt.Sprintf("changes committed on branch %s", branch))
 	decision.Evidence = append(decision.Evidence,
 		core.EvidenceItem{Name: "git.approval", Value: "approved"},
+		core.EvidenceItem{Name: "git.review_action", Value: "committed"},
 		core.EvidenceItem{Name: "git.commit_hash", Value: hash},
 	)
 

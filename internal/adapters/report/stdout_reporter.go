@@ -158,7 +158,7 @@ func writeSummaryLine(writer io.Writer, report core.IterationReport, options Out
 				}
 			}
 		}
-		if shouldOfferInteractiveHelp(report, attentionCheck) {
+		if shouldOfferInteractiveHelp(report, attentionCheck, details) {
 			if _, err := fmt.Fprintln(writer, "I can help with this step interactively and will ask before making any changes."); err != nil {
 				return err
 			}
@@ -175,6 +175,8 @@ func writeSummaryLine(writer io.Writer, report core.IterationReport, options Out
 	if hasEvidenceValue(report.Evidence, "executor.change_approval", "rejected") ||
 		hasEvidenceValue(report.Evidence, "git.approval", "rejected") {
 		changeStatus = "No changes were made because approval was not granted."
+	} else if hasEvidenceValue(report.Evidence, "git.commit_pending_review", "true") {
+		changeStatus = "Changes were applied and kept in your working tree for local review."
 	} else if report.Applied {
 		changeStatus = "Changes were applied."
 	}
@@ -329,7 +331,7 @@ func hasEvidenceValue(evidence []core.EvidenceItem, name, value string) bool {
 	return false
 }
 
-func shouldOfferInteractiveHelp(report core.IterationReport, attentionCheck core.VerifiedCheck) bool {
+func shouldOfferInteractiveHelp(report core.IterationReport, attentionCheck core.VerifiedCheck, issues []core.Issue) bool {
 	if attentionCheck.StepID == "" {
 		return false
 	}
@@ -340,6 +342,9 @@ func shouldOfferInteractiveHelp(report core.IterationReport, attentionCheck core
 		return false
 	}
 	if hasEvidenceValue(report.Evidence, "executor.mode", "self_service") {
+		return false
+	}
+	if core.IssuesRequireManualAction(issues) {
 		return false
 	}
 	return true
@@ -422,6 +427,19 @@ func stepGuidanceLines(stepID core.EnsureStepID, issues []core.Issue) []string {
 				"If you want the newer staged local guide validator output, upgrade `code-loader`, then rerun `concierge run`.",
 			}
 		}
+		if hasIssueCode(issues, core.IssueCodeNativeSystemDependencyMissing) {
+			lines := []string{
+				"Next step: install the missing native system library required by this Poetry environment, then rerun `concierge run`.",
+				"Concierge cannot repair missing OS shared libraries from repository code.",
+			}
+			if library := missingNativeLibraryFromIssues(issues); library != "" {
+				lines = append([]string{fmt.Sprintf("The missing library reported by Python was `%s`.", library)}, lines...)
+				if library == "libGL.so.1" {
+					lines = append(lines, "Package names vary by OS. On Debian/Ubuntu, `libGL.so.1` is commonly provided by `libgl1`.")
+				}
+			}
+			return lines
+		}
 		return []string{
 			"Next step: verify `poetry env info --executable`, `poetry check`, and `poetry run python --version`, then rerun `concierge run`.",
 		}
@@ -458,6 +476,23 @@ func hasIssueCode(issues []core.Issue, code core.IssueCode) bool {
 		}
 	}
 	return false
+}
+
+func missingNativeLibraryFromIssues(issues []core.Issue) string {
+	for _, issue := range issues {
+		if issue.Code != core.IssueCodeNativeSystemDependencyMissing {
+			continue
+		}
+		message := strings.TrimSpace(issue.Message)
+		if message == "" {
+			continue
+		}
+		parts := strings.Split(message, "`")
+		if len(parts) >= 3 {
+			return strings.TrimSpace(parts[1])
+		}
+	}
+	return ""
 }
 
 func reportColorEnabled(writer io.Writer, options OutputOptions) bool {

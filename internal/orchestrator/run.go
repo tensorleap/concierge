@@ -9,8 +9,11 @@ import (
 // RunOptions configures the outer orchestration loop.
 type RunOptions struct {
 	MaxIterations int
-	BeforeReport  func(snapshot core.WorkspaceSnapshot, report *core.IterationReport) error
-	AfterReport   func(snapshot core.WorkspaceSnapshot, report core.IterationReport) error
+	// InitialBlockingIssues resolves persisted blocking validation issues against
+	// the first fresh snapshot of a new `concierge run` invocation.
+	InitialBlockingIssues func(snapshot core.WorkspaceSnapshot) []core.Issue
+	BeforeReport          func(snapshot core.WorkspaceSnapshot, report *core.IterationReport) error
+	AfterReport           func(snapshot core.WorkspaceSnapshot, report core.IterationReport) error
 }
 
 // RunStopReason captures why the orchestration loop stopped.
@@ -47,7 +50,14 @@ func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOpti
 			}, err
 		}
 
-		report, snapshot, err := e.runIteration(ctx, req, i+1, carriedValidationIssues, opts.BeforeReport)
+		report, snapshot, err := e.runIteration(
+			ctx,
+			req,
+			i+1,
+			carriedValidationIssues,
+			opts.InitialBlockingIssues,
+			opts.BeforeReport,
+		)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return RunResult{
@@ -119,6 +129,12 @@ func requiresUserAction(report core.IterationReport) bool {
 		if item.Name == "executor.mode" && item.Value == "self_service" {
 			return true
 		}
+		if item.Name == "git.commit_pending_review" && item.Value == "true" {
+			return true
+		}
+	}
+	if core.IssuesRequireManualAction(report.Validation.Issues) {
+		return true
 	}
 	return false
 }

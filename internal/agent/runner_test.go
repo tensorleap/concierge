@@ -57,8 +57,11 @@ func TestRunnerInvokesClaudeWithSystemPrompt(t *testing.T) {
 	if !strings.Contains(contents, BuildClaudeSystemPrompt()) {
 		t.Fatalf("expected system prompt in transcript, got: %q", contents)
 	}
-	if !strings.Contains(contents, BuildClaudeTaskPrompt(task)) {
-		t.Fatalf("expected task prompt in transcript, got: %q", contents)
+	if !strings.Contains(contents, "Task prompt:\nObjective:\nImplement preprocess contract") {
+		t.Fatalf("expected structured task prompt in transcript, got: %q", contents)
+	}
+	if !strings.Contains(contents, "Prepared runtime: <none>") {
+		t.Fatalf("expected repository facts in task prompt, got: %q", contents)
 	}
 }
 
@@ -155,6 +158,121 @@ func TestRunnerRunWritesTranscript(t *testing.T) {
 	}
 }
 
+func TestRunnerUsesSanitizedRepoViewWithoutDotConcierge(t *testing.T) {
+	repoRoot := t.TempDir()
+	binDir := t.TempDir()
+	writeAgentFixtureFile(t, filepath.Join(repoRoot, "leap_integration.py"), "print('hello')\n")
+	writeAgentFixtureFile(t, filepath.Join(repoRoot, ".concierge", "state", "state.json"), "{}\n")
+	writeAgentFixtureFile(t, filepath.Join(repoRoot, ".venv", "bin", "python"), "#!/usr/bin/env bash\n")
+
+	installMockClaude(t, binDir, "#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1-}\" == \"--help\" ]]; then\ncat <<'EOF'\n--output-format stream-json\n--include-partial-messages\nEOF\nexit 0\nfi\nprintf '{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"cwd=%s has_leap=%s has_venv=%s has_concierge=%s\"}]}}\\n' \"$(pwd)\" \"$(test -e leap_integration.py && echo yes || echo no)\" \"$(test -e .venv/bin/python && echo yes || echo no)\" \"$(test -e .concierge && echo yes || echo no)\"\necho '{\"type\":\"result\",\"result\":\"done\"}'\n")
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	transcriptPath := filepath.Join(repoRoot, ".concierge", "evidence", "snapshot-view", "agent.transcript.log")
+	task := validAgentTask(repoRoot, transcriptPath)
+
+	runner := NewRunner()
+	_, err := runner.Run(context.Background(), task)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	raw, err := os.ReadFile(transcriptPath)
+	if err != nil {
+		t.Fatalf("ReadFile failed for transcript: %v", err)
+	}
+	contents := string(raw)
+	if !strings.Contains(contents, "has_leap=yes") {
+		t.Fatalf("expected sanitized repo view to include repo files, got: %q", contents)
+	}
+	if !strings.Contains(contents, "has_venv=yes") {
+		t.Fatalf("expected sanitized repo view to include runtime interpreter path, got: %q", contents)
+	}
+	if !strings.Contains(contents, "has_concierge=no") {
+		t.Fatalf("expected sanitized repo view to hide .concierge, got: %q", contents)
+	}
+}
+
+func TestPrepareAgentTaskExposesAllowedConciergeMaterializationPaths(t *testing.T) {
+	repoRoot := t.TempDir()
+	transcriptPath := filepath.Join(repoRoot, ".concierge", "evidence", "snapshot-view", "agent.transcript.log")
+	task := validAgentTask(repoRoot, transcriptPath)
+	task.ScopePolicy.AllowedFiles = append(
+		[]string{},
+		task.ScopePolicy.AllowedFiles...,
+	)
+	task.ScopePolicy.AllowedFiles = append(task.ScopePolicy.AllowedFiles,
+		".concierge/materializers",
+		".concierge/materialized_models",
+	)
+
+	prepared, _, cleanup, err := prepareAgentTask(task)
+	if err != nil {
+		t.Fatalf("prepareAgentTask returned error: %v", err)
+	}
+	defer cleanup()
+
+	viewRoot := prepared.RepoRoot
+	if _, err := os.Stat(filepath.Join(viewRoot, ".concierge", "state")); !os.IsNotExist(err) {
+		t.Fatalf("expected .concierge/state to stay hidden in agent view, got err=%v", err)
+	}
+
+	viewModelDir := filepath.Join(viewRoot, ".concierge", "materialized_models")
+	info, err := os.Lstat(viewModelDir)
+	if err != nil {
+		t.Fatalf("expected materialized model dir in agent view: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected %q to be a symlink into the real workspace", viewModelDir)
+	}
+
+	viewArtifact := filepath.Join(viewModelDir, "model.onnx")
+	if err := os.WriteFile(viewArtifact, []byte("binary"), 0o644); err != nil {
+		t.Fatalf("WriteFile failed for agent-view artifact: %v", err)
+	}
+
+	realArtifact := filepath.Join(repoRoot, ".concierge", "materialized_models", "model.onnx")
+	raw, err := os.ReadFile(realArtifact)
+	if err != nil {
+		t.Fatalf("expected artifact to materialize in real workspace: %v", err)
+	}
+	if string(raw) != "binary" {
+		t.Fatalf("expected propagated artifact contents %q, got %q", "binary", string(raw))
+	}
+}
+
+func TestRunnerGuardsBarePythonAndOutsideRepoProbes(t *testing.T) {
+	repoRoot := t.TempDir()
+	binDir := t.TempDir()
+	writeAgentFixtureFile(t, filepath.Join(repoRoot, "leap_integration.py"), "print('hello')\n")
+	writeAgentFixtureFile(t, filepath.Join(repoRoot, ".venv", "bin", "python"), "#!/usr/bin/env bash\n")
+
+	installMockClaude(t, binDir, "#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1-}\" == \"--help\" ]]; then\ncat <<'EOF'\n--output-format stream-json\n--include-partial-messages\nEOF\nexit 0\nfi\npython3 -V || true\nfind / -maxdepth 0 || true\necho '{\"type\":\"result\",\"result\":\"done\"}'\n")
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	transcriptPath := filepath.Join(repoRoot, ".concierge", "evidence", "snapshot-guards", "agent.transcript.log")
+	task := validAgentTask(repoRoot, transcriptPath)
+	task.RepoContext.RuntimeInterpreter = filepath.Join(repoRoot, ".venv", "bin", "python")
+
+	runner := NewRunner()
+	_, err := runner.Run(context.Background(), task)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	raw, err := os.ReadFile(transcriptPath)
+	if err != nil {
+		t.Fatalf("ReadFile failed for transcript: %v", err)
+	}
+	contents := string(raw)
+	if !strings.Contains(contents, "concierge-agent-guard: bare python3 is disabled for agent tasks") {
+		t.Fatalf("expected bare-python guard message in transcript, got: %q", contents)
+	}
+	if !strings.Contains(contents, "concierge-agent-guard: refusing path outside agent repo view: /") {
+		t.Fatalf("expected outside-repo guard message in transcript, got: %q", contents)
+	}
+}
+
 func installMockClaude(t *testing.T, binDir, body string) {
 	t.Helper()
 	scriptPath := filepath.Join(binDir, "claude")
@@ -190,5 +308,15 @@ func validAgentTask(repoRoot, transcriptPath string) AgentTask {
 		AcceptanceChecks: []string{"Implement preprocess contract"},
 		RepoRoot:         repoRoot,
 		TranscriptPath:   transcriptPath,
+	}
+}
+
+func writeAgentFixtureFile(t *testing.T, path, contents string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed for %q: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(contents), 0o755); err != nil {
+		t.Fatalf("WriteFile failed for %q: %v", path, err)
 	}
 }

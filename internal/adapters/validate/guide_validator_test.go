@@ -157,6 +157,63 @@ func TestGuideValidatorMapsLeapLoaderPayloadFailures(t *testing.T) {
 	}
 }
 
+func TestGuideValidatorPrefersSpecificPayloadFailureOverGenericParserImportError(t *testing.T) {
+	repoRoot := buildGuideValidationRepo(t)
+	validator := &GuideValidator{
+		runtimeRunner: &fakeGuideRuntimeRunner{
+			results: []PythonRuntimeCommandResult{
+				{
+					Command: "poetry run python leap_integration.py",
+					Stdout: strings.Join([]string{
+						"Decorator Name                     | Added to integration",
+						"-------------------------------------------------------",
+						"tensorleap_preprocess              | ❌",
+						"tensorleap_input_encoder           | ✅",
+						"tensorleap_load_model              | ✅",
+						"tensorleap_integration_test        | ✅",
+						"tensorleap_gt_encoder              | ✅",
+						"",
+						"Some mandatory components have not yet been added to the Integration test. Recommended next interface to add is: tensorleap_preprocess",
+					}, "\n"),
+				},
+				{
+					Command: "poetry run python -c ...",
+					Stdout: strings.Join([]string{
+						"{",
+						`  "available": true,`,
+						`  "isValid": false,`,
+						`  "generalError": "Something went wrong. None in file downloads.py, line_number:  14",`,
+						`  "payloads": [`,
+						`    {"name":"preprocess","passed":false,"display":{"training":"ImportError(\"cannot import name 'LOGGER' from 'ultralytics.utils' (unknown location)\") in file downloads.py, line_number:  14"}}`,
+						`  ]`,
+						"}",
+					}, "\n"),
+				},
+			},
+			errs: []error{nil, nil},
+		},
+		astAnalyzer: fakeIntegrationTestASTAnalyzer{},
+	}
+
+	result, err := validator.Run(context.Background(), guideValidationSnapshot(t, repoRoot))
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !containsIssueCode(result.Issues, core.IssueCodePreprocessExecutionFailed) {
+		t.Fatalf("expected preprocess issue, got %+v", result.Issues)
+	}
+	if containsIssueCode(result.Issues, core.IssueCodeIntegrationScriptImportFailed) {
+		t.Fatalf("did not expect generic integration-script import issue when a preprocess payload failed, got %+v", result.Issues)
+	}
+	primary, ok := core.SelectPrimaryEnsureStep(result.Issues)
+	if !ok {
+		t.Fatalf("expected a primary ensure step, got issues %+v", result.Issues)
+	}
+	if primary.ID != core.EnsureStepPreprocessContract {
+		t.Fatalf("expected primary step %q, got %q", core.EnsureStepPreprocessContract, primary.ID)
+	}
+}
+
 func TestGuideValidatorPrefersASTIntegrationTestIssuesOverGenericMappingFailure(t *testing.T) {
 	repoRoot := buildGuideValidationRepo(t)
 	validator := &GuideValidator{
@@ -253,6 +310,43 @@ func TestGuideValidatorDoesNotAssumePreprocessFailureWhenLegacyCodeLoaderOmitsSt
 	}
 	if result.Summary.LocalStatusTableSupported {
 		t.Fatalf("did not expect local status table support, got %+v", result.Summary)
+	}
+}
+
+func TestGuideValidatorMapsMissingNativeLibraryParserErrorsToRuntimeIssue(t *testing.T) {
+	repoRoot := buildGuideValidationRepo(t)
+	validator := &GuideValidator{
+		runtimeRunner: &fakeGuideRuntimeRunner{
+			results: []PythonRuntimeCommandResult{
+				{
+					Command: "poetry run python leap_integration.py",
+					Stdout:  "",
+				},
+				{
+					Command: "poetry run python -c ...",
+					Stdout: strings.Join([]string{
+						"{",
+						`  "available": true,`,
+						`  "isValid": false,`,
+						`  "generalError": "ImportError('libGL.so.1: cannot open shared object file: No such file or directory')"`,
+						"}",
+					}, "\n"),
+				},
+			},
+			errs: []error{nil, nil},
+		},
+		astAnalyzer: fakeIntegrationTestASTAnalyzer{},
+	}
+
+	result, err := validator.Run(context.Background(), guideValidationSnapshot(t, repoRoot))
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if got := result.Summary.Recommendation.Stage; got != "runtime_native_dependency" {
+		t.Fatalf("expected runtime native dependency recommendation, got %q", got)
+	}
+	if !containsIssueCode(result.Issues, core.IssueCodeNativeSystemDependencyMissing) {
+		t.Fatalf("expected native system dependency issue, got %+v", result.Issues)
 	}
 }
 

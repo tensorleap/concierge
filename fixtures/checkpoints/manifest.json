@@ -1,0 +1,58 @@
+{
+  "checkpoints": [
+    {
+      "fixture_id": "mnist",
+      "step": "integration_script",
+      "source_kind": "case",
+      "source_id": "mnist_canonical_layout",
+      "build_mode": "cold",
+      "expected_primary_step": "ensure.integration_script",
+      "notes": "Non-canonical entrypoint recovery starts from the dedicated mnist case."
+    },
+    {
+      "fixture_id": "mnist",
+      "step": "preprocess",
+      "source_kind": "case",
+      "source_id": "mnist_missing_preprocess",
+      "build_mode": "cold",
+      "expected_primary_step": "ensure.preprocess_contract",
+      "notes": "Guide-native preprocess authoring starts from the missing-preprocess case."
+    },
+    {
+      "fixture_id": "mnist",
+      "step": "input_encoders",
+      "source_kind": "case",
+      "source_id": "mnist_minimum_inputs",
+      "build_mode": "cold",
+      "expected_primary_step": "ensure.input_encoders",
+      "notes": "Input-encoder authoring starts from the minimum-input coverage case."
+    },
+    {
+      "fixture_id": "mnist",
+      "step": "model_acquisition",
+      "source_kind": "case",
+      "source_id": "mnist_load_model",
+      "build_mode": "cold",
+      "expected_primary_step": "ensure.model_acquisition",
+      "notes": "Model acquisition starts from the missing-model case."
+    },
+    {
+      "fixture_id": "mnist",
+      "step": "integration_test",
+      "source_kind": "case",
+      "source_id": "mnist_integration_test_wiring",
+      "build_mode": "cold",
+      "expected_primary_step": "ensure.integration_test_contract",
+      "notes": "Integration-test authoring starts from the missing-call wiring case."
+    },
+    {
+      "fixture_id": "mnist",
+      "step": "ground_truth_encoders",
+      "source_kind": "case",
+      "source_id": "mnist_gt_encoders",
+      "build_mode": "cold",
+      "expected_primary_step": "ensure.ground_truth_encoders",
+      "notes": "GT encoder authoring starts from the reduced-ground-truth coverage case."
+    }
+  ]
+}

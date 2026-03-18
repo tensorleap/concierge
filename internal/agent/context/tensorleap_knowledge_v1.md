@@ -36,6 +36,7 @@ exclude:
 - If Repository Facts provide a prepared runtime interpreter, use that interpreter for Python repo checks instead of bare `python`/`python3`; treat failures under the wrong interpreter as environment mismatch evidence rather than dataset-path evidence.
 - If a repository-specific sibling-datasets convention would resolve to a top-level filesystem path in the current runtime, such as repo root `/workspace` producing `/datasets`, do not create that path unless the runtime explicitly provides it as writable; prefer a repo-local writable path backed by repository evidence or stop with the blocker.
 - Do not set deprecated `PreprocessResponse.length`; provide real `sample_ids` and `state` values for each subset instead.
+- `sample_id_type` controls the runtime type passed as the first argument to input encoders, GT encoders, and integration tests; when `sample_ids` are provided and `sample_id_type` is omitted, code_loader defaults it to `str`.
 - Framework-managed dataset cache paths are acceptable only when reached through repository-supported loaders or manifest resolution; do not invent or hard-code them yourself.
 - Generic repo assets, screenshots, docs media, and example images are not valid dataset evidence unless the repository explicitly identifies them as the real train/validation data.
 - If real train/validation identifiers cannot be derived from repository evidence or a repo-supported acquisition flow, stop and surface the data blocker instead of guessing.
@@ -77,20 +78,23 @@ def preprocess_func() -> List[PreprocessResponse]:
 ## input_encoder_contract
 
 - Input encoders are registered with `@tensorleap_input_encoder`.
-- Input encoders run per sample index and must be consistent with model input shapes/dtypes.
-- Input encoders must execute reliably across multiple indices for each required input symbol.
+- Input encoders receive the Tensorleap `sample_id` from `PreprocessResponse.sample_ids`, not a guaranteed integer index.
+- Input encoders must execute reliably across representative samples for each required input symbol.
+- Register each input encoder with the exact required Tensorleap symbol name; do not substitute raw model tensor aliases such as `images` for a required symbol such as `image`.
 - Canonical signature:
 
 ```python
 import numpy as np
+from typing import Union
 from code_loader.contract.datasetclasses import PreprocessResponse
 from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_input_encoder
 
 @tensorleap_input_encoder(name="image", channel_dim=-1)
-def input_encoder(idx: int, preprocess: PreprocessResponse) -> np.ndarray:
+def input_encoder(sample_id: Union[int, str], preprocess: PreprocessResponse) -> np.ndarray:
     ...
 ```
 
+- `sample_id` must be handled according to `PreprocessResponse.sample_id_type`; it is not guaranteed to be `int`.
 - Returns `np.ndarray` input without batch dimension.
 - `channel_dim` defaults to `-1` (channels last); use `1` for channels-first outputs.
 
@@ -99,15 +103,17 @@ def input_encoder(idx: int, preprocess: PreprocessResponse) -> np.ndarray:
 - Ground-truth encoders are registered with `@tensorleap_gt_encoder`.
 - GT encoders run on labeled subsets and should align with declared target semantics.
 - Unlabeled subsets do not require GT encoder execution.
+- GT encoders receive the Tensorleap `sample_id` from `PreprocessResponse.sample_ids`; it is not guaranteed to be `int`.
 - Canonical signature:
 
 ```python
 import numpy as np
+from typing import Union
 from code_loader.contract.datasetclasses import PreprocessResponse
 from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_gt_encoder
 
 @tensorleap_gt_encoder(name="classes")
-def gt_encoder(idx: int, preprocess: PreprocessResponse) -> np.ndarray:
+def gt_encoder(sample_id: Union[int, str], preprocess: PreprocessResponse) -> np.ndarray:
     ...
 ```
 
@@ -118,14 +124,16 @@ def gt_encoder(idx: int, preprocess: PreprocessResponse) -> np.ndarray:
 - Integration test is mandatory and must be decorated with `@tensorleap_integration_test`.
 - Only decorators called within the integration-test path are used during platform analysis.
 - Integration test should wire preprocess, encoders, model loading, and required interfaces explicitly.
+- The first integration-test argument is the Tensorleap `sample_id` from `PreprocessResponse.sample_ids`, not a guaranteed integer index.
 - Canonical signature:
 
 ```python
+from typing import Union
 from code_loader.contract.datasetclasses import PreprocessResponse
 from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_integration_test
 
 @tensorleap_integration_test()
-def integration_test(idx: int, subset: PreprocessResponse) -> None:
+def integration_test(sample_id: Union[int, str], subset: PreprocessResponse) -> None:
     ...
 ```
 

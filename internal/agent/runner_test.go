@@ -48,6 +48,9 @@ func TestRunnerInvokesClaudeWithSystemPrompt(t *testing.T) {
 	if !strings.Contains(contents, "--output-format stream-json") {
 		t.Fatalf("expected stream-json invocation in transcript, got: %q", contents)
 	}
+	if !strings.Contains(contents, "--model "+defaultClaudeModel) {
+		t.Fatalf("expected default Claude model in transcript, got: %q", contents)
+	}
 	if !strings.Contains(contents, "--include-partial-messages") {
 		t.Fatalf("expected partial-message flag in transcript, got: %q", contents)
 	}
@@ -132,6 +135,9 @@ func TestRunnerRunWritesTranscript(t *testing.T) {
 	}
 	if !strings.Contains(contents, "--output-format stream-json") {
 		t.Fatalf("expected stream-json command in transcript, got: %q", contents)
+	}
+	if !strings.Contains(contents, "--model "+defaultClaudeModel) {
+		t.Fatalf("expected default Claude model in transcript, got: %q", contents)
 	}
 	if !strings.Contains(contents, "--verbose") {
 		t.Fatalf("expected verbose flag in transcript, got: %q", contents)
@@ -238,6 +244,49 @@ func TestPrepareAgentTaskExposesAllowedConciergeMaterializationPaths(t *testing.
 	}
 	if string(raw) != "binary" {
 		t.Fatalf("expected propagated artifact contents %q, got %q", "binary", string(raw))
+	}
+}
+
+func TestPrepareAgentTaskExposesAllowedConciergeArtifactFilePath(t *testing.T) {
+	repoRoot := t.TempDir()
+	transcriptPath := filepath.Join(repoRoot, ".concierge", "evidence", "snapshot-view", "agent.transcript.log")
+	task := validAgentTask(repoRoot, transcriptPath)
+	task.ScopePolicy.AllowedFiles = append(
+		[]string{},
+		task.ScopePolicy.AllowedFiles...,
+	)
+	task.ScopePolicy.AllowedFiles = append(task.ScopePolicy.AllowedFiles,
+		".concierge/materialized_models/model.onnx",
+	)
+
+	realArtifact := filepath.Join(repoRoot, ".concierge", "materialized_models", "model.onnx")
+	writeAgentFixtureFile(t, realArtifact, "binary")
+
+	prepared, _, cleanup, err := prepareAgentTask(task)
+	if err != nil {
+		t.Fatalf("prepareAgentTask returned error: %v", err)
+	}
+	defer cleanup()
+
+	viewArtifact := filepath.Join(prepared.RepoRoot, ".concierge", "materialized_models", "model.onnx")
+	info, err := os.Lstat(viewArtifact)
+	if err != nil {
+		t.Fatalf("expected materialized model artifact in agent view: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected %q to be a symlink into the real workspace", viewArtifact)
+	}
+
+	if err := os.WriteFile(viewArtifact, []byte("updated"), 0o644); err != nil {
+		t.Fatalf("WriteFile failed for agent-view artifact: %v", err)
+	}
+
+	raw, err := os.ReadFile(realArtifact)
+	if err != nil {
+		t.Fatalf("expected artifact write to propagate to real workspace: %v", err)
+	}
+	if string(raw) != "updated" {
+		t.Fatalf("expected propagated artifact contents %q, got %q", "updated", string(raw))
 	}
 }
 

@@ -36,15 +36,17 @@ func BuildAgentRepoContext(
 	}
 
 	context := core.AgentRepoContext{
-		RepoRoot:            repoRoot,
-		EntryFile:           normalizeRepoContextPath(resolveEntryFile(snapshot, status)),
-		LeapYAMLBoundary:    leapYAMLBoundarySummary(snapshot),
-		RuntimeKind:         runtimeKindForContext(snapshot.RuntimeProfile),
-		RuntimeInterpreter:  normalizeRepoContextPath(runtimeInterpreterForContext(snapshot.RuntimeProfile)),
-		RuntimeStatus:       runtimeStatusForContext(snapshot.RuntimeProfile),
-		SelectedModelPath:   normalizeRepoContextPath(resolveSelectedModelPath(snapshot, status)),
-		ModelCandidates:     truncateRepoContextValues(modelCandidatesForContext(snapshot, status), maxRepoContextModelCandidates),
-		ReadyModelArtifacts: truncateRepoContextValues(readyModelArtifactsForContext(status), maxRepoContextModelCandidates),
+		RepoRoot:                   repoRoot,
+		EntryFile:                  normalizeRepoContextPath(resolveEntryFile(snapshot, status)),
+		LeapYAMLBoundary:           leapYAMLBoundarySummary(snapshot),
+		RuntimeKind:                runtimeKindForContext(snapshot.RuntimeProfile),
+		RuntimeInterpreter:         normalizeRepoContextPath(runtimeInterpreterForContext(snapshot.RuntimeProfile)),
+		RuntimeStatus:              runtimeStatusForContext(snapshot.RuntimeProfile),
+		SelectedModelPath:          normalizeRepoContextPath(resolveSelectedModelPath(snapshot, status)),
+		RequiredInputSymbols:       requiredInputSymbolsForContext(status.Contracts),
+		RequiredGroundTruthSymbols: requiredGroundTruthSymbolsForContext(status.Contracts),
+		ModelCandidates:            truncateRepoContextValues(modelCandidatesForContext(snapshot, status), maxRepoContextModelCandidates),
+		ReadyModelArtifacts:        truncateRepoContextValues(readyModelArtifactsForContext(status), maxRepoContextModelCandidates),
 		ModelAcquisitionLeads: truncateRepoContextValues(
 			modelAcquisitionLeadsForContext(status),
 			maxRepoContextModelCandidates,
@@ -122,6 +124,68 @@ func modelCandidatesForContext(snapshot core.WorkspaceSnapshot, status core.Inte
 		candidates = append(candidates, selected)
 	}
 	return uniqueSortedRepoContextValues(candidates)
+}
+
+func requiredInputSymbolsForContext(contracts *core.IntegrationContracts) []string {
+	return requiredSymbolsForContext(
+		contracts,
+		func(current *core.IntegrationContracts) []string {
+			if current.ConfirmedMapping == nil {
+				return nil
+			}
+			return current.ConfirmedMapping.InputSymbols
+		},
+		func(current *core.IntegrationContracts) []string {
+			if current.InputGTDiscovery == nil || current.InputGTDiscovery.ComparisonReport == nil {
+				return nil
+			}
+			return current.InputGTDiscovery.ComparisonReport.PrimaryInputSymbols
+		},
+		func(current *core.IntegrationContracts) []string {
+			return current.DiscoveredInputSymbols
+		},
+	)
+}
+
+func requiredGroundTruthSymbolsForContext(contracts *core.IntegrationContracts) []string {
+	return requiredSymbolsForContext(
+		contracts,
+		func(current *core.IntegrationContracts) []string {
+			if current.ConfirmedMapping == nil {
+				return nil
+			}
+			return current.ConfirmedMapping.GroundTruthSymbols
+		},
+		func(current *core.IntegrationContracts) []string {
+			if current.InputGTDiscovery == nil || current.InputGTDiscovery.ComparisonReport == nil {
+				return nil
+			}
+			return current.InputGTDiscovery.ComparisonReport.PrimaryGroundTruthSymbols
+		},
+		func(current *core.IntegrationContracts) []string {
+			return current.DiscoveredGroundTruthSymbols
+		},
+	)
+}
+
+func requiredSymbolsForContext(
+	contracts *core.IntegrationContracts,
+	sources ...func(*core.IntegrationContracts) []string,
+) []string {
+	if contracts == nil {
+		return nil
+	}
+
+	for _, source := range sources {
+		if source == nil {
+			continue
+		}
+		if values := uniqueSortedRepoContextValues(source(contracts)); len(values) > 0 {
+			return values
+		}
+	}
+
+	return nil
 }
 
 func readyModelArtifactsForContext(status core.IntegrationStatus) []string {
@@ -349,9 +413,13 @@ func applyRepoContextStepSlice(step core.EnsureStepID, context *core.AgentRepoCo
 
 	switch step {
 	case core.EnsureStepModelAcquisition:
+		context.RequiredInputSymbols = nil
+		context.RequiredGroundTruthSymbols = nil
 		context.DecoratorInventory = nil
 		context.IntegrationTestCalls = nil
 	case core.EnsureStepModelContract:
+		context.RequiredInputSymbols = nil
+		context.RequiredGroundTruthSymbols = nil
 		context.DecoratorInventory = nil
 		context.IntegrationTestCalls = nil
 	case core.EnsureStepPreprocessContract:
@@ -360,6 +428,11 @@ func applyRepoContextStepSlice(step core.EnsureStepID, context *core.AgentRepoCo
 		context.ModelCandidates = nil
 		context.SelectedModelPath = ""
 		context.IntegrationTestCalls = nil
+		if step == core.EnsureStepInputEncoders {
+			context.RequiredGroundTruthSymbols = nil
+		} else {
+			context.RequiredInputSymbols = nil
+		}
 	case core.EnsureStepIntegrationTestContract:
 		context.ModelCandidates = nil
 		context.SelectedModelPath = ""

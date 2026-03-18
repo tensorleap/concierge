@@ -98,8 +98,9 @@ func PolicyForStep(step core.EnsureStepID, snapshot core.WorkspaceSnapshot, stat
 				"Do not rewire @tensorleap_integration_test calls in this step",
 			},
 			RequiredOutcomes: []string{
-				"Implement missing @tensorleap_input_encoder functions for required input symbols",
-				"Keep encoder output shapes and dtypes stable across multiple sample indices",
+				"Implement missing @tensorleap_input_encoder functions for required input symbols using the exact Tensorleap symbol names",
+				"Treat the first encoder argument as the Tensorleap sample_id matching PreprocessResponse.sample_id_type, not as a positional dataset index",
+				"Keep encoder output shapes and dtypes stable across representative samples",
 			},
 			StopAndAskTriggers: []string{
 				"Required input symbols or signatures cannot be resolved from repository evidence",
@@ -119,6 +120,7 @@ func PolicyForStep(step core.EnsureStepID, snapshot core.WorkspaceSnapshot, stat
 			},
 			RequiredOutcomes: []string{
 				"Implement missing @tensorleap_gt_encoder functions for required target symbols",
+				"Treat the first GT encoder argument as the Tensorleap sample_id matching PreprocessResponse.sample_id_type, not as a positional dataset index",
 				"Ensure GT encoder behavior remains limited to labeled subsets",
 			},
 			StopAndAskTriggers: []string{

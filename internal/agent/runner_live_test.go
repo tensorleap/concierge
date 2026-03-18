@@ -46,6 +46,9 @@ func TestRunnerLiveClaudeStreamJSONContract(t *testing.T) {
 	if !strings.Contains(transcript, "--output-format stream-json") {
 		t.Fatalf("expected stream-json invocation in transcript, got %q", transcript)
 	}
+	if !strings.Contains(transcript, "--model "+defaultClaudeModel) {
+		t.Fatalf("expected default Claude model in transcript, got %q", transcript)
+	}
 	if !strings.Contains(transcript, "--include-partial-messages") {
 		t.Fatalf("expected include-partial-messages flag in transcript, got %q", transcript)
 	}

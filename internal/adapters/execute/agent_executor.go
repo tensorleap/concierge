@@ -490,6 +490,8 @@ func objectiveForStep(
 	case core.EnsureStepInputEncoders:
 		constraints := []string{
 			"Implement missing @tensorleap_input_encoder functions for each required input symbol.",
+			"Register each @tensorleap_input_encoder with the exact required Tensorleap symbol name; do not substitute aliases like raw model tensor names (`images` vs `image`).",
+			"The first encoder argument is the Tensorleap sample_id from preprocess.sample_ids, not a positional dataset index; handle it according to PreprocessResponse.sample_id_type.",
 			"Keep tensor shapes and dtypes stable for model inference.",
 			"Do not modify @tensorleap_gt_encoder definitions or integration-test wiring in this step.",
 		}
@@ -512,6 +514,7 @@ func objectiveForStep(
 	case core.EnsureStepGroundTruthEncoders:
 		constraints := []string{
 			"Implement missing @tensorleap_gt_encoder functions for each required target symbol.",
+			"The first GT encoder argument is the Tensorleap sample_id from preprocess.sample_ids, not a positional dataset index; handle it according to PreprocessResponse.sample_id_type.",
 			"Ground-truth encoders should execute on labeled subsets only (never unlabeled subsets).",
 			"Do not modify @tensorleap_input_encoder definitions or integration-test wiring in this step.",
 		}

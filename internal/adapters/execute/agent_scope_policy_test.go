@@ -42,6 +42,8 @@ func TestScopePolicyForInputEncodersExcludesGTAndIntegrationTestSections(t *test
 	assertContains(t, policy.DomainSections, "input_encoder_contract")
 	assertNotContains(t, policy.DomainSections, "ground_truth_encoder_contract")
 	assertNotContains(t, policy.DomainSections, "integration_test_wiring_contract")
+	assertContainsSubstring(t, policy.RequiredOutcomes, "exact Tensorleap symbol names")
+	assertContainsSubstring(t, policy.RequiredOutcomes, "sample_id")
 }
 
 func TestPolicyForInputEncodersExcludesGTAndIntegrationTestSections(t *testing.T) {

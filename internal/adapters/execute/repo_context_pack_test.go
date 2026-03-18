@@ -37,6 +37,10 @@ func TestBuildAgentRepoContextIncludesSelectedModelAndCandidates(t *testing.T) {
 		core.IntegrationStatus{
 			Contracts: &core.IntegrationContracts{
 				EntryFile: "leap_integration.py",
+				ConfirmedMapping: &core.EncoderMappingContract{
+					InputSymbols:       []string{"image"},
+					GroundTruthSymbols: []string{"label"},
+				},
 				ModelCandidates: []core.ModelCandidate{
 					{Path: "models/b.onnx", Source: "repo_search"},
 					{Path: "models/a.onnx", Source: "repo_search"},
@@ -51,6 +55,12 @@ func TestBuildAgentRepoContextIncludesSelectedModelAndCandidates(t *testing.T) {
 
 	if context.SelectedModelPath != "models/selected.onnx" {
 		t.Fatalf("expected selected model path %q, got %q", "models/selected.onnx", context.SelectedModelPath)
+	}
+	if !reflect.DeepEqual(context.RequiredInputSymbols, []string{"image"}) {
+		t.Fatalf("expected required input symbols %+v, got %+v", []string{"image"}, context.RequiredInputSymbols)
+	}
+	if !reflect.DeepEqual(context.RequiredGroundTruthSymbols, []string{"label"}) {
+		t.Fatalf("expected required ground-truth symbols %+v, got %+v", []string{"label"}, context.RequiredGroundTruthSymbols)
 	}
 
 	wantCandidates := []string{"models/a.onnx", "models/b.onnx", "models/selected.onnx"}
@@ -217,6 +227,40 @@ func TestBuildAgentRepoContextIncludesAcquisitionLeads(t *testing.T) {
 	}
 	if !reflect.DeepEqual(context.ModelAcquisitionLeads, want) {
 		t.Fatalf("expected acquisition leads %+v, got %+v", want, context.ModelAcquisitionLeads)
+	}
+}
+
+func TestBuildAgentRepoContextPrefersPrimaryDiscoverySymbolsWhenMappingMissing(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	context, err := BuildAgentRepoContext(
+		core.EnsureStepInputEncoders,
+		core.WorkspaceSnapshot{
+			Repository: core.RepositoryState{Root: repoRoot},
+			FileHashes: map[string]string{"leap.yaml": "hash-leap"},
+		},
+		core.IntegrationStatus{
+			Contracts: &core.IntegrationContracts{
+				InputGTDiscovery: &core.InputGTDiscoveryArtifacts{
+					ComparisonReport: &core.InputGTComparisonReport{
+						PrimaryInputSymbols:       []string{"image"},
+						PrimaryGroundTruthSymbols: []string{"bbox"},
+					},
+				},
+				DiscoveredInputSymbols:       []string{"image", "images"},
+				DiscoveredGroundTruthSymbols: []string{"bbox", "labels"},
+			},
+		},
+		core.ValidationResult{},
+	)
+	if err != nil {
+		t.Fatalf("BuildAgentRepoContext returned error: %v", err)
+	}
+	if !reflect.DeepEqual(context.RequiredInputSymbols, []string{"image"}) {
+		t.Fatalf("expected primary input symbols to win, got %+v", context.RequiredInputSymbols)
+	}
+	if len(context.RequiredGroundTruthSymbols) != 0 {
+		t.Fatalf("expected out-of-scope ground-truth symbols to be hidden for input step, got %+v", context.RequiredGroundTruthSymbols)
 	}
 }
 

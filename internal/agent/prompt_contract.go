@@ -58,6 +58,8 @@ func BuildClaudeTaskPrompt(task AgentTask) string {
 	b.WriteString(fmt.Sprintf("- Runtime interpreter: %s\n", nonEmptyOrFallback(repoContextValue(task, "runtime_interpreter"), "<none>")))
 	b.WriteString(fmt.Sprintf("- Runtime status: %s\n", nonEmptyOrFallback(repoContextValue(task, "runtime_status"), "<none>")))
 	b.WriteString(fmt.Sprintf("- Selected model path: %s\n", nonEmptyOrFallback(repoContextValue(task, "selected_model_path"), "<none>")))
+	b.WriteString(fmt.Sprintf("- Required input symbols: %s\n", renderInlineList(repoContextValues(task, "required_input_symbols"))))
+	b.WriteString(fmt.Sprintf("- Required ground-truth symbols: %s\n", renderInlineList(repoContextValues(task, "required_ground_truth_symbols"))))
 	b.WriteString(fmt.Sprintf("- Model candidates: %s\n", renderInlineList(repoContextValues(task, "model_candidates"))))
 	b.WriteString(fmt.Sprintf("- Ready model artifacts: %s\n", renderInlineList(repoContextValues(task, "ready_model_artifacts"))))
 	b.WriteString(fmt.Sprintf("- Model acquisition leads: %s\n", renderInlineList(repoContextValues(task, "model_acquisition_leads"))))
@@ -150,6 +152,10 @@ func repoContextValues(task AgentTask, key string) []string {
 	switch key {
 	case "model_candidates":
 		return task.RepoContext.ModelCandidates
+	case "required_input_symbols":
+		return task.RepoContext.RequiredInputSymbols
+	case "required_ground_truth_symbols":
+		return task.RepoContext.RequiredGroundTruthSymbols
 	case "ready_model_artifacts":
 		return task.RepoContext.ReadyModelArtifacts
 	case "model_acquisition_leads":

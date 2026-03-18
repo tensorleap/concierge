@@ -39,7 +39,7 @@
       "family": "load_model",
       "patch": "fixtures/cases/patches/mnist_load_model.patch",
       "expected_primary_step": "ensure.model_acquisition",
-      "expected_issue_codes": ["model_acquisition_unresolved"],
+      "expected_issue_codes": ["model_acquisition_required"],
       "expected_missing_model_path": "model/missing_model.h5"
     },
     {

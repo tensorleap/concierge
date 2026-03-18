@@ -1,32 +1,31 @@
 # Agent Workflow Agreement
 
-This repository is implemented step by step.
+This repository is implemented through small, issue-scoped changes.
 
 ## Session Start Requirements (Mandatory)
 
 - Before any planning or implementation work, read `README.md` in its entirety.
-- Immediately after that, read `PLAN.md`.
-- This read order is mandatory for every new session on this project.
+- Then read the relevant GitHub issue, PR description, or user-provided task context for the work you are about to do.
+- If no GitHub issue exists yet, treat the current user request as the temporary source of truth and keep the scope narrow enough to become one issue later.
 
 ## Planning and Progress Tracking
 
-- Keep a living implementation document in `PLAN.md`.
-- Represent each implementation step with exactly one status: `PENDING`, `DONE`, or `ACCEPTED`.
-- `PENDING` means not implemented yet.
-- `DONE` means implemented, committed and pushed on a non-main feature branch, PR opened, branch CI green, and ready for review.
-- `ACCEPTED` means the step has been merged into the `main` branch.
+- GitHub issues are the source of truth for backlog, prioritization, and progress tracking.
+- Do not create, maintain, or rely on `PLAN.md` for new work tracking.
+- Prefer one issue per independently reviewable bug, missing piece, or feature slice.
+- If a task spans multiple concerns, split it into separate GitHub issues instead of rebuilding a waterfall plan in-repo.
 
 ## Execution Rules
 
-- Implement only one step at a time.
+- Implement only one issue-sized scope at a time.
 - Before any `git commit` or `git push`, stop and let the user review changes locally; proceed only after explicit user approval.
 - If a change set does not modify code (for example markdown/docs-only edits), test execution is optional and may be skipped.
-- After finishing a step, update its status in `PLAN.md` to `DONE` only after commit, push, PR creation, and passing branch CI.
-- The agent may commit and push step changes on a non-main feature branch before acceptance.
-- The agent should trigger and monitor CI for the pushed branch and fix failures within the step scope.
-- Do not mark a step as `ACCEPTED` until it is merged to `main`.
+- After finishing the scoped work, keep progress in GitHub issue / PR state rather than updating `PLAN.md`.
+- The agent may commit and push issue-scoped changes on a non-main feature branch before acceptance.
+- The agent should trigger and monitor CI for the pushed branch and fix failures within the issue scope.
+- Do not treat work as accepted until it is merged to `main`.
 - A merge to `main` is the only acceptance event.
-- Commit only one step's scope at a time, then move to the next `PENDING` step.
+- Commit only one issue's scope at a time, then move to the next issue.
 
 ## Branch Safety (Mandatory, Hard Stop)
 
@@ -45,8 +44,8 @@ Run these before any file edits or commits:
 
 If current branch is `main` or `master`, create and switch immediately using a new worktree:
 
-- `git worktree add ../concierge-step-<step-id>-<short-name> -b feature/step-<step-id>-<short-name>`
-- `cd ../concierge-step-<step-id>-<short-name>`
+- `git worktree add ../concierge-issue-<issue-id>-<short-name> -b feature/issue-<issue-id>-<short-name>`
+- `cd ../concierge-issue-<issue-id>-<short-name>`
 
 ### Required pre-commit gate
 
@@ -56,18 +55,17 @@ Before every commit, verify branch again:
 
 If branch is `main` or `master`, stop and do not commit.
 
-### Required post-step flow
+### Required post-issue flow
 
-After finishing one step:
+After finishing one issue-sized change:
 
 1. Request and receive explicit user approval after local review.
 2. Build the CLI binary locally: `go build -o bin/concierge ./cmd/concierge`.
 3. Commit on feature branch.
 4. Push feature branch.
 5. Open PR to `main`.
-6. Monitor CI for that PR branch and fix failures in step scope.
-
-Only then update step status to `DONE`.
+6. Monitor CI for that PR branch and fix failures in issue scope.
+7. Link the PR to the relevant GitHub issue when one exists.
 
 ### Accidental protected-branch commit protocol
 
@@ -77,10 +75,10 @@ If a commit is made on `main` or `master` by mistake:
 - Do not continue implementation.
 - Ask the user whether to revert and re-apply on a feature branch, or keep as-is.
 
-## Step 2 Release Deliverables (Mandatory)
+## Release Deliverables (Mandatory)
 
-- Step 2 must produce a Go CLI release pipeline that builds binaries for Linux and macOS on both `amd64` and `arm64`.
-- Step 2 must use semantic version tags (e.g. `v0.0.1`) and publish release notes with each release.
+- Release-related work must produce a Go CLI release pipeline that builds binaries for Linux and macOS on both `amd64` and `arm64`.
+- Release-related work must use semantic version tags (e.g. `v0.0.1`) and publish release notes with each release.
 
 ## Tensorleap Hub Fixture Onboarding
 
@@ -120,7 +118,7 @@ Add one object under `fixtures[].` with:
 - `id`: lowercase stable identifier (letters, numbers, underscore preferred)
 - `repo`: full HTTPS clone URL
 - `post_ref`: full 40-char commit SHA
-- `strip_for_pre`: keep as `["leap.yaml", "leap_binder.py", "leap_custom_test.py"]` unless Step requirements change
+- `strip_for_pre`: keep as `["leap.yaml", "leap_binder.py", "leap_custom_test.py"]` unless issue requirements change
 
 ### 4) Validate fixture generation end to end
 

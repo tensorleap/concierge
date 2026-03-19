@@ -116,6 +116,18 @@ func newRunCommand() *cobra.Command {
 				selectedModelPath = normalizeModelPathValue(path)
 				selectedModelPathMu.Unlock()
 			}
+			modelAcquisitionClarification := cloneModelAcquisitionClarification(loadedState.ModelAcquisitionClarification)
+			var modelAcquisitionClarificationMu sync.RWMutex
+			getModelAcquisitionClarification := func() *state.ModelAcquisitionClarification {
+				modelAcquisitionClarificationMu.RLock()
+				defer modelAcquisitionClarificationMu.RUnlock()
+				return cloneModelAcquisitionClarification(modelAcquisitionClarification)
+			}
+			setModelAcquisitionClarification := func(clarification *state.ModelAcquisitionClarification) {
+				modelAcquisitionClarificationMu.Lock()
+				modelAcquisitionClarification = cloneModelAcquisitionClarification(clarification)
+				modelAcquisitionClarificationMu.Unlock()
+			}
 			selectedEncoderMapping := cloneEncoderMappingContract(loadedState.ConfirmedEncoderMapping)
 			var selectedEncoderMappingMu sync.RWMutex
 			getSelectedEncoderMapping := func() *core.EncoderMappingContract {
@@ -212,10 +224,14 @@ func newRunCommand() *cobra.Command {
 
 				if err := ensureModelPathSelectionForStep(
 					step,
+					snapshotValue,
+					hasSnapshot,
 					status,
 					hasStatus,
 					getSelectedModelPath,
 					setSelectedModelPath,
+					getModelAcquisitionClarification,
+					setModelAcquisitionClarification,
 					repoRoot,
 					nonInteractive || yes,
 					promptInput,
@@ -357,6 +373,7 @@ func newRunCommand() *cobra.Command {
 							*report,
 							repoRoot,
 							getSelectedModelPath(),
+							getModelAcquisitionClarification(),
 							getSelectedEncoderMapping(),
 							getRuntimeProfile(),
 							invalidationReasons,
@@ -1038,20 +1055,20 @@ func (e modelPathHintExecutor) Execute(ctx context.Context, snapshotValue core.W
 
 func ensureModelPathSelectionForStep(
 	step core.EnsureStep,
+	snapshotValue core.WorkspaceSnapshot,
+	hasSnapshot bool,
 	status core.IntegrationStatus,
 	hasStatus bool,
 	getSelected func() string,
 	setSelected func(string),
+	getClarification func() *state.ModelAcquisitionClarification,
+	setClarification func(*state.ModelAcquisitionClarification),
 	repoRoot string,
 	requireNonInteractive bool,
 	input *bufio.Reader,
 	out io.Writer,
 ) error {
-	_ = setSelected
 	_ = repoRoot
-	_ = requireNonInteractive
-	_ = input
-	_ = out
 	if step.ID != core.EnsureStepModelAcquisition && step.ID != core.EnsureStepModelContract {
 		return nil
 	}
@@ -1063,6 +1080,105 @@ func ensureModelPathSelectionForStep(
 	if getSelected != nil {
 		current = normalizeModelPathValue(getSelected())
 	}
+	clarification := (*state.ModelAcquisitionClarification)(nil)
+	if getClarification != nil {
+		clarification = cloneModelAcquisitionClarification(getClarification())
+	}
+	if hasSnapshot && clarification != nil && !state.ClarificationStillValid(clarification, snapshotValue) {
+		if current != "" && current == normalizeModelPathValue(clarification.SelectedVerifiedModelPath) {
+			if setSelected != nil {
+				setSelected("")
+			}
+			current = ""
+		}
+		if setClarification != nil {
+			setClarification(nil)
+		}
+		clarification = nil
+	}
+
+	if verifiedCandidates := ambiguousVerifiedModelCandidates(status); len(verifiedCandidates) > 0 {
+		if clarification != nil {
+			selected := normalizeModelPathValue(clarification.SelectedVerifiedModelPath)
+			if selected != "" && containsModelPath(verifiedCandidates, selected) {
+				if setSelected != nil {
+					setSelected(selected)
+				}
+				return nil
+			}
+		}
+		if requireNonInteractive {
+			return core.NewError(
+				core.KindUnknown,
+				"cli.run.model_source_selection_required",
+				"model source clarification is required; rerun interactively and choose which verified model file Concierge should follow",
+			)
+		}
+		selected, err := promptModelSourceSelection(input, out, verifiedCandidates)
+		if err != nil {
+			return err
+		}
+		if setSelected != nil {
+			setSelected(selected)
+		}
+		if setClarification != nil {
+			setClarification(
+				newModelAcquisitionClarification(
+					snapshotValue,
+					hasSnapshot,
+					selected,
+					"",
+					"",
+				),
+			)
+		}
+		return nil
+	}
+
+	if needsModelSourceClarification(status) {
+		if clarification != nil &&
+			strings.TrimSpace(clarification.ModelSourceNote) != "" &&
+			clarification.RuntimeChangePolicy != "" {
+			return nil
+		}
+		if requireNonInteractive {
+			return core.NewError(
+				core.KindUnknown,
+				"cli.run.model_source_note_required",
+				"model acquisition clarification is required; rerun interactively and describe where Concierge should obtain the model",
+			)
+		}
+		note, err := promptModelSourceNote(input, out)
+		if err != nil {
+			return err
+		}
+		allowRuntimeChanges, err := promptYesNo(
+			input,
+			out,
+			"If the current runtime cannot load the intended model, may Concierge change runtime or dependency versions? [y/N]:",
+			false,
+		)
+		if err != nil {
+			return err
+		}
+		policy := state.ModelRuntimeChangePolicyStayInCurrentRuntime
+		if allowRuntimeChanges {
+			policy = state.ModelRuntimeChangePolicyAllowRuntimeChanges
+		}
+		if setClarification != nil {
+			setClarification(
+				newModelAcquisitionClarification(
+					snapshotValue,
+					hasSnapshot,
+					"",
+					note,
+					policy,
+				),
+			)
+		}
+		return nil
+	}
+
 	if current != "" {
 		return nil
 	}
@@ -1352,4 +1468,113 @@ func normalizeModelPathValue(path string) string {
 		return ""
 	}
 	return filepath.ToSlash(filepath.Clean(filepath.FromSlash(trimmed)))
+}
+
+func cloneModelAcquisitionClarification(clarification *state.ModelAcquisitionClarification) *state.ModelAcquisitionClarification {
+	if clarification == nil {
+		return nil
+	}
+	cloned := *clarification
+	cloned.SelectedVerifiedModelPath = normalizeModelPathValue(clarification.SelectedVerifiedModelPath)
+	cloned.ModelSourceNote = strings.TrimSpace(clarification.ModelSourceNote)
+	cloned.SnapshotHead = strings.TrimSpace(clarification.SnapshotHead)
+	cloned.WorktreeFingerprint = strings.TrimSpace(clarification.WorktreeFingerprint)
+	return &cloned
+}
+
+func newModelAcquisitionClarification(
+	snapshotValue core.WorkspaceSnapshot,
+	hasSnapshot bool,
+	selectedVerifiedModelPath string,
+	modelSourceNote string,
+	runtimeChangePolicy state.ModelRuntimeChangePolicy,
+) *state.ModelAcquisitionClarification {
+	clarification := &state.ModelAcquisitionClarification{
+		SelectedVerifiedModelPath: normalizeModelPathValue(selectedVerifiedModelPath),
+		ModelSourceNote:           strings.TrimSpace(modelSourceNote),
+		RuntimeChangePolicy:       runtimeChangePolicy,
+	}
+	if !hasSnapshot {
+		return clarification
+	}
+	clarification.SnapshotHead = strings.TrimSpace(snapshotValue.Repository.Head)
+	clarification.WorktreeFingerprint = strings.TrimSpace(snapshotValue.WorktreeFingerprint)
+	if snapshotValue.RuntimeProfile != nil {
+		clarification.RuntimeFingerprint = snapshotValue.RuntimeProfile.Fingerprint
+	}
+	return clarification
+}
+
+func ambiguousVerifiedModelCandidates(status core.IntegrationStatus) []string {
+	if !hasModelIssueCode(status.Issues, core.IssueCodeModelCandidatesAmbiguous) || status.Contracts == nil {
+		return nil
+	}
+	values := make([]string, 0, len(status.Contracts.ModelCandidates))
+	for _, candidate := range status.Contracts.ModelCandidates {
+		if candidate.VerificationState != core.ModelCandidateVerificationStateVerified {
+			continue
+		}
+		path := normalizeModelPathValue(candidate.Path)
+		if path == "" {
+			continue
+		}
+		values = append(values, path)
+	}
+	sort.Strings(values)
+	return uniqueStringSlice(values)
+}
+
+func needsModelSourceClarification(status core.IntegrationStatus) bool {
+	if !hasModelIssueCode(status.Issues, core.IssueCodeModelAcquisitionUnresolved) || status.Contracts == nil {
+		return false
+	}
+	for _, candidate := range status.Contracts.ModelCandidates {
+		if candidate.VerificationState == core.ModelCandidateVerificationStateFailed {
+			return true
+		}
+	}
+	if status.Contracts.ModelAcquisition == nil {
+		return false
+	}
+	return len(status.Contracts.ModelAcquisition.AcquisitionLeads) > 0 ||
+		len(status.Contracts.ModelAcquisition.PassiveLeads) > 0
+}
+
+func hasModelIssueCode(issues []core.Issue, code core.IssueCode) bool {
+	for _, issue := range issues {
+		if issue.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+func containsModelPath(values []string, target string) bool {
+	normalizedTarget := normalizeModelPathValue(target)
+	for _, value := range values {
+		if normalizeModelPathValue(value) == normalizedTarget {
+			return true
+		}
+	}
+	return false
+}
+
+func uniqueStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		normalized := strings.TrimSpace(value)
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		unique = append(unique, normalized)
+	}
+	return unique
 }

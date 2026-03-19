@@ -672,10 +672,14 @@ func TestEnsureModelPathSelectionForStepDoesNotPromptOnAmbiguousCandidates(t *te
 	current := ""
 	err := ensureModelPathSelectionForStep(
 		core.EnsureStep{ID: core.EnsureStepModelContract},
+		core.WorkspaceSnapshot{},
+		false,
 		status,
 		true,
 		func() string { return current },
 		func(path string) { current = path },
+		func() *state.ModelAcquisitionClarification { return nil },
+		func(*state.ModelAcquisitionClarification) {},
 		t.TempDir(),
 		true,
 		bufio.NewReader(strings.NewReader("")),
@@ -694,10 +698,14 @@ func TestEnsureModelPathSelectionForStepPreservesExistingSelection(t *testing.T)
 	current := "model/a.h5"
 	err := ensureModelPathSelectionForStep(
 		core.EnsureStep{ID: core.EnsureStepModelAcquisition},
+		core.WorkspaceSnapshot{},
+		false,
 		status,
 		true,
 		func() string { return current },
 		func(path string) { current = path },
+		func() *state.ModelAcquisitionClarification { return nil },
+		func(*state.ModelAcquisitionClarification) {},
 		t.TempDir(),
 		false,
 		bufio.NewReader(strings.NewReader("")),
@@ -708,6 +716,168 @@ func TestEnsureModelPathSelectionForStepPreservesExistingSelection(t *testing.T)
 	}
 	if current != "model/a.h5" {
 		t.Fatalf("expected selected model path to stay %q, got %q", "model/a.h5", current)
+	}
+}
+
+func TestEnsureModelPathSelectionForStepPromptsForAmbiguousVerifiedModelSources(t *testing.T) {
+	snapshot := core.WorkspaceSnapshot{
+		Repository:          core.RepositoryState{Head: "head-1"},
+		WorktreeFingerprint: "fp-1",
+		RuntimeProfile: &core.LocalRuntimeProfile{
+			Fingerprint: core.RuntimeProfileFingerprint{
+				ProjectRoot:     "/repo",
+				PyProjectHash:   "pyproject-hash",
+				InterpreterPath: "/tmp/python",
+				PythonVersion:   "Python 3.11.8",
+			},
+		},
+	}
+	status := core.IntegrationStatus{
+		Contracts: &core.IntegrationContracts{
+			ModelCandidates: []core.ModelCandidate{
+				{Path: "model/a.h5", Exists: true, VerificationState: core.ModelCandidateVerificationStateVerified},
+				{Path: "model/b.onnx", Exists: true, VerificationState: core.ModelCandidateVerificationStateVerified},
+			},
+		},
+		Issues: []core.Issue{{
+			Code:     core.IssueCodeModelCandidatesAmbiguous,
+			Message:  "multiple supported model artifacts were verified",
+			Severity: core.SeverityError,
+			Scope:    core.IssueScopeModel,
+		}},
+	}
+
+	current := ""
+	var clarification *state.ModelAcquisitionClarification
+	output := new(strings.Builder)
+	err := ensureModelPathSelectionForStep(
+		core.EnsureStep{ID: core.EnsureStepModelAcquisition},
+		snapshot,
+		true,
+		status,
+		true,
+		func() string { return current },
+		func(path string) { current = path },
+		func() *state.ModelAcquisitionClarification { return clarification },
+		func(next *state.ModelAcquisitionClarification) { clarification = next },
+		t.TempDir(),
+		false,
+		bufio.NewReader(strings.NewReader("2\n")),
+		output,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if current != "model/b.onnx" {
+		t.Fatalf("expected clarified selected model path %q, got %q", "model/b.onnx", current)
+	}
+	if clarification == nil {
+		t.Fatal("expected clarification to be recorded")
+	}
+	if clarification.SelectedVerifiedModelPath != "model/b.onnx" {
+		t.Fatalf("expected selected verified model path %q, got %+v", "model/b.onnx", clarification)
+	}
+}
+
+func TestEnsureModelPathSelectionForStepPromptsForUnverifiedModelSourceClarification(t *testing.T) {
+	snapshot := core.WorkspaceSnapshot{
+		Repository:          core.RepositoryState{Head: "head-1"},
+		WorktreeFingerprint: "fp-1",
+		RuntimeProfile: &core.LocalRuntimeProfile{
+			Fingerprint: core.RuntimeProfileFingerprint{
+				ProjectRoot:     "/repo",
+				PyProjectHash:   "pyproject-hash",
+				InterpreterPath: "/tmp/python",
+				PythonVersion:   "Python 3.11.8",
+			},
+		},
+	}
+	status := core.IntegrationStatus{
+		Contracts: &core.IntegrationContracts{
+			ModelCandidates: []core.ModelCandidate{
+				{
+					Path:              "model/demo.onnx",
+					Exists:            true,
+					VerificationState: core.ModelCandidateVerificationStateFailed,
+					VerificationError: "failed to load in runtime",
+				},
+			},
+			ModelAcquisition: &core.ModelAcquisitionArtifacts{
+				AcquisitionLeads: []string{"tools/export_model.py"},
+			},
+		},
+		Issues: []core.Issue{{
+			Code:     core.IssueCodeModelAcquisitionUnresolved,
+			Message:  "supported model artifacts were found but could not be loaded",
+			Severity: core.SeverityError,
+			Scope:    core.IssueScopeModel,
+		}},
+	}
+
+	current := ""
+	var clarification *state.ModelAcquisitionClarification
+	err := ensureModelPathSelectionForStep(
+		core.EnsureStep{ID: core.EnsureStepModelAcquisition},
+		snapshot,
+		true,
+		status,
+		true,
+		func() string { return current },
+		func(path string) { current = path },
+		func() *state.ModelAcquisitionClarification { return clarification },
+		func(next *state.ModelAcquisitionClarification) { clarification = next },
+		t.TempDir(),
+		false,
+		bufio.NewReader(strings.NewReader("export from weights/best.pt\nn\n")),
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if clarification == nil {
+		t.Fatal("expected clarification to be recorded")
+	}
+	if clarification.ModelSourceNote != "export from weights/best.pt" {
+		t.Fatalf("expected model source note to be recorded, got %+v", clarification)
+	}
+	if clarification.RuntimeChangePolicy != state.ModelRuntimeChangePolicyStayInCurrentRuntime {
+		t.Fatalf("expected runtime policy to stay in current runtime, got %+v", clarification)
+	}
+}
+
+func TestEnsureModelPathSelectionForStepRequiresInteractiveClarificationForAmbiguousModelSources(t *testing.T) {
+	status := core.IntegrationStatus{
+		Contracts: &core.IntegrationContracts{
+			ModelCandidates: []core.ModelCandidate{
+				{Path: "model/a.h5", Exists: true, VerificationState: core.ModelCandidateVerificationStateVerified},
+				{Path: "model/b.onnx", Exists: true, VerificationState: core.ModelCandidateVerificationStateVerified},
+			},
+		},
+		Issues: []core.Issue{{
+			Code:     core.IssueCodeModelCandidatesAmbiguous,
+			Message:  "multiple supported model artifacts were verified",
+			Severity: core.SeverityError,
+			Scope:    core.IssueScopeModel,
+		}},
+	}
+
+	err := ensureModelPathSelectionForStep(
+		core.EnsureStep{ID: core.EnsureStepModelAcquisition},
+		core.WorkspaceSnapshot{},
+		false,
+		status,
+		true,
+		func() string { return "" },
+		func(string) {},
+		func() *state.ModelAcquisitionClarification { return nil },
+		func(*state.ModelAcquisitionClarification) {},
+		t.TempDir(),
+		true,
+		bufio.NewReader(strings.NewReader("")),
+		io.Discard,
+	)
+	if err == nil {
+		t.Fatal("expected clarification-required error in non-interactive mode")
 	}
 }
 

@@ -99,6 +99,7 @@ func loadContractSources(repoRoot string, contracts *core.IntegrationContracts) 
 	}
 
 	sources := make([]contractSource, 0, 2)
+	loaded := make(map[string]struct{}, 2)
 	appendSource := func(entry string) {
 		entry = strings.TrimSpace(entry)
 		if entry == "" {
@@ -118,6 +119,10 @@ func loadContractSources(repoRoot string, contracts *core.IntegrationContracts) 
 		if err != nil {
 			return
 		}
+		if _, exists := loaded[entryAbsPath]; exists {
+			return
+		}
+		loaded[entryAbsPath] = struct{}{}
 
 		entryFilePath := normalizedEntryFilePath(repoRoot, entryAbsPath, entry)
 		sources = append(sources, contractSource{Path: entryFilePath, Contents: string(contents)})
@@ -125,6 +130,20 @@ func loadContractSources(repoRoot string, contracts *core.IntegrationContracts) 
 
 	entry := strings.TrimSpace(contracts.EntryFile)
 	appendSource(entry)
+	if entry != "" {
+		entryAbsPath := filepath.FromSlash(entry)
+		if !filepath.IsAbs(entryAbsPath) {
+			entryAbsPath = filepath.Join(repoRoot, entryAbsPath)
+		}
+		entryAbsPath = filepath.Clean(entryAbsPath)
+		if isPathWithinRepo(repoRoot, entryAbsPath) {
+			if entryContents, err := os.ReadFile(entryAbsPath); err == nil {
+				for _, binderPath := range discoverLegacyBinderSourcePaths(repoRoot, entryAbsPath, string(entryContents)) {
+					appendSource(binderPath)
+				}
+			}
+		}
+	}
 	return sources
 }
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/tensorleap/concierge/internal/core"
@@ -15,6 +16,8 @@ var (
 	decoratorPattern = regexp.MustCompile(`^\s*@\s*([A-Za-z_][A-Za-z0-9_\.]*)`)
 	functionPattern  = regexp.MustCompile(`^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(.*\)\s*(?:->\s*[^:]+)?\s*:`)
 	callPattern      = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_\.]*)\s*\(`)
+	pythonImportPattern = regexp.MustCompile(`^\s*import\s+(.+)$`)
+	pythonFromImportPattern = regexp.MustCompile(`^\s*from\s+([A-Za-z_][A-Za-z0-9_\.]*)\s+import\s+`)
 )
 
 type contractDiscoverySyntaxError struct {
@@ -72,6 +75,7 @@ func inspectIntegrationContracts(repoRoot string, contract *leapYAMLContract, st
 	}
 
 	contracts, err := discoverContractsFromPythonSource(entryFilePath, string(contents))
+	mergeLegacyBinderContracts(repoRoot, entryAbsPath, string(contents), contracts)
 	if contracts != nil {
 		status.Contracts = contracts
 	}
@@ -106,11 +110,123 @@ func inspectIntegrationContracts(repoRoot string, contract *leapYAMLContract, st
 
 	return nil
 }
+
 func appendUniqueStrings(existing []string, values ...string) []string {
 	for _, value := range values {
 		existing = appendUnique(existing, value)
 	}
 	return existing
+}
+
+func mergeLegacyBinderContracts(repoRoot, entryAbsPath, source string, contracts *core.IntegrationContracts) {
+	if contracts == nil {
+		return
+	}
+
+	for _, binderPath := range discoverLegacyBinderSourcePaths(repoRoot, entryAbsPath, source) {
+		contents, err := os.ReadFile(binderPath)
+		if err != nil {
+			continue
+		}
+
+		logicalPath := normalizedEntryFilePath(repoRoot, binderPath, filepath.ToSlash(binderPath))
+		binderContracts, err := discoverContractsFromPythonSource(logicalPath, string(contents))
+		if binderContracts == nil {
+			continue
+		}
+		_ = err
+
+		contracts.LoadModelFunctions = appendUniqueStrings(contracts.LoadModelFunctions, binderContracts.LoadModelFunctions...)
+		contracts.PreprocessFunctions = appendUniqueStrings(contracts.PreprocessFunctions, binderContracts.PreprocessFunctions...)
+		contracts.InputEncoders = appendUniqueStrings(contracts.InputEncoders, binderContracts.InputEncoders...)
+		contracts.GroundTruthEncoders = appendUniqueStrings(contracts.GroundTruthEncoders, binderContracts.GroundTruthEncoders...)
+		contracts.IntegrationTestFunctions = appendUniqueStrings(contracts.IntegrationTestFunctions, binderContracts.IntegrationTestFunctions...)
+		contracts.IntegrationTestCalls = appendUniqueStrings(contracts.IntegrationTestCalls, binderContracts.IntegrationTestCalls...)
+	}
+}
+
+func discoverLegacyBinderSourcePaths(repoRoot, entryAbsPath, source string) []string {
+	entryDir := filepath.Dir(entryAbsPath)
+	paths := make(map[string]struct{})
+
+	for _, module := range discoverImportedModules(source) {
+		if !strings.HasSuffix(module, "leap_binder") {
+			continue
+		}
+
+		candidate := filepath.Join(repoRoot, filepath.FromSlash(strings.ReplaceAll(module, ".", "/"))+".py")
+		candidate = filepath.Clean(candidate)
+		if !isPathWithinRepo(repoRoot, candidate) {
+			continue
+		}
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			paths[candidate] = struct{}{}
+			continue
+		}
+
+		localCandidate := filepath.Join(entryDir, filepath.Base(candidate))
+		localCandidate = filepath.Clean(localCandidate)
+		if !isPathWithinRepo(repoRoot, localCandidate) {
+			continue
+		}
+		if info, err := os.Stat(localCandidate); err == nil && !info.IsDir() {
+			paths[localCandidate] = struct{}{}
+		}
+	}
+
+	result := make([]string, 0, len(paths))
+	for path := range paths {
+		result = append(result, path)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func discoverImportedModules(source string) []string {
+	modules := make([]string, 0, 4)
+	seen := make(map[string]struct{})
+
+	for _, rawLine := range strings.Split(source, "\n") {
+		line := strings.TrimSpace(stripInlinePythonComment(rawLine))
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		if matches := pythonFromImportPattern.FindStringSubmatch(line); len(matches) == 2 {
+			module := strings.TrimSpace(matches[1])
+			if module != "" {
+				if _, exists := seen[module]; !exists {
+					seen[module] = struct{}{}
+					modules = append(modules, module)
+				}
+			}
+			continue
+		}
+
+		matches := pythonImportPattern.FindStringSubmatch(line)
+		if len(matches) != 2 {
+			continue
+		}
+		for _, part := range strings.Split(matches[1], ",") {
+			module := strings.TrimSpace(part)
+			if module == "" {
+				continue
+			}
+			if beforeAlias, _, ok := strings.Cut(module, " as "); ok {
+				module = strings.TrimSpace(beforeAlias)
+			}
+			if module == "" {
+				continue
+			}
+			if _, exists := seen[module]; exists {
+				continue
+			}
+			seen[module] = struct{}{}
+			modules = append(modules, module)
+		}
+	}
+
+	return modules
 }
 
 func discoverContractsFromPythonSource(entryFilePath string, source string) (*core.IntegrationContracts, error) {
@@ -140,7 +256,7 @@ func discoverContractsFromPythonSource(entryFilePath string, source string) (*co
 			continue
 		}
 
-		if strings.HasPrefix(line, "def") {
+		if strings.HasPrefix(line, "def ") {
 			functionName, defEndIndex, ok := extractFunctionDefinition(lines, index)
 			if !ok {
 				return contracts, contractDiscoverySyntaxError{

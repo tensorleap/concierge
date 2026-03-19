@@ -135,9 +135,9 @@ func TestFixturePreVsPostIssueDeltas(t *testing.T) {
 				t.Skipf("skipping fixture %q until prepared post fixtures are regenerated for GUIDE1: %s", fixture.ID, reason)
 			}
 
-			if !containsIssueCode(preStatus.Issues, core.IssueCodeIntegrationTestMissing) {
-				t.Fatalf("pre variant must include issue %q, got %+v", core.IssueCodeIntegrationTestMissing, preStatus.Issues)
-			}
+			// Integration-test discovery only runs once Concierge can resolve an entry file.
+			// Pre fixtures intentionally strip leap.yaml and/or leap_integration.py, so they
+			// may surface entry bootstrap gaps instead of integration_test_missing.
 			if !containsAnyIssueCode(preStatus.Issues,
 				core.IssueCodeLeapYAMLMissing,
 				core.IssueCodeIntegrationScriptMissing,
@@ -146,9 +146,10 @@ func TestFixturePreVsPostIssueDeltas(t *testing.T) {
 				core.IssueCodeInputEncoderCoverageIncomplete,
 				core.IssueCodeGTEncoderMissing,
 				core.IssueCodeGTEncoderCoverageIncomplete,
+				core.IssueCodeIntegrationTestMissing,
 			) {
 				t.Fatalf(
-					"pre variant must include at least one bootstrap/authoring issue (%q, %q, %q, %q, %q, %q, or %q), got %+v",
+					"pre variant must include at least one bootstrap/authoring issue (%q, %q, %q, %q, %q, %q, %q, or %q), got %+v",
 					core.IssueCodeLeapYAMLMissing,
 					core.IssueCodeIntegrationScriptMissing,
 					core.IssueCodePreprocessFunctionMissing,
@@ -156,6 +157,7 @@ func TestFixturePreVsPostIssueDeltas(t *testing.T) {
 					core.IssueCodeInputEncoderCoverageIncomplete,
 					core.IssueCodeGTEncoderMissing,
 					core.IssueCodeGTEncoderCoverageIncomplete,
+					core.IssueCodeIntegrationTestMissing,
 					preStatus.Issues,
 				)
 			}

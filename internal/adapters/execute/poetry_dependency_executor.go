@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -85,10 +86,10 @@ func (e *PoetryDependencyExecutor) Execute(ctx context.Context, snapshot core.Wo
 		{Name: "runtime.stderr", Value: strings.TrimSpace(string(stderr))},
 	}
 	if !profile.CodeLoaderReady {
-		verificationArgs := []string{"-c", "import code_loader"}
-		verifyStdout, verifyStderr, verifyErr := e.runCommand(ctx, repoRoot, profile.InterpreterPath, verificationArgs...)
+		verificationCommand, verificationArgs := codeLoaderVerificationCommand(profile.InterpreterPath)
+		verifyStdout, verifyStderr, verifyErr := e.runCommand(ctx, repoRoot, verificationCommand, verificationArgs...)
 		evidence = append(evidence,
-			core.EvidenceItem{Name: "runtime.verification.command", Value: profile.InterpreterPath + " " + strings.Join(verificationArgs, " ")},
+			core.EvidenceItem{Name: "runtime.verification.command", Value: verificationCommand + " " + strings.Join(verificationArgs, " ")},
 			core.EvidenceItem{Name: "runtime.verification.stdout", Value: strings.TrimSpace(string(verifyStdout))},
 			core.EvidenceItem{Name: "runtime.verification.stderr", Value: strings.TrimSpace(string(verifyStderr))},
 		)
@@ -113,6 +114,18 @@ func (e *PoetryDependencyExecutor) Execute(ctx context.Context, snapshot core.Wo
 		Summary:  summary,
 		Evidence: evidence,
 	}, nil
+}
+
+func codeLoaderVerificationCommand(interpreterPath string) (string, []string) {
+	verificationArgs := []string{"-c", "import code_loader"}
+	trimmed := strings.TrimSpace(interpreterPath)
+	if trimmed != "" {
+		if info, err := os.Stat(trimmed); err == nil && !info.IsDir() {
+			return trimmed, verificationArgs
+		}
+	}
+
+	return "poetry", append([]string{"run", "python"}, verificationArgs...)
 }
 
 func runPoetryDependencyCommand(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {

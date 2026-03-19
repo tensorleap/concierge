@@ -71,7 +71,7 @@ After finishing one issue-sized change:
 3. Commit on the feature branch.
 4. Push the feature branch.
 5. Open a PR to `main`.
-6. Request review on the GitHub PR and treat that PR as the review surface.
+6. Do not request review or assign reviewers automatically. Open the PR and treat that PR as the review surface. Never assign reviewers; leave reviewer selection to the human.
 7. Monitor CI for that PR branch and fix failures in issue scope.
 8. Link the PR to the relevant GitHub issue when one exists.
 

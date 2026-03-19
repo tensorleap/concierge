@@ -38,6 +38,7 @@ func LoadState(projectRoot string) (RunState, error) {
 	} else {
 		state.SelectedProjectRoot = normalizeRoot(state.SelectedProjectRoot)
 	}
+	state.ModelAcquisitionClarification = cloneModelAcquisitionClarification(state.ModelAcquisitionClarification)
 	state.RuntimeProfile = cloneRuntimeProfile(state.RuntimeProfile)
 	if state.RuntimeProfile != nil {
 		state.RuntimeProfile.Fingerprint.ProjectRoot = normalizeRoot(state.RuntimeProfile.Fingerprint.ProjectRoot)
@@ -63,6 +64,7 @@ func SaveState(projectRoot string, state RunState) error {
 	} else {
 		toWrite.SelectedProjectRoot = normalizeRoot(toWrite.SelectedProjectRoot)
 	}
+	toWrite.ModelAcquisitionClarification = cloneModelAcquisitionClarification(toWrite.ModelAcquisitionClarification)
 	toWrite.RuntimeProfile = cloneRuntimeProfile(toWrite.RuntimeProfile)
 	if toWrite.RuntimeProfile != nil {
 		toWrite.RuntimeProfile.Fingerprint.ProjectRoot = normalizeRoot(toWrite.RuntimeProfile.Fingerprint.ProjectRoot)

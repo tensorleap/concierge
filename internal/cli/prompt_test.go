@@ -35,6 +35,39 @@ func TestPromptModelCandidateSelectionReturnsChosenCandidate(t *testing.T) {
 	}
 }
 
+func TestPromptModelSourceSelectionReturnsChosenCandidate(t *testing.T) {
+	candidates := []string{"model/a.h5", "model/b.onnx"}
+	input := bytes.NewBufferString("2\n")
+	output := new(bytes.Buffer)
+
+	selected, err := promptModelSourceSelection(input, output, candidates)
+	if err != nil {
+		t.Fatalf("promptModelSourceSelection returned error: %v", err)
+	}
+	if selected != "model/b.onnx" {
+		t.Fatalf("expected selected source %q, got %q", "model/b.onnx", selected)
+	}
+	if !bytes.Contains(output.Bytes(), []byte("Model Source")) {
+		t.Fatalf("expected model source heading in prompt output, got %q", output.String())
+	}
+}
+
+func TestPromptModelSourceNoteReturnsTrimmedText(t *testing.T) {
+	input := bytes.NewBufferString("  export from weights/best.pt  \n")
+	output := new(bytes.Buffer)
+
+	note, err := promptModelSourceNote(input, output)
+	if err != nil {
+		t.Fatalf("promptModelSourceNote returned error: %v", err)
+	}
+	if note != "export from weights/best.pt" {
+		t.Fatalf("expected trimmed note, got %q", note)
+	}
+	if !bytes.Contains(output.Bytes(), []byte("Where should Concierge obtain the model")) {
+		t.Fatalf("expected clarification prompt in output, got %q", output.String())
+	}
+}
+
 func TestPromptApprovalParsesYesNo(t *testing.T) {
 	approved, err := promptApproval(bytes.NewBufferString("yes\n"), new(bytes.Buffer), "approve", false)
 	if err != nil {

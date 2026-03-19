@@ -52,6 +52,19 @@ func TestSaveStateAtomicRoundTrip(t *testing.T) {
 		LastPrimaryStep:         core.EnsureStepLeapYAML,
 		LastRunAt:               fixedRunAt,
 		InvalidationReasons:     []string{InvalidationReasonGitHeadChanged},
+		ModelAcquisitionClarification: &ModelAcquisitionClarification{
+			SelectedVerifiedModelPath: "model/b.onnx",
+			ModelSourceNote:           "export from weights/best.pt",
+			RuntimeChangePolicy:       ModelRuntimeChangePolicyAllowRuntimeChanges,
+			SnapshotHead:              "head-1",
+			WorktreeFingerprint:       "fp-1",
+			RuntimeFingerprint: core.RuntimeProfileFingerprint{
+				ProjectRoot:     root,
+				PyProjectHash:   "pyproject-hash",
+				InterpreterPath: "/tmp/python",
+				PythonVersion:   "Python 3.11.8",
+			},
+		},
 	}
 
 	if err := SaveState(root, input); err != nil {
@@ -70,6 +83,42 @@ func TestSaveStateAtomicRoundTrip(t *testing.T) {
 	input.SelectedProjectRoot = expectedRoot
 	if !reflect.DeepEqual(loaded, input) {
 		t.Fatalf("expected loaded state %+v, got %+v", input, loaded)
+	}
+}
+
+func TestModelAcquisitionClarificationValidForSnapshot(t *testing.T) {
+	clarification := &ModelAcquisitionClarification{
+		SelectedVerifiedModelPath: "model/b.onnx",
+		SnapshotHead:              "head-1",
+		WorktreeFingerprint:       "fp-1",
+		RuntimeFingerprint: core.RuntimeProfileFingerprint{
+			ProjectRoot:     "/repo",
+			PyProjectHash:   "pyproject-hash",
+			InterpreterPath: "/tmp/python",
+			PythonVersion:   "Python 3.11.8",
+		},
+	}
+
+	snapshot := core.WorkspaceSnapshot{
+		Repository:          core.RepositoryState{Head: "head-1"},
+		WorktreeFingerprint: "fp-1",
+		RuntimeProfile: &core.LocalRuntimeProfile{
+			Fingerprint: core.RuntimeProfileFingerprint{
+				ProjectRoot:     "/repo",
+				PyProjectHash:   "pyproject-hash",
+				InterpreterPath: "/tmp/python",
+				PythonVersion:   "Python 3.11.8",
+			},
+		},
+	}
+
+	if !ClarificationStillValid(clarification, snapshot) {
+		t.Fatalf("expected clarification to stay valid for matching snapshot")
+	}
+
+	snapshot.Repository.Head = "head-2"
+	if ClarificationStillValid(clarification, snapshot) {
+		t.Fatalf("expected clarification to become invalid after head change")
 	}
 }
 
@@ -111,7 +160,7 @@ func TestStatePersistsAcrossMultipleIterations(t *testing.T) {
 		Step:        core.EnsureStep{ID: core.EnsureStepLeapYAML},
 	}
 
-	state = UpdateForIteration(state, firstSnapshot, firstReport, root, "", nil, nil, nil)
+	state = UpdateForIteration(state, firstSnapshot, firstReport, root, "", nil, nil, nil, nil)
 	if err := SaveState(root, state); err != nil {
 		t.Fatalf("SaveState first iteration failed: %v", err)
 	}
@@ -135,7 +184,7 @@ func TestStatePersistsAcrossMultipleIterations(t *testing.T) {
 		Step:        core.EnsureStep{ID: core.EnsureStepIntegrationScript},
 	}
 
-	updated := UpdateForIteration(loaded, secondSnapshot, secondReport, root, "", nil, nil, reasons)
+	updated := UpdateForIteration(loaded, secondSnapshot, secondReport, root, "", nil, nil, nil, reasons)
 	if err := SaveState(root, updated); err != nil {
 		t.Fatalf("SaveState second iteration failed: %v", err)
 	}
@@ -184,7 +233,7 @@ func TestUpdateForIterationPersistsOnlyBlockingValidationIssues(t *testing.T) {
 		},
 	}
 
-	updated := UpdateForIteration(DefaultRunState(root), snapshot, report, root, "", nil, nil, nil)
+	updated := UpdateForIteration(DefaultRunState(root), snapshot, report, root, "", nil, nil, nil, nil)
 	if len(updated.LastBlockingIssues) != 1 {
 		t.Fatalf("expected one persisted blocking issue, got %+v", updated.LastBlockingIssues)
 	}

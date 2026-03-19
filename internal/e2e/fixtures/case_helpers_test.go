@@ -133,7 +133,19 @@ func captureCaseSnapshot(t *testing.T, entry fixtureCaseEntry, repoRoot string) 
 		}
 	}
 	attachReadyRuntimeProfile(&snapshotValue)
+	if !shouldAttachReadyRuntimeProfile(entry) {
+		snapshotValue.Runtime.ProbeRan = false
+	}
 	return snapshotValue
+}
+
+func shouldAttachReadyRuntimeProfile(entry fixtureCaseEntry) bool {
+	switch core.EnsureStepID(entry.ExpectedPrimaryStep) {
+	case core.EnsureStepModelAcquisition, core.EnsureStepModelContract:
+		return true
+	default:
+		return false
+	}
 }
 
 func inspectPlanForCase(t *testing.T, entry fixtureCaseEntry, repoRoot string) (core.WorkspaceSnapshot, core.IntegrationStatus, core.ExecutionPlan) {

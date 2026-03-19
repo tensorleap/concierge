@@ -406,8 +406,13 @@ func inspectStatusWithRuntimeProbeAndSelection(
 	status, err := inspector.Inspect(context.Background(), core.WorkspaceSnapshot{
 		Repository:        core.RepositoryState{Root: root},
 		SelectedModelPath: selectedModelPath,
+		Runtime: core.RuntimeState{
+			ProbeRan: true,
+		},
 		RuntimeProfile: &core.LocalRuntimeProfile{
-			InterpreterPath: "/tmp/fake-python",
+			InterpreterPath:   "/tmp/fake-python",
+			DependenciesReady: true,
+			CodeLoaderReady:   true,
 		},
 	})
 	if err != nil {

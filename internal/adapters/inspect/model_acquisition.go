@@ -287,7 +287,11 @@ func annotateModelCandidate(snapshot core.WorkspaceSnapshot, evaluation modelCan
 }
 
 func runtimeVerificationAvailable(snapshot core.WorkspaceSnapshot) bool {
-	return snapshot.RuntimeProfile != nil && strings.TrimSpace(snapshot.RuntimeProfile.InterpreterPath) != ""
+	return snapshot.Runtime.ProbeRan &&
+		snapshot.RuntimeProfile != nil &&
+		strings.TrimSpace(snapshot.RuntimeProfile.InterpreterPath) != "" &&
+		snapshot.RuntimeProfile.DependenciesReady &&
+		snapshot.RuntimeProfile.CodeLoaderReady
 }
 
 func verifySelectedModelCandidate(snapshot core.WorkspaceSnapshot, evaluation modelCandidateEvaluation) (core.ModelCandidate, bool) {

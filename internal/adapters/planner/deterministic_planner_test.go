@@ -123,3 +123,94 @@ func TestPlannerDefersIntegrationTestUntilEncoderMappingConfirmed(t *testing.T) 
 		t.Fatalf("expected integration-test step to remain queued after input-encoder gating, got %+v", plan.Additional)
 	}
 }
+
+func TestPlannerDefersModelAcquisitionBehindInputEncodersWhenArtifactAlreadyExists(t *testing.T) {
+	adapter := NewDeterministicPlanner()
+	status := core.IntegrationStatus{
+		Issues: []core.Issue{
+			{Code: core.IssueCodeModelAcquisitionUnresolved, Severity: core.SeverityError},
+			{Code: core.IssueCodeInputEncoderCoverageIncomplete, Severity: core.SeverityError},
+		},
+		Contracts: &core.IntegrationContracts{
+			ModelCandidates: []core.ModelCandidate{
+				{
+					Path:              "model/model.h5",
+					Exists:            true,
+					VerificationState: core.ModelCandidateVerificationStateFailed,
+					VerificationError: "python probe error: invalid model file",
+				},
+			},
+		},
+	}
+
+	plan, err := adapter.Plan(context.Background(), core.WorkspaceSnapshot{}, status)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	if plan.Primary.ID != core.EnsureStepInputEncoders {
+		t.Fatalf("expected primary step %q, got %q", core.EnsureStepInputEncoders, plan.Primary.ID)
+	}
+	if len(plan.Additional) == 0 || plan.Additional[0].ID != core.EnsureStepModelAcquisition {
+		t.Fatalf("expected model-acquisition step to remain queued, got %+v", plan.Additional)
+	}
+}
+
+func TestPlannerDefersModelAcquisitionBehindGTEncodersWhenArtifactAlreadyExists(t *testing.T) {
+	adapter := NewDeterministicPlanner()
+	status := core.IntegrationStatus{
+		Issues: []core.Issue{
+			{Code: core.IssueCodeModelAcquisitionUnresolved, Severity: core.SeverityError},
+			{Code: core.IssueCodeGTEncoderCoverageIncomplete, Severity: core.SeverityError},
+		},
+		Contracts: &core.IntegrationContracts{
+			ModelCandidates: []core.ModelCandidate{
+				{
+					Path:              "model/model.h5",
+					Exists:            true,
+					VerificationState: core.ModelCandidateVerificationStateFailed,
+					VerificationError: "python probe error: invalid model file",
+				},
+			},
+		},
+	}
+
+	plan, err := adapter.Plan(context.Background(), core.WorkspaceSnapshot{}, status)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	if plan.Primary.ID != core.EnsureStepGroundTruthEncoders {
+		t.Fatalf("expected primary step %q, got %q", core.EnsureStepGroundTruthEncoders, plan.Primary.ID)
+	}
+}
+
+func TestPlannerDefersModelAcquisitionBehindIntegrationTestWhenArtifactAlreadyExists(t *testing.T) {
+	adapter := NewDeterministicPlanner()
+	status := core.IntegrationStatus{
+		Issues: []core.Issue{
+			{Code: core.IssueCodeModelAcquisitionUnresolved, Severity: core.SeverityError},
+			{Code: core.IssueCodeIntegrationTestMissingRequiredCalls, Severity: core.SeverityError},
+		},
+		Contracts: &core.IntegrationContracts{
+			ModelCandidates: []core.ModelCandidate{
+				{
+					Path:              "model/model.h5",
+					Exists:            true,
+					VerificationState: core.ModelCandidateVerificationStateFailed,
+					VerificationError: "python probe error: invalid model file",
+				},
+			},
+			ConfirmedMapping: &core.EncoderMappingContract{
+				InputSymbols:       []string{"image", "meta"},
+				GroundTruthSymbols: []string{"classes", "label"},
+			},
+		},
+	}
+
+	plan, err := adapter.Plan(context.Background(), core.WorkspaceSnapshot{}, status)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	if plan.Primary.ID != core.EnsureStepIntegrationTestContract {
+		t.Fatalf("expected primary step %q, got %q", core.EnsureStepIntegrationTestContract, plan.Primary.ID)
+	}
+}

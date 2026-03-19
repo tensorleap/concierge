@@ -81,7 +81,7 @@ func (i *BaselineInspector) Inspect(ctx context.Context, snapshot core.Workspace
 		return core.IntegrationStatus{}, err
 	}
 
-	if err := inspectModelAcquisition(repoRoot, contract, snapshot.SelectedModelPath, &status); err != nil {
+	if err := inspectModelAcquisition(snapshot, repoRoot, contract, snapshot.SelectedModelPath, &status); err != nil {
 		return core.IntegrationStatus{}, err
 	}
 	if err := inspectModelContract(repoRoot, contract, snapshot.SelectedModelPath, &status); err != nil {

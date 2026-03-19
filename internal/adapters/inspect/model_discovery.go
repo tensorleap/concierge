@@ -71,9 +71,22 @@ func discoverModelCandidates(repoRoot string, contract *leapYAMLContract, contra
 	if err != nil {
 		return nil, err
 	}
-	_ = contract
-	_ = contracts
-	return fromRepo, nil
+	fromLoadModel, err := discoverModelCandidatesFromLoadModelDecorators(repoRoot, contract, contracts)
+	if err != nil {
+		return nil, err
+	}
+
+	collector := modelCandidateCollector{
+		repoRoot:  repoRoot,
+		byPathKey: make(map[string]*collectedModelCandidate, len(fromRepo)+len(fromLoadModel)),
+	}
+	for _, candidate := range fromRepo {
+		collector.add(candidate.Path, candidate.Source)
+	}
+	for _, candidate := range fromLoadModel {
+		collector.add(candidate.Path, candidate.Source)
+	}
+	return collector.list(), nil
 }
 
 func (c *modelCandidateCollector) add(path string, source string) {

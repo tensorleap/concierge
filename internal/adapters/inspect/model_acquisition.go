@@ -9,7 +9,13 @@ import (
 	"github.com/tensorleap/concierge/internal/core"
 )
 
-func inspectModelAcquisition(repoRoot string, contract *leapYAMLContract, selectedModelPath string, status *core.IntegrationStatus) error {
+func inspectModelAcquisition(
+	snapshot core.WorkspaceSnapshot,
+	repoRoot string,
+	contract *leapYAMLContract,
+	selectedModelPath string,
+	status *core.IntegrationStatus,
+) error {
 	if contract == nil || status == nil || status.Contracts == nil {
 		return nil
 	}
@@ -17,7 +23,7 @@ func inspectModelAcquisition(repoRoot string, contract *leapYAMLContract, select
 		return nil
 	}
 
-	readyArtifacts, err := discoverModelCandidates(repoRoot, contract, status.Contracts)
+	discoveredCandidates, err := discoverModelCandidates(repoRoot, contract, status.Contracts)
 	if err != nil {
 		return err
 	}
@@ -30,6 +36,12 @@ func inspectModelAcquisition(repoRoot string, contract *leapYAMLContract, select
 		return err
 	}
 
+	readyEvaluations, err := evaluateModelCandidates(repoRoot, discoveredCandidates)
+	if err != nil {
+		return err
+	}
+	readyArtifacts, verifiedArtifacts, failedArtifacts := annotateModelCandidates(snapshot, readyEvaluations)
+
 	status.Contracts.ModelCandidates = append([]core.ModelCandidate(nil), readyArtifacts...)
 	status.Contracts.ModelAcquisition = &core.ModelAcquisitionArtifacts{
 		ReadyArtifacts:   append([]core.ModelCandidate(nil), readyArtifacts...),
@@ -40,19 +52,6 @@ func inspectModelAcquisition(repoRoot string, contract *leapYAMLContract, select
 	selectedEvaluation, selectedProvided, err := evaluateSelectedModelPath(repoRoot, selectedModelPath)
 	if err != nil {
 		return err
-	}
-	if selectedProvided && selectedEvaluation.SupportedFormat && selectedEvaluation.InsideRepo && selectedEvaluation.Exists {
-		status.Contracts.ResolvedModelPath = strings.TrimSpace(selectedEvaluation.DisplayPath)
-		return nil
-	}
-
-	readyEvaluations, err := evaluateModelCandidates(repoRoot, readyArtifacts)
-	if err != nil {
-		return err
-	}
-	if resolved, ok := defaultResolvableModelCandidate(readyEvaluations); ok {
-		status.Contracts.ResolvedModelPath = strings.TrimSpace(resolved.DisplayPath)
-		return nil
 	}
 	status.Contracts.ResolvedModelPath = ""
 
@@ -85,11 +84,54 @@ func inspectModelAcquisition(repoRoot string, contract *leapYAMLContract, select
 		}
 	}
 
-	if len(passiveLeads) > 0 || len(acquisitionLeads) > 0 {
+	if selectedProvided && selectedEvaluation.SupportedFormat && selectedEvaluation.InsideRepo && selectedEvaluation.Exists {
+		if selectedCandidate, verified := verifySelectedModelCandidate(snapshot, selectedEvaluation); verified {
+			status.Contracts.ResolvedModelPath = strings.TrimSpace(selectedCandidate.Path)
+			return nil
+		} else if runtimeVerificationAvailable(snapshot) {
+			appendModelIssue(
+				status,
+				core.IssueCodeModelAcquisitionUnresolved,
+				runtimeVerificationFailureMessage([]core.ModelCandidate{selectedCandidate}),
+				core.SeverityError,
+			)
+			return nil
+		}
+	}
+
+	if runtimeVerificationAvailable(snapshot) {
+		switch len(verifiedArtifacts) {
+		case 1:
+			status.Contracts.ResolvedModelPath = strings.TrimSpace(verifiedArtifacts[0].Path)
+			return nil
+		case 0:
+			if len(failedArtifacts) > 0 {
+				appendModelIssue(
+					status,
+					core.IssueCodeModelAcquisitionUnresolved,
+					runtimeVerificationFailureMessage(failedArtifacts),
+					core.SeverityError,
+				)
+				return nil
+			}
+		default:
+			appendModelIssue(
+				status,
+				core.IssueCodeModelCandidatesAmbiguous,
+				ambiguousModelCandidatesMessage(verifiedArtifacts),
+				core.SeverityError,
+			)
+			return nil
+		}
+	} else if hasExistingModelCandidate(readyArtifacts) {
+		return nil
+	}
+
+	if len(missingModelCandidatePaths(readyArtifacts)) > 0 || len(passiveLeads) > 0 || len(acquisitionLeads) > 0 {
 		appendModelIssue(
 			status,
 			core.IssueCodeModelAcquisitionRequired,
-			modelAcquisitionIssueMessage(passiveLeads, acquisitionLeads),
+			modelAcquisitionIssueMessage(readyArtifacts, passiveLeads, acquisitionLeads),
 			core.SeverityError,
 		)
 		return nil
@@ -104,8 +146,16 @@ func inspectModelAcquisition(repoRoot string, contract *leapYAMLContract, select
 	return nil
 }
 
-func modelAcquisitionIssueMessage(passiveLeads []core.ModelCandidate, acquisitionLeads []string) string {
-	values := make([]string, 0, len(passiveLeads)+len(acquisitionLeads))
+func modelAcquisitionIssueMessage(readyArtifacts []core.ModelCandidate, passiveLeads []core.ModelCandidate, acquisitionLeads []string) string {
+	values := make([]string, 0, len(readyArtifacts)+len(passiveLeads)+len(acquisitionLeads))
+	for _, candidate := range readyArtifacts {
+		if candidate.Exists {
+			continue
+		}
+		if path := strings.TrimSpace(candidate.Path); path != "" {
+			values = append(values, path)
+		}
+	}
 	for _, candidate := range passiveLeads {
 		if path := strings.TrimSpace(candidate.Path); path != "" {
 			values = append(values, path)
@@ -174,16 +224,6 @@ func evaluateModelCandidates(repoRoot string, candidates []core.ModelCandidate) 
 	return evaluations, nil
 }
 
-func defaultResolvableModelCandidate(evaluations []modelCandidateEvaluation) (modelCandidateEvaluation, bool) {
-	for _, evaluation := range evaluations {
-		if !evaluation.SupportedFormat || !evaluation.InsideRepo || !evaluation.Exists {
-			continue
-		}
-		return evaluation, true
-	}
-	return modelCandidateEvaluation{}, false
-}
-
 func evaluateSelectedModelPath(repoRoot, selectedModelPath string) (modelCandidateEvaluation, bool, error) {
 	normalized := normalizeSelectedModelPath(selectedModelPath)
 	if normalized == "" {
@@ -197,6 +237,131 @@ func evaluateSelectedModelPath(repoRoot, selectedModelPath string) (modelCandida
 		return modelCandidateEvaluation{}, true, err
 	}
 	return evaluation, true, nil
+}
+
+func annotateModelCandidates(
+	snapshot core.WorkspaceSnapshot,
+	evaluations []modelCandidateEvaluation,
+) ([]core.ModelCandidate, []core.ModelCandidate, []core.ModelCandidate) {
+	annotated := make([]core.ModelCandidate, 0, len(evaluations))
+	verified := make([]core.ModelCandidate, 0, len(evaluations))
+	failed := make([]core.ModelCandidate, 0, len(evaluations))
+	for _, evaluation := range evaluations {
+		candidate, isVerified := annotateModelCandidate(snapshot, evaluation)
+		if strings.TrimSpace(candidate.Path) == "" {
+			continue
+		}
+		annotated = append(annotated, candidate)
+		if isVerified {
+			verified = append(verified, candidate)
+			continue
+		}
+		if candidate.VerificationState == core.ModelCandidateVerificationStateFailed {
+			failed = append(failed, candidate)
+		}
+	}
+	return annotated, verified, failed
+}
+
+func annotateModelCandidate(snapshot core.WorkspaceSnapshot, evaluation modelCandidateEvaluation) (core.ModelCandidate, bool) {
+	candidate := core.ModelCandidate{
+		Path:   strings.TrimSpace(evaluation.DisplayPath),
+		Source: strings.TrimSpace(evaluation.Candidate.Source),
+		Exists: evaluation.Exists,
+	}
+	if !evaluation.Exists || !evaluation.SupportedFormat || !evaluation.InsideRepo {
+		return candidate, false
+	}
+	if !runtimeVerificationAvailable(snapshot) {
+		candidate.VerificationState = core.ModelCandidateVerificationStateUnverified
+		return candidate, false
+	}
+	if err := verifyModelCandidateInRuntime(snapshot, evaluation); err == nil {
+		candidate.VerificationState = core.ModelCandidateVerificationStateVerified
+		return candidate, true
+	} else {
+		candidate.VerificationState = core.ModelCandidateVerificationStateFailed
+		candidate.VerificationError = strings.TrimSpace(err.Error())
+	}
+	return candidate, false
+}
+
+func runtimeVerificationAvailable(snapshot core.WorkspaceSnapshot) bool {
+	return snapshot.RuntimeProfile != nil && strings.TrimSpace(snapshot.RuntimeProfile.InterpreterPath) != ""
+}
+
+func verifySelectedModelCandidate(snapshot core.WorkspaceSnapshot, evaluation modelCandidateEvaluation) (core.ModelCandidate, bool) {
+	candidate, verified := annotateModelCandidate(snapshot, evaluation)
+	return candidate, verified
+}
+
+func verifyModelCandidateInRuntime(snapshot core.WorkspaceSnapshot, evaluation modelCandidateEvaluation) error {
+	modelType := runtimeVerificationModelType(evaluation)
+	if strings.TrimSpace(modelType) == "" {
+		return fmt.Errorf("unsupported model type")
+	}
+	_, err := runtimeSignatureProbeRunner(snapshot, evaluation.AbsolutePath, modelType)
+	return err
+}
+
+func runtimeVerificationModelType(evaluation modelCandidateEvaluation) string {
+	switch strings.ToLower(filepath.Ext(strings.TrimSpace(evaluation.DisplayPath))) {
+	case ".onnx":
+		return "onnx"
+	case ".h5", ".keras":
+		return "keras"
+	default:
+		return ""
+	}
+}
+
+func ambiguousModelCandidatesMessage(candidates []core.ModelCandidate) string {
+	return fmt.Sprintf(
+		"multiple supported model artifacts were verified in the prepared runtime: %s. Concierge needs the user to choose which model source to follow",
+		joinRawModelCandidatePaths(candidates),
+	)
+}
+
+func runtimeVerificationFailureMessage(candidates []core.ModelCandidate) string {
+	failures := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		path := strings.TrimSpace(candidate.Path)
+		if path == "" {
+			continue
+		}
+		detail := path
+		if message := strings.TrimSpace(candidate.VerificationError); message != "" {
+			detail = fmt.Sprintf("%s (%s)", path, message)
+		}
+		failures = append(failures, detail)
+	}
+	failures = uniqueSortedStrings(failures)
+	return fmt.Sprintf(
+		"supported model artifacts were found but could not be loaded in the prepared runtime: %s",
+		strings.Join(failures, ", "),
+	)
+}
+
+func hasExistingModelCandidate(candidates []core.ModelCandidate) bool {
+	for _, candidate := range candidates {
+		if candidate.Exists {
+			return true
+		}
+	}
+	return false
+}
+
+func missingModelCandidatePaths(candidates []core.ModelCandidate) []string {
+	values := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.Exists {
+			continue
+		}
+		if path := strings.TrimSpace(candidate.Path); path != "" {
+			values = append(values, path)
+		}
+	}
+	return uniqueSortedStrings(values)
 }
 
 func uniqueSortedModelCandidates(candidates []core.ModelCandidate) []core.ModelCandidate {

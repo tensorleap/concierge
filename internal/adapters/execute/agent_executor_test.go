@@ -303,6 +303,90 @@ func TestAgentExecutorModelAcquisitionObjectiveIncludesSelectedModelPath(t *test
 	}
 }
 
+func TestAgentExecutorModelAcquisitionUsesSelectedPlanAndRecordsVerificationEvidence(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &fakeAgentRunner{
+		result: agent.AgentResult{Applied: true, Summary: "materialized model artifact"},
+	}
+	executor := NewAgentExecutor(runner)
+
+	inspectCalls := 0
+	executor.inspectStatus = func(ctx context.Context, snapshot core.WorkspaceSnapshot) (core.IntegrationStatus, error) {
+		_ = ctx
+		inspectCalls++
+		if inspectCalls == 1 {
+			return core.IntegrationStatus{
+				Contracts: &core.IntegrationContracts{
+					EntryFile: "leap_integration.py",
+					ModelAcquisition: &core.ModelAcquisitionArtifacts{
+						AcquisitionLeads: []string{"tools/export_model.py"},
+					},
+				},
+			}, nil
+		}
+		if snapshot.SelectedModelPath != ".concierge/materialized_models/model.onnx" {
+			t.Fatalf("expected verification pass to inspect expected output path, got %q", snapshot.SelectedModelPath)
+		}
+		return core.IntegrationStatus{
+			Contracts: &core.IntegrationContracts{
+				ResolvedModelPath: ".concierge/materialized_models/model.onnx",
+			},
+		}, nil
+	}
+
+	step, ok := core.EnsureStepByID(core.EnsureStepModelAcquisition)
+	if !ok {
+		t.Fatalf("expected step %q to exist", core.EnsureStepModelAcquisition)
+	}
+
+	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		ID: "snapshot-model-plan",
+		Repository: core.RepositoryState{Root: repoRoot},
+		Runtime: core.RuntimeState{
+			ProbeRan: true,
+		},
+		RuntimeProfile: &core.LocalRuntimeProfile{
+			InterpreterPath:   "/tmp/repo/.venv/bin/python",
+			DependenciesReady: true,
+			CodeLoaderReady:   true,
+		},
+		ModelAcquisitionPlan: &core.ModelAcquisitionPlan{
+			Strategy:           "repo_helper_export",
+			DefaultChoice:      "export from weights/best.pt",
+			RuntimeInvocation:  []string{"poetry", "run", "python", "tools/export_model.py"},
+			WorkingDir:         "tools",
+			ExpectedOutputPath: ".concierge/materialized_models/model.onnx",
+			HelperPath:         ".concierge/materializers/materialize_model.py",
+			Evidence: []core.ModelAcquisitionPlanEvidence{
+				{Path: "README.md", Line: 12, Detail: "documents export helper", Snippet: "python tools/export_model.py"},
+			},
+		},
+	}, step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	if !strings.Contains(runner.lastTask.Objective, `Execute the selected model acquisition strategy "repo_helper_export"`) {
+		t.Fatalf("expected strategy-aware objective, got %q", runner.lastTask.Objective)
+	}
+	if strings.Contains(runner.lastTask.Objective, "Investigate repository model acquisition logic") {
+		t.Fatalf("expected objective to stop rediscovering strategy, got %q", runner.lastTask.Objective)
+	}
+	if runner.lastTask.RepoContext == nil || runner.lastTask.RepoContext.ModelAcquisitionPlan == nil {
+		t.Fatalf("expected repo context to carry the selected plan, got %+v", runner.lastTask.RepoContext)
+	}
+	if runner.lastTask.RepoContext.ModelAcquisitionPlan.ExpectedOutputPath != ".concierge/materialized_models/model.onnx" {
+		t.Fatalf("expected repo context to preserve expected output path, got %+v", runner.lastTask.RepoContext.ModelAcquisitionPlan)
+	}
+
+	assertEvidence(t, result.Evidence, "model_acquisition.plan.strategy", "repo_helper_export")
+	assertEvidence(t, result.Evidence, "model_acquisition.plan.command", "poetry run python tools/export_model.py")
+	assertEvidence(t, result.Evidence, "model_acquisition.plan.expected_output_path", ".concierge/materialized_models/model.onnx")
+	assertEvidence(t, result.Evidence, "model_acquisition.materialization.expected_output_path", ".concierge/materialized_models/model.onnx")
+	assertEvidence(t, result.Evidence, "model_acquisition.materialization.runtime_verification", "passed")
+	assertEvidence(t, result.Evidence, "model_acquisition.materialization.output_path", ".concierge/materialized_models/model.onnx")
+}
+
 func TestModelAuthoringAgentTaskIncludesCandidateContext(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeTestFile(t, filepath.Join(repoRoot, "models", "z.h5"))

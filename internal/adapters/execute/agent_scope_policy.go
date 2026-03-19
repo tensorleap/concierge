@@ -216,6 +216,10 @@ func resolveAgentAllowedFiles(snapshot core.WorkspaceSnapshot, status core.Integ
 	}
 
 	add(snapshot.SelectedModelPath)
+	if plan := selectedModelAcquisitionPlan(snapshot, status); plan != nil {
+		add(plan.ExpectedOutputPath)
+		add(plan.HelperPath)
+	}
 	if status.Contracts != nil {
 		add(status.Contracts.EntryFile)
 		add(status.Contracts.ResolvedModelPath)

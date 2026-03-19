@@ -128,6 +128,16 @@ func newRunCommand() *cobra.Command {
 				modelAcquisitionClarification = cloneModelAcquisitionClarification(clarification)
 				modelAcquisitionClarificationMu.Unlock()
 			}
+			buildModelAcquisitionPlan := func(snapshotValue core.WorkspaceSnapshot) *core.ModelAcquisitionPlan {
+				clarification := getModelAcquisitionClarification()
+				if clarification != nil && !state.ClarificationStillValid(clarification, snapshotValue) {
+					return nil
+				}
+				return cloneModelAcquisitionPlan(modelAcquisitionPlanFromSelection(getSelectedModelPath(), clarification))
+			}
+			getModelAcquisitionPlan := func() *core.ModelAcquisitionPlan {
+				return cloneModelAcquisitionPlan(modelAcquisitionPlanFromSelection(getSelectedModelPath(), getModelAcquisitionClarification()))
+			}
 			selectedEncoderMapping := cloneEncoderMappingContract(loadedState.ConfirmedEncoderMapping)
 			var selectedEncoderMappingMu sync.RWMutex
 			getSelectedEncoderMapping := func() *core.EncoderMappingContract {
@@ -308,19 +318,21 @@ func newRunCommand() *cobra.Command {
 
 			engine, err := orchestrator.NewEngine(orchestrator.Dependencies{
 				Snapshotter: modelPathHintSnapshotter{
-					base:              snapshot.NewGitSnapshotter(),
-					selectedModelFn:   getSelectedModelPath,
-					selectedMappingFn: getSelectedEncoderMapping,
-					runtimeProfileFn:  getRuntimeProfile,
-					resolveRuntimeFn:  resolveRuntimeProfile,
+					base:                   snapshot.NewGitSnapshotter(),
+					selectedModelFn:        getSelectedModelPath,
+					modelAcquisitionPlanFn: buildModelAcquisitionPlan,
+					selectedMappingFn:      getSelectedEncoderMapping,
+					runtimeProfileFn:       getRuntimeProfile,
+					resolveRuntimeFn:       resolveRuntimeProfile,
 				},
 				Inspector: inspect.NewBaselineInspector(),
 				Planner:   plannerAdapter,
 				Executor: execute.NewApprovalExecutor(
 					modelPathHintExecutor{
-						base:             baseExecutor,
-						selectedModelFn:  getSelectedModelPath,
-						runtimeProfileFn: getRuntimeProfile,
+						base:                   baseExecutor,
+						selectedModelFn:        getSelectedModelPath,
+						modelAcquisitionPlanFn: getModelAcquisitionPlan,
+						runtimeProfileFn:       getRuntimeProfile,
 					},
 					stepApproval,
 				),
@@ -587,6 +599,9 @@ func cloneWorkspaceSnapshot(snapshot core.WorkspaceSnapshot) core.WorkspaceSnaps
 	cloned := snapshot
 	if snapshot.ConfirmedEncoderMapping != nil {
 		cloned.ConfirmedEncoderMapping = cloneEncoderMappingContract(snapshot.ConfirmedEncoderMapping)
+	}
+	if snapshot.ModelAcquisitionPlan != nil {
+		cloned.ModelAcquisitionPlan = cloneModelAcquisitionPlan(snapshot.ModelAcquisitionPlan)
 	}
 	if len(snapshot.FileHashes) > 0 {
 		cloned.FileHashes = make(map[string]string, len(snapshot.FileHashes))
@@ -990,11 +1005,12 @@ func blockingIssuesForStep(issues []core.Issue, stepID core.EnsureStepID) []core
 }
 
 type modelPathHintSnapshotter struct {
-	base              ports.Snapshotter
-	selectedModelFn   func() string
-	selectedMappingFn func() *core.EncoderMappingContract
-	runtimeProfileFn  func() *core.LocalRuntimeProfile
-	resolveRuntimeFn  func(context.Context, core.WorkspaceSnapshot) (*core.LocalRuntimeProfile, error)
+	base                   ports.Snapshotter
+	selectedModelFn        func() string
+	modelAcquisitionPlanFn func(core.WorkspaceSnapshot) *core.ModelAcquisitionPlan
+	selectedMappingFn      func() *core.EncoderMappingContract
+	runtimeProfileFn       func() *core.LocalRuntimeProfile
+	resolveRuntimeFn       func(context.Context, core.WorkspaceSnapshot) (*core.LocalRuntimeProfile, error)
 }
 
 func (s modelPathHintSnapshotter) Snapshot(ctx context.Context, request core.SnapshotRequest) (core.WorkspaceSnapshot, error) {
@@ -1007,6 +1023,9 @@ func (s modelPathHintSnapshotter) Snapshot(ctx context.Context, request core.Sna
 	}
 	if s.selectedModelFn != nil {
 		snapshotValue.SelectedModelPath = normalizeModelPathValue(s.selectedModelFn())
+	}
+	if s.modelAcquisitionPlanFn != nil {
+		snapshotValue.ModelAcquisitionPlan = cloneModelAcquisitionPlan(s.modelAcquisitionPlanFn(snapshotValue))
 	}
 	if s.selectedMappingFn != nil {
 		snapshotValue.ConfirmedEncoderMapping = cloneEncoderMappingContract(s.selectedMappingFn())
@@ -1028,9 +1047,10 @@ func (s modelPathHintSnapshotter) Snapshot(ctx context.Context, request core.Sna
 }
 
 type modelPathHintExecutor struct {
-	base             ports.Executor
-	selectedModelFn  func() string
-	runtimeProfileFn func() *core.LocalRuntimeProfile
+	base                   ports.Executor
+	selectedModelFn        func() string
+	modelAcquisitionPlanFn func() *core.ModelAcquisitionPlan
+	runtimeProfileFn       func() *core.LocalRuntimeProfile
 }
 
 func (e modelPathHintExecutor) Execute(ctx context.Context, snapshotValue core.WorkspaceSnapshot, step core.EnsureStep) (core.ExecutionResult, error) {
@@ -1042,6 +1062,9 @@ func (e modelPathHintExecutor) Execute(ctx context.Context, snapshotValue core.W
 		if selectedPath != "" {
 			snapshotValue.SelectedModelPath = selectedPath
 		}
+	}
+	if e.modelAcquisitionPlanFn != nil {
+		snapshotValue.ModelAcquisitionPlan = cloneModelAcquisitionPlan(e.modelAcquisitionPlanFn())
 	}
 	if e.runtimeProfileFn != nil {
 		snapshotValue.RuntimeProfile = cloneLocalRuntimeProfile(e.runtimeProfileFn())

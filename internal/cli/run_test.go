@@ -881,6 +881,37 @@ func TestEnsureModelPathSelectionForStepRequiresInteractiveClarificationForAmbig
 	}
 }
 
+func TestModelAcquisitionPlanFromClarificationCapturesUserSourceNote(t *testing.T) {
+	plan := modelAcquisitionPlanFromSelection(
+		"",
+		&state.ModelAcquisitionClarification{
+			ModelSourceNote:     "export from weights/best.pt",
+			RuntimeChangePolicy: state.ModelRuntimeChangePolicyStayInCurrentRuntime,
+		},
+	)
+	if plan == nil {
+		t.Fatal("expected clarification plan")
+	}
+	if plan.Strategy != "user_clarified_strategy" {
+		t.Fatalf("expected strategy %q, got %+v", "user_clarified_strategy", plan)
+	}
+	if plan.DefaultChoice != "export from weights/best.pt" {
+		t.Fatalf("expected default choice to preserve user note, got %+v", plan)
+	}
+	if plan.ExpectedOutputPath != "" {
+		t.Fatalf("expected no expected output path without an explicit target, got %+v", plan)
+	}
+	if len(plan.Evidence) < 2 {
+		t.Fatalf("expected clarification evidence to include note and runtime policy, got %+v", plan)
+	}
+	if plan.Evidence[0].Detail != "user clarified model source" || plan.Evidence[0].Snippet != "export from weights/best.pt" {
+		t.Fatalf("expected first evidence item to preserve the user note, got %+v", plan.Evidence)
+	}
+	if plan.Evidence[1].Detail != "runtime change policy" || plan.Evidence[1].Snippet != string(state.ModelRuntimeChangePolicyStayInCurrentRuntime) {
+		t.Fatalf("expected second evidence item to preserve runtime policy, got %+v", plan.Evidence)
+	}
+}
+
 func initRunTestRepo(t *testing.T, complete bool) string {
 	t.Helper()
 

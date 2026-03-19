@@ -230,6 +230,37 @@ func TestBuildAgentRepoContextIncludesAcquisitionLeads(t *testing.T) {
 	}
 }
 
+func TestBuildAgentRepoContextIncludesSelectedModelAcquisitionPlan(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	context, err := BuildAgentRepoContext(
+		core.EnsureStepModelAcquisition,
+		core.WorkspaceSnapshot{
+			Repository: core.RepositoryState{Root: repoRoot},
+			ModelAcquisitionPlan: &core.ModelAcquisitionPlan{
+				Strategy:           "user_clarified_strategy",
+				DefaultChoice:      "export from weights/best.pt",
+				ExpectedOutputPath: ".concierge/materialized_models/model.onnx",
+				RuntimeInvocation:  []string{"poetry", "run", "python", "tools/export_model.py"},
+			},
+		},
+		core.IntegrationStatus{},
+		core.ValidationResult{},
+	)
+	if err != nil {
+		t.Fatalf("BuildAgentRepoContext returned error: %v", err)
+	}
+	if context.ModelAcquisitionPlan == nil {
+		t.Fatal("expected repo context to include model acquisition plan")
+	}
+	if context.ModelAcquisitionPlan.Strategy != "user_clarified_strategy" {
+		t.Fatalf("expected strategy %q, got %+v", "user_clarified_strategy", context.ModelAcquisitionPlan)
+	}
+	if context.ModelAcquisitionPlan.ExpectedOutputPath != ".concierge/materialized_models/model.onnx" {
+		t.Fatalf("expected expected output path %q, got %+v", ".concierge/materialized_models/model.onnx", context.ModelAcquisitionPlan)
+	}
+}
+
 func TestBuildAgentRepoContextPrefersPrimaryDiscoverySymbolsWhenMappingMissing(t *testing.T) {
 	repoRoot := t.TempDir()
 

@@ -2,6 +2,8 @@ package execute
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +16,8 @@ import (
 func TestPoetryDependencyExecutorInstallsWhenCodeLoaderDeclaredButMissingFromEnv(t *testing.T) {
 	t.Parallel()
 
+	repoRoot := t.TempDir()
+	interpreterPath := createMockInterpreterPath(t, repoRoot)
 	var calls []string
 	executor := &PoetryDependencyExecutor{
 		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
@@ -24,7 +28,7 @@ func TestPoetryDependencyExecutorInstallsWhenCodeLoaderDeclaredButMissingFromEnv
 			switch call {
 			case "poetry install":
 				return []byte("Installing dependencies\n"), nil, nil
-			case "/repo/.venv/bin/python -c import code_loader":
+			case interpreterPath + " -c import code_loader":
 				return nil, nil, nil
 			default:
 				t.Fatalf("unexpected command: %q", call)
@@ -34,9 +38,9 @@ func TestPoetryDependencyExecutorInstallsWhenCodeLoaderDeclaredButMissingFromEnv
 	}
 
 	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
-		Repository: core.RepositoryState{Root: "/repo"},
+		Repository: core.RepositoryState{Root: repoRoot},
 		RuntimeProfile: &core.LocalRuntimeProfile{
-			InterpreterPath:             "/repo/.venv/bin/python",
+			InterpreterPath:             interpreterPath,
 			CodeLoaderReady:             false,
 			CodeLoaderDeclaredInProject: true,
 		},
@@ -55,13 +59,15 @@ func TestPoetryDependencyExecutorInstallsWhenCodeLoaderDeclaredButMissingFromEnv
 		t.Fatalf("expected summary %q, got %q", want, result.Summary)
 	}
 	assertPoetryEvidenceValue(t, result.Evidence, "runtime.command", "poetry install")
-	assertPoetryEvidenceValue(t, result.Evidence, "runtime.verification.command", "/repo/.venv/bin/python -c import code_loader")
+	assertPoetryEvidenceValue(t, result.Evidence, "runtime.verification.command", interpreterPath+" -c import code_loader")
 	assertPoetryEvidenceValue(t, result.Evidence, "runtime.verification.result", "code_loader import ok")
 }
 
 func TestPoetryDependencyExecutorAddsCodeLoaderWhenProjectDoesNotDeclareIt(t *testing.T) {
 	t.Parallel()
 
+	repoRoot := t.TempDir()
+	interpreterPath := createMockInterpreterPath(t, repoRoot)
 	var calls []string
 	executor := &PoetryDependencyExecutor{
 		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
@@ -72,7 +78,7 @@ func TestPoetryDependencyExecutorAddsCodeLoaderWhenProjectDoesNotDeclareIt(t *te
 			switch call {
 			case "poetry add code-loader@^1.0.165":
 				return []byte("Adding code-loader\n"), nil, nil
-			case "/repo/.venv/bin/python -c import code_loader":
+			case interpreterPath + " -c import code_loader":
 				return nil, nil, nil
 			default:
 				t.Fatalf("unexpected command: %q", call)
@@ -82,9 +88,9 @@ func TestPoetryDependencyExecutorAddsCodeLoaderWhenProjectDoesNotDeclareIt(t *te
 	}
 
 	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
-		Repository: core.RepositoryState{Root: "/repo"},
+		Repository: core.RepositoryState{Root: repoRoot},
 		RuntimeProfile: &core.LocalRuntimeProfile{
-			InterpreterPath:             "/repo/.venv/bin/python",
+			InterpreterPath:             interpreterPath,
 			CodeLoaderReady:             false,
 			CodeLoaderDeclaredInProject: false,
 		},
@@ -106,6 +112,8 @@ func TestPoetryDependencyExecutorAddsCodeLoaderWhenProjectDoesNotDeclareIt(t *te
 func TestPoetryDependencyExecutorReturnsErrorWhenCodeLoaderVerificationStillFails(t *testing.T) {
 	t.Parallel()
 
+	repoRoot := t.TempDir()
+	interpreterPath := createMockInterpreterPath(t, repoRoot)
 	executor := &PoetryDependencyExecutor{
 		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
 			_ = ctx
@@ -114,7 +122,7 @@ func TestPoetryDependencyExecutorReturnsErrorWhenCodeLoaderVerificationStillFail
 			switch call {
 			case "poetry install":
 				return []byte("Installing dependencies\n"), nil, nil
-			case "/repo/.venv/bin/python -c import code_loader":
+			case interpreterPath + " -c import code_loader":
 				return nil, []byte("ModuleNotFoundError: No module named 'code_loader'\n"), assertErr("exit status 1")
 			default:
 				t.Fatalf("unexpected command: %q", call)
@@ -124,9 +132,9 @@ func TestPoetryDependencyExecutorReturnsErrorWhenCodeLoaderVerificationStillFail
 	}
 
 	_, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
-		Repository: core.RepositoryState{Root: "/repo"},
+		Repository: core.RepositoryState{Root: repoRoot},
 		RuntimeProfile: &core.LocalRuntimeProfile{
-			InterpreterPath:             "/repo/.venv/bin/python",
+			InterpreterPath:             interpreterPath,
 			CodeLoaderReady:             false,
 			CodeLoaderDeclaredInProject: true,
 		},
@@ -139,9 +147,56 @@ func TestPoetryDependencyExecutorReturnsErrorWhenCodeLoaderVerificationStillFail
 	}
 }
 
+func TestPoetryDependencyExecutorFallsBackToPoetryRunVerificationWhenInterpreterPathIsMissing(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	missingInterpreter := filepath.Join(repoRoot, ".venv", "bin", "python")
+	var calls []string
+	executor := &PoetryDependencyExecutor{
+		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
+			_ = ctx
+			_ = dir
+			call := name + " " + strings.Join(args, " ")
+			calls = append(calls, call)
+			switch call {
+			case "poetry install":
+				return []byte("Installing dependencies\n"), nil, nil
+			case "poetry run python -c import code_loader":
+				return nil, nil, nil
+			default:
+				t.Fatalf("unexpected command: %q", call)
+				return nil, nil, nil
+			}
+		},
+	}
+
+	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		Repository: core.RepositoryState{Root: repoRoot},
+		RuntimeProfile: &core.LocalRuntimeProfile{
+			InterpreterPath:             missingInterpreter,
+			CodeLoaderReady:             false,
+			CodeLoaderDeclaredInProject: true,
+		},
+	}, core.EnsureStep{ID: core.EnsureStepPythonRuntime})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	if !result.Applied {
+		t.Fatalf("expected applied result, got %+v", result)
+	}
+	assertPoetryEvidenceValue(t, result.Evidence, "runtime.verification.command", "poetry run python -c import code_loader")
+	if got := strings.Join(calls, "\n"); strings.Contains(got, missingInterpreter) {
+		t.Fatalf("did not expect missing interpreter verification call, got calls:\n%s", got)
+	}
+}
+
 func TestPoetryDependencyExecutorEmitsProgressHeartbeatWhilePoetryRuns(t *testing.T) {
 	t.Parallel()
 
+	repoRoot := t.TempDir()
+	interpreterPath := createMockInterpreterPath(t, repoRoot)
 	var (
 		mu     sync.Mutex
 		events []observe.Event
@@ -156,7 +211,7 @@ func TestPoetryDependencyExecutorEmitsProgressHeartbeatWhilePoetryRuns(t *testin
 			case "poetry install":
 				time.Sleep(35 * time.Millisecond)
 				return []byte("Installing dependencies\n"), nil, nil
-			case "/repo/.venv/bin/python -c import code_loader":
+			case interpreterPath + " -c import code_loader":
 				return nil, nil, nil
 			default:
 				t.Fatalf("unexpected command: %q", call)
@@ -171,9 +226,9 @@ func TestPoetryDependencyExecutorEmitsProgressHeartbeatWhilePoetryRuns(t *testin
 	})))
 
 	_, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
-		Repository: core.RepositoryState{Root: "/repo"},
+		Repository: core.RepositoryState{Root: repoRoot},
 		RuntimeProfile: &core.LocalRuntimeProfile{
-			InterpreterPath:             "/repo/.venv/bin/python",
+			InterpreterPath:             interpreterPath,
 			CodeLoaderReady:             false,
 			CodeLoaderDeclaredInProject: true,
 		},
@@ -214,6 +269,19 @@ func assertPoetryEvidenceValue(t *testing.T, items []core.EvidenceItem, name, wa
 		}
 	}
 	t.Fatalf("expected evidence %q=%q, got %+v", name, want, items)
+}
+
+func createMockInterpreterPath(t *testing.T, repoRoot string) string {
+	t.Helper()
+
+	interpreterPath := filepath.Join(repoRoot, ".venv", "bin", "python")
+	if err := os.MkdirAll(filepath.Dir(interpreterPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	if err := os.WriteFile(interpreterPath, []byte("#!/usr/bin/env python3\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	return interpreterPath
 }
 
 type assertErr string

@@ -1,13 +1,16 @@
 package fixtures
 
 import (
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/tensorleap/concierge/internal/adapters/validate"
+	"github.com/tensorleap/concierge/internal/state"
 )
 
 func TestFixturePostVariantsPassConciergeRunWithPreparedRuntime(t *testing.T) {
@@ -43,6 +46,7 @@ func TestFixturePostVariantsPassConciergeRunWithPreparedRuntime(t *testing.T) {
 			}
 
 			runRoot := cloneFixtureRepoForTest(t, postRoot)
+			seedSelectedModelSourceIfNeeded(t, runRoot)
 			cmd := exec.Command(
 				binaryPath,
 				"run",
@@ -72,6 +76,7 @@ func mockFixtureCLIs(t *testing.T) string {
 	leapPath := filepath.Join(binDir, "leap")
 	poetryPath := filepath.Join(binDir, "poetry")
 	claudePath := filepath.Join(binDir, "claude")
+	fixturePythonPath := filepath.Join(binDir, "fixture-python")
 
 	leapScript := `#!/usr/bin/env bash
 set -euo pipefail
@@ -108,8 +113,45 @@ esac
 		t.Fatalf("WriteFile failed for mock leap CLI: %v", err)
 	}
 
+	fixturePythonScript := `#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "--version" ]]; then
+  echo "Python 3.10.13"
+  exit 0
+fi
+
+if [[ "${1:-}" == "-c" ]]; then
+  code="${2:-}"
+  if [[ "$code" == "import code_loader" ]]; then
+    exit 0
+  fi
+  if [[ "$code" == "import sys; print(sys.executable)" ]]; then
+    echo "$0"
+    exit 0
+  fi
+  if [[ "$code" == *"supportsGuideLocalStatusTable"* ]]; then
+    echo '{"probeSucceeded":true,"version":"1.0.165","supportsGuideLocalStatusTable":true,"supportsCheckDataset":true}'
+    exit 0
+  fi
+  if [[ "$code" == *"import onnx"* || "$code" == *"from tensorflow import keras"* ]]; then
+    echo '{"inputs":[]}'
+    exit 0
+  fi
+  echo "{}"
+  exit 0
+fi
+
+python3 "$@"
+`
+	if err := os.WriteFile(fixturePythonPath, []byte(fixturePythonScript), 0o755); err != nil {
+		t.Fatalf("WriteFile failed for mock fixture python: %v", err)
+	}
+
 	poetryScript := `#!/usr/bin/env bash
 set -euo pipefail
+
+fixture_python="` + fixturePythonPath + `"
 
 cmd="${1:-}"
 case "$cmd" in
@@ -121,7 +163,7 @@ case "$cmd" in
       echo "unsupported poetry env command" >&2
       exit 1
     fi
-    echo "/tmp/concierge-fixtures/.venv/bin/python"
+    echo "$fixture_python"
     ;;
   check)
     echo "All set!"
@@ -137,23 +179,7 @@ case "$cmd" in
       echo "unsupported poetry run command" >&2
       exit 1
     fi
-    if [[ "${3:-}" == "--version" ]]; then
-      echo "Python 3.10.13"
-      exit 0
-    fi
-    if [[ "${3:-}" == "-c" ]]; then
-      code="${4:-}"
-      if [[ "$code" == "import code_loader" ]]; then
-        exit 0
-      fi
-      if [[ "$code" == *"import onnx"* || "$code" == *"from tensorflow import keras"* ]]; then
-        echo '{"inputs":[]}'
-        exit 0
-      fi
-      echo "{}"
-      exit 0
-    fi
-    python3 "${@:3}"
+    "$fixture_python" "${@:3}"
     ;;
   *)
     echo "unsupported poetry command" >&2
@@ -170,4 +196,57 @@ esac
 
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return binDir
+}
+
+func seedSelectedModelSourceIfNeeded(t *testing.T, projectRoot string) {
+	t.Helper()
+
+	candidates, err := supportedModelArtifacts(projectRoot)
+	if err != nil {
+		t.Fatalf("supportedModelArtifacts failed: %v", err)
+	}
+	if len(candidates) <= 1 {
+		return
+	}
+
+	selected := candidates[0]
+	runState := state.DefaultRunState(projectRoot)
+	runState.SelectedModelPath = selected
+	runState.ModelAcquisitionClarification = &state.ModelAcquisitionClarification{
+		SelectedVerifiedModelPath: selected,
+	}
+	if err := state.SaveState(projectRoot, runState); err != nil {
+		t.Fatalf("SaveState failed: %v", err)
+	}
+}
+
+func supportedModelArtifacts(repoRoot string) ([]string, error) {
+	candidates := make([]string, 0, 4)
+	err := filepath.WalkDir(repoRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+
+		switch strings.ToLower(filepath.Ext(entry.Name())) {
+		case ".onnx", ".h5", ".keras":
+		default:
+			return nil
+		}
+
+		relPath, err := filepath.Rel(repoRoot, path)
+		if err != nil {
+			return err
+		}
+		candidates = append(candidates, filepath.ToSlash(relPath))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Strings(candidates)
+	return candidates, nil
 }

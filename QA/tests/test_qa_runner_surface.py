@@ -7,6 +7,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class QARunnerSurfaceTest(unittest.TestCase):
+    def test_makefile_does_not_force_default_repo(self) -> None:
+        makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+
+        self.assertIn("REPO ?=", makefile)
+        self.assertNotIn("REPO ?= ultralytics", makefile)
+
     def test_makefile_exposes_step_without_forcing_default_image_override(self) -> None:
         makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
 

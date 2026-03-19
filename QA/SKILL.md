@@ -23,7 +23,7 @@ Use this skill when the user wants QA or a manual smoke of Concierge in this rep
 Built-in fixture:
 
 ```bash
-bash scripts/qa_fixture_run.sh --repo <fixture-id> -- \
+bash scripts/qa_fixture_run.sh --repo <fixture-id> --step <guide-step> -- \
   --run-id <run-id>
 ```
 

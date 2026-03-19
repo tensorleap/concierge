@@ -13,15 +13,14 @@ DEFAULT_CLAUDE_CODE_VERSION="${QA_CLAUDE_CODE_VERSION:-2.1.76}"
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/qa_fixture_run.sh [--repo <fixture-id>] [--step <checkpoint-step>] [--image-mode <cold|prewarmed>] [-- <qa_loop args...>]
+Usage: bash scripts/qa_fixture_run.sh [--repo <fixture-id>] [--step <checkpoint-step>] [-- <qa_loop args...>]
 
 Resolve a deterministic fixture checkpoint, build an isolated Docker image from that clean state,
 start a fixture container, and run the QA loop against that container.
 
 Options:
-  --repo <fixture-id>           Fixture ID from fixtures/manifest.json. Default: ultralytics
-  --step <checkpoint-step>      Checkpoint step selector. Default: preprocess
-  --image-mode <cold|prewarmed> Override the checkpoint's internal build mode
+  --repo <fixture-id>           Fixture ID from fixtures/manifest.json.
+  --step <checkpoint-step>      Guide-native checkpoint step selector.
   --help                        Show this help text.
 EOF
 }
@@ -154,8 +153,27 @@ compute_image_key() {
   python3 "${CHECKPOINT_RESOLVER_PATH}" image-key "$@"
 }
 
-fixture_id="${REPO:-ultralytics}"
-step="${QA_STEP:-preprocess}"
+select_runner_json() {
+  local interactive_flag="$1"
+  local args=(
+    "${CHECKPOINT_RESOLVER_PATH}"
+    select-runner
+    --repo-root "${REPO_ROOT}"
+  )
+  if [[ -n "${fixture_id}" ]]; then
+    args+=(--fixture-id "${fixture_id}")
+  fi
+  if [[ -n "${step}" ]]; then
+    args+=(--step "${step}")
+  fi
+  if [[ "${interactive_flag}" == "true" ]]; then
+    args+=(--interactive)
+  fi
+  python3 "${args[@]}"
+}
+
+fixture_id="${REPO:-}"
+step="${QA_STEP:-}"
 image_mode_override="${QA_IMAGE_MODE:-}"
 while (($# > 0)); do
   case "$1" in
@@ -190,22 +208,30 @@ done
 
 qa_args=("$@")
 
-[[ -n "${step}" ]] || fail "checkpoint step cannot be empty"
-if [[ -n "${image_mode_override}" && "${image_mode_override}" != "cold" && "${image_mode_override}" != "prewarmed" ]]; then
-  fail "unsupported image mode override '${image_mode_override}'"
-fi
-[[ -n "${ANTHROPIC_API_KEY:-}" ]] || fail "ANTHROPIC_API_KEY is required for Docker QA runs"
-
 [[ -f "${MANIFEST_PATH}" ]] || fail "fixture manifest not found: ${MANIFEST_PATH}"
 [[ -f "${CHECKPOINT_MANIFEST_PATH}" ]] || fail "checkpoint manifest not found: ${CHECKPOINT_MANIFEST_PATH}"
 [[ -f "${DOCKERFILE_PATH}" ]] || fail "fixture Dockerfile not found: ${DOCKERFILE_PATH}"
 [[ -f "${CHECKPOINT_RESOLVER_PATH}" ]] || fail "checkpoint resolver not found: ${CHECKPOINT_RESOLVER_PATH}"
 
+command -v python3 >/dev/null 2>&1 || fail "required command 'python3' not found"
+command -v jq >/dev/null 2>&1 || fail "required command 'jq' not found"
+
+interactive_selection="false"
+if [[ ( -z "${fixture_id}" || -z "${step}" ) && -t 0 && -t 1 ]]; then
+  interactive_selection="true"
+fi
+selection_json="$(select_runner_json "${interactive_selection}")"
+fixture_id="$(jq -r '.fixture_id' <<<"${selection_json}")"
+step="$(jq -r '.step' <<<"${selection_json}")"
+
+if [[ -n "${image_mode_override}" && "${image_mode_override}" != "cold" && "${image_mode_override}" != "prewarmed" ]]; then
+  fail "unsupported image mode override '${image_mode_override}'"
+fi
+[[ -n "${ANTHROPIC_API_KEY:-}" ]] || fail "ANTHROPIC_API_KEY is required for Docker QA runs"
+
 command -v docker >/dev/null 2>&1 || fail "required command 'docker' not found"
 command -v git >/dev/null 2>&1 || fail "required command 'git' not found"
 command -v go >/dev/null 2>&1 || fail "required command 'go' not found"
-command -v jq >/dev/null 2>&1 || fail "required command 'jq' not found"
-command -v python3 >/dev/null 2>&1 || fail "required command 'python3' not found"
 
 jq -e --arg id "${fixture_id}" '.fixtures[] | select(.id == $id)' "${MANIFEST_PATH}" >/dev/null \
   || fail "unknown fixture id '${fixture_id}' (see ${MANIFEST_PATH})"

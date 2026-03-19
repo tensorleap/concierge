@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -14,6 +15,195 @@ from scripts.qa_checkpoint_resolver import compute_image_key, resolve_checkpoint
 
 
 class QACheckpointResolverTest(unittest.TestCase):
+    def test_list_fixtures_cli_preserves_manifest_order(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            fixtures_dir = repo_root / "fixtures"
+            fixtures_dir.mkdir(parents=True, exist_ok=True)
+            (fixtures_dir / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "fixtures": [
+                            {"id": "ultralytics"},
+                            {"id": "mnist"},
+                            {"id": "webinar"},
+                        ]
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (fixtures_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
+            (fixtures_dir / "checkpoints" / "manifest.json").write_text('{"checkpoints":[]}\n', encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "scripts" / "qa_checkpoint_resolver.py"),
+                    "list-fixtures",
+                    "--repo-root",
+                    str(repo_root),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(json.loads(completed.stdout), ["ultralytics", "mnist", "webinar"])
+
+    def test_list_steps_cli_returns_guide_native_order(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            self._write_fixture_manifest(repo_root)
+            self._write_checkpoint_manifest(
+                repo_root,
+                [
+                    {
+                        "fixture_id": "mnist",
+                        "step": "input_encoders",
+                        "source_kind": "case",
+                        "source_id": "mnist_minimum_inputs",
+                        "build_mode": "cold",
+                        "expected_primary_step": "ensure.input_encoders",
+                    }
+                ],
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "scripts" / "qa_checkpoint_resolver.py"),
+                    "list-steps",
+                    "--repo-root",
+                    str(repo_root),
+                    "--fixture-id",
+                    "mnist",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                json.loads(completed.stdout),
+                [
+                    "integration_script",
+                    "preprocess",
+                    "input_encoders",
+                    "model_acquisition",
+                    "integration_test",
+                    "ground_truth_encoders",
+                ],
+            )
+
+    def test_select_runner_cli_rejects_missing_selectors_without_interactive_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            fixtures_dir = repo_root / "fixtures"
+            fixtures_dir.mkdir(parents=True, exist_ok=True)
+            (fixtures_dir / "manifest.json").write_text(
+                json.dumps({"fixtures": [{"id": "ultralytics"}, {"id": "mnist"}]}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            (fixtures_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
+            (fixtures_dir / "checkpoints" / "manifest.json").write_text('{"checkpoints":[]}\n', encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "scripts" / "qa_checkpoint_resolver.py"),
+                    "select-runner",
+                    "--repo-root",
+                    str(repo_root),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 1)
+            self.assertIn("missing required QA selectors for non-interactive run", completed.stderr)
+            self.assertIn("Valid fixtures: ultralytics, mnist", completed.stderr)
+            self.assertIn(
+                "Valid steps: integration_script, preprocess, input_encoders, model_acquisition, integration_test, ground_truth_encoders",
+                completed.stderr,
+            )
+
+    def test_select_runner_cli_prompts_for_missing_fixture_and_step(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            fixtures_dir = repo_root / "fixtures"
+            fixtures_dir.mkdir(parents=True, exist_ok=True)
+            (fixtures_dir / "manifest.json").write_text(
+                json.dumps({"fixtures": [{"id": "ultralytics"}, {"id": "mnist"}]}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            (fixtures_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
+            (fixtures_dir / "checkpoints" / "manifest.json").write_text('{"checkpoints":[]}\n', encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "scripts" / "qa_checkpoint_resolver.py"),
+                    "select-runner",
+                    "--repo-root",
+                    str(repo_root),
+                    "--interactive",
+                ],
+                input="2\n3\n",
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("Choose a fixture:", completed.stderr)
+            self.assertIn("Choose a starting step:", completed.stderr)
+            self.assertEqual(
+                json.loads(completed.stdout),
+                {"fixture_id": "mnist", "step": "input_encoders"},
+            )
+
+    def test_select_runner_cli_prompts_only_for_step_when_fixture_is_preselected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            fixtures_dir = repo_root / "fixtures"
+            fixtures_dir.mkdir(parents=True, exist_ok=True)
+            (fixtures_dir / "manifest.json").write_text(
+                json.dumps({"fixtures": [{"id": "ultralytics"}, {"id": "mnist"}]}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            (fixtures_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
+            (fixtures_dir / "checkpoints" / "manifest.json").write_text('{"checkpoints":[]}\n', encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "scripts" / "qa_checkpoint_resolver.py"),
+                    "select-runner",
+                    "--repo-root",
+                    str(repo_root),
+                    "--fixture-id",
+                    "mnist",
+                    "--interactive",
+                ],
+                input="4\n",
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertNotIn("Choose a fixture:", completed.stderr)
+            self.assertIn("Choose a starting step:", completed.stderr)
+            self.assertEqual(
+                json.loads(completed.stdout),
+                {"fixture_id": "mnist", "step": "model_acquisition"},
+            )
+
     def test_resolve_checkpoint_uses_matching_case_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             repo_root = Path(tmpdir)

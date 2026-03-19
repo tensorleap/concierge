@@ -312,6 +312,12 @@ func executionRequiresUserAction(result core.ExecutionResult) bool {
 		if item.Name == "executor.mode" && item.Value == "self_service" {
 			return true
 		}
+		if item.Name == "executor.change_approval" && item.Value == "rejected" {
+			return true
+		}
+		if item.Name == "git.approval" && item.Value == "rejected" {
+			return true
+		}
 		if item.Name == "git.commit_pending_review" && item.Value == "true" {
 			return true
 		}

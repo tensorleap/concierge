@@ -414,6 +414,13 @@ func newRunCommand() *cobra.Command {
 					}
 					return nil
 				}
+				if lastReportHasEvidence(runResult.Reports, "executor.change_approval", "rejected") ||
+					lastReportHasEvidence(runResult.Reports, "git.approval", "rejected") {
+					if _, err := fmt.Fprintln(cmd.OutOrStdout(), "No changes were made because approval was not granted. Rerun `concierge run` when you're ready to continue."); err != nil {
+						return err
+					}
+					return nil
+				}
 				if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Manual step required outside Concierge. After completing the step above, rerun `concierge run`."); err != nil {
 					return err
 				}

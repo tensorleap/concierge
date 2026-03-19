@@ -278,6 +278,12 @@ assert_case_family_shape() {
       ! rg -q "def encode_meta\\(" "${repo_dir}/leap_integration.py" \
         || fail "case '${case_id}' should remove the ${expected_symbol} input-encoder definition from leap_integration.py"
       ;;
+    input_encoder_missing)
+      expected_symbol="$(jq -r '.confirmed_mapping.input_symbols[0] // empty' <<<"${case_json}")"
+      [[ -n "${expected_symbol}" ]] || fail "case '${case_id}' requires a confirmed input symbol"
+      ! rg -q "@tensorleap_input_encoder\\(['\"]${expected_symbol}['\"]" "${repo_dir}/leap_integration.py" "${repo_dir}/leap_binder.py" \
+        || fail "case '${case_id}' should remove the ${expected_symbol} input-encoder decorator from the checkpoint source"
+      ;;
     load_model)
       expected_model_path="$(jq -r '.expected_missing_model_path // empty' <<<"${case_json}")"
       [[ -n "${expected_model_path}" ]] || fail "case '${case_id}' is missing expected_missing_model_path"

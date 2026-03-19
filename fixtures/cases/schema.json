@@ -37,6 +37,7 @@
               "canonical_layout",
               "missing_preprocess",
               "minimum_inputs",
+              "input_encoder_missing",
               "load_model",
               "integration_test_wiring",
               "gt_encoders",

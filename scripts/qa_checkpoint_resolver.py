@@ -156,6 +156,7 @@ def resolve_checkpoint(
         source_id = "pre"
         build_mode = normalize_build_mode(build_mode_override)
         expected_primary_step = None
+        warmup_script = None
     else:
         entry = matches[0]
         source_kind = str(entry.get("source_kind", "")).strip()
@@ -166,11 +167,16 @@ def resolve_checkpoint(
             raise ValueError("checkpoint entry is missing source_id")
         build_mode = normalize_build_mode(build_mode_override or str(entry.get("build_mode", DEFAULT_BUILD_MODE)))
         expected_primary_step = str(entry.get("expected_primary_step", "")).strip() or None
+        warmup_script = str(entry.get("warmup_script", "")).strip() or None
 
     if source_kind == "variant":
         repo_path = repo_root / ".fixtures" / fixture_id / source_id
     else:
         repo_path = repo_root / ".fixtures" / "cases" / source_id
+
+    warmup_script_path = None
+    if warmup_script is not None:
+        warmup_script_path = str((repo_root / warmup_script).resolve())
 
     return {
         "fixture_id": fixture_id,
@@ -181,6 +187,7 @@ def resolve_checkpoint(
         "repo_path": str(repo_path),
         "build_mode": build_mode,
         "expected_primary_step": expected_primary_step,
+        "warmup_script": warmup_script_path,
         "fallback": fallback,
     }
 
@@ -202,6 +209,7 @@ def compute_image_key(
     runner_sha: str,
     sanitizer_sha: str,
     resolver_sha: str,
+    warmup_sha: str,
 ) -> str:
     payload = {
         "fixture_id": fixture_id,
@@ -219,9 +227,14 @@ def compute_image_key(
         "runner_sha": runner_sha,
         "sanitizer_sha": sanitizer_sha,
         "resolver_sha": resolver_sha,
+        "warmup_sha": strings_or_empty(warmup_sha),
     }
     encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()[:16]
+
+
+def strings_or_empty(value: str | None) -> str:
+    return (value or "").strip()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -263,6 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
     key_parser.add_argument("--runner-sha", required=True)
     key_parser.add_argument("--sanitizer-sha", required=True)
     key_parser.add_argument("--resolver-sha", required=True)
+    key_parser.add_argument("--warmup-sha", required=True)
     return parser
 
 
@@ -321,6 +335,7 @@ def main(argv: list[str] | None = None) -> int:
                     runner_sha=args.runner_sha,
                     sanitizer_sha=args.sanitizer_sha,
                     resolver_sha=args.resolver_sha,
+                    warmup_sha=args.warmup_sha,
                 )
             )
             return 0

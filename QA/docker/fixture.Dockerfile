@@ -61,6 +61,7 @@ FROM fixture-cold AS fixture-prewarmed
 
 LABEL io.tensorleap.concierge.qa.mode="prewarmed"
 
-RUN if [ -f pyproject.toml ]; then poetry env use python && poetry install --no-root; fi
+RUN if [ -f pyproject.toml ]; then poetry env use python && poetry install --no-root; fi \
+ && if [ -f .checkpoint_warmup.sh ]; then chmod +x .checkpoint_warmup.sh && ./.checkpoint_warmup.sh; fi
 
 CMD ["sleep", "infinity"]

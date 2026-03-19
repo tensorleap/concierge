@@ -281,6 +281,33 @@ class QACheckpointResolverTest(unittest.TestCase):
 
             self.assertEqual(resolution["build_mode"], "cold")
 
+    def test_resolve_checkpoint_includes_declared_warmup_script(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            self._write_fixture_manifest(repo_root)
+            self._write_checkpoint_manifest(
+                repo_root,
+                [
+                    {
+                        "fixture_id": "ultralytics",
+                        "step": "input_encoders",
+                        "source_kind": "case",
+                        "source_id": "ultralytics_input_encoders",
+                        "build_mode": "prewarmed",
+                        "expected_primary_step": "ensure.input_encoders",
+                        "warmup_script": "fixtures/checkpoints/warmup/ultralytics_input_encoders.sh",
+                    }
+                ],
+            )
+
+            resolution = resolve_checkpoint(repo_root, fixture_id="ultralytics", step="input_encoders")
+
+            self.assertEqual(resolution["build_mode"], "prewarmed")
+            self.assertEqual(
+                resolution["warmup_script"],
+                str((repo_root / "fixtures" / "checkpoints" / "warmup" / "ultralytics_input_encoders.sh").resolve()),
+            )
+
     def test_compute_image_key_changes_when_requested_step_changes(self) -> None:
         base_payload = {
             "fixture_id": "mnist",
@@ -298,6 +325,7 @@ class QACheckpointResolverTest(unittest.TestCase):
             "runner_sha": "runner",
             "sanitizer_sha": "sanitizer-a",
             "resolver_sha": "resolver",
+            "warmup_sha": "",
         }
 
         first = compute_image_key(**base_payload)
@@ -322,10 +350,34 @@ class QACheckpointResolverTest(unittest.TestCase):
             "runner_sha": "runner",
             "sanitizer_sha": "sanitizer-a",
             "resolver_sha": "resolver",
+            "warmup_sha": "",
         }
 
         first = compute_image_key(**base_payload)
         second = compute_image_key(**{**base_payload, "sanitizer_sha": "sanitizer-b"})
+
+    def test_compute_image_key_changes_when_warmup_script_changes(self) -> None:
+        base_payload = {
+            "fixture_id": "ultralytics",
+            "checkpoint_key": "ultralytics:input_encoders",
+            "requested_step": "input_encoders",
+            "source_kind": "case",
+            "source_id": "ultralytics_input_encoders",
+            "fixture_ref": "abc123",
+            "python_version": "3.10.16",
+            "poetry_version": "2.2.1",
+            "claude_version": "2.1.76",
+            "concierge_sha": "deadbeef",
+            "build_mode": "prewarmed",
+            "dockerfile_sha": "docker",
+            "runner_sha": "runner",
+            "sanitizer_sha": "sanitizer-a",
+            "resolver_sha": "resolver",
+            "warmup_sha": "warmup-a",
+        }
+
+        first = compute_image_key(**base_payload)
+        second = compute_image_key(**{**base_payload, "warmup_sha": "warmup-b"})
 
         self.assertNotEqual(first, second)
 
@@ -338,11 +390,28 @@ class QACheckpointResolverTest(unittest.TestCase):
             self.assertNotIn(key, seen)
             seen.add(key)
 
+    def test_repo_checkpoint_manifest_contains_ultralytics_input_encoders_checkpoint(self) -> None:
+        manifest_path = REPO_ROOT / "fixtures" / "checkpoints" / "manifest.json"
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+        matching = [
+            entry
+            for entry in payload["checkpoints"]
+            if entry["fixture_id"] == "ultralytics" and entry["step"] == "input_encoders"
+        ]
+
+        self.assertEqual(len(matching), 1, matching)
+        entry = matching[0]
+        self.assertEqual(entry["source_kind"], "case")
+        self.assertEqual(entry["build_mode"], "prewarmed")
+        self.assertEqual(entry["expected_primary_step"], "ensure.input_encoders")
+        self.assertEqual(entry["warmup_script"], "fixtures/checkpoints/warmup/ultralytics_input_encoders.sh")
+
     def _write_fixture_manifest(self, repo_root: Path) -> None:
         fixtures_dir = repo_root / "fixtures"
         fixtures_dir.mkdir(parents=True, exist_ok=True)
         (fixtures_dir / "manifest.json").write_text(
-            json.dumps({"fixtures": [{"id": "mnist"}]}, indent=2) + "\n",
+            json.dumps({"fixtures": [{"id": "mnist"}, {"id": "ultralytics"}]}, indent=2) + "\n",
             encoding="utf-8",
         )
 

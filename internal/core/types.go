@@ -145,10 +145,22 @@ type IssueLocation struct {
 	Symbol string `json:"symbol,omitempty"`
 }
 
+// ModelCandidateVerificationState captures runtime verification state for a discovered model candidate.
+type ModelCandidateVerificationState string
+
+const (
+	ModelCandidateVerificationStateUnverified ModelCandidateVerificationState = "unverified"
+	ModelCandidateVerificationStateVerified   ModelCandidateVerificationState = "verified"
+	ModelCandidateVerificationStateFailed     ModelCandidateVerificationState = "failed"
+)
+
 // ModelCandidate captures one discovered model path candidate and its origin.
 type ModelCandidate struct {
-	Path   string `json:"path"`
-	Source string `json:"source,omitempty"`
+	Path              string                          `json:"path"`
+	Source            string                          `json:"source,omitempty"`
+	Exists            bool                            `json:"exists,omitempty"`
+	VerificationState ModelCandidateVerificationState `json:"verificationState,omitempty"`
+	VerificationError string                          `json:"verificationError,omitempty"`
 }
 
 // ModelAcquisitionPromptBundle captures prompt material used for model acquisition investigation.

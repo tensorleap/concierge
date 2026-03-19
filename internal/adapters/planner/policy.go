@@ -31,6 +31,7 @@ func (p planningPolicy) build(status core.IntegrationStatus) (core.EnsureStep, [
 		return completeStep, nil, true
 	}
 	candidates = enforceEncoderBeforeIntegrationOrder(status, candidates)
+	candidates = deferModelStepWhileAuthoring(status, candidates)
 
 	primary := candidates[0]
 	if primary.ID == core.EnsureStepUploadPush && !uploadReadinessClear(status.Issues) {
@@ -187,4 +188,54 @@ func enforceEncoderBeforeIntegrationOrder(status core.IntegrationStatus, steps [
 		return steps
 	}
 	return append([]core.EnsureStep{encoderStep}, steps...)
+}
+
+func deferModelStepWhileAuthoring(status core.IntegrationStatus, steps []core.EnsureStep) []core.EnsureStep {
+	if len(steps) == 0 {
+		return steps
+	}
+	if steps[0].ID != core.EnsureStepModelAcquisition && steps[0].ID != core.EnsureStepModelContract {
+		return steps
+	}
+	if !hasExistingSupportedModelCandidate(status.Contracts) {
+		return steps
+	}
+
+	for _, preferred := range []core.EnsureStepID{
+		core.EnsureStepInputEncoders,
+		core.EnsureStepGroundTruthEncoders,
+		core.EnsureStepIntegrationTestContract,
+	} {
+		index := indexOfStep(steps, preferred)
+		if index <= 0 {
+			continue
+		}
+		reordered := make([]core.EnsureStep, 0, len(steps))
+		reordered = append(reordered, steps[index])
+		reordered = append(reordered, steps[:index]...)
+		reordered = append(reordered, steps[index+1:]...)
+		return reordered
+	}
+	return steps
+}
+
+func hasExistingSupportedModelCandidate(contracts *core.IntegrationContracts) bool {
+	if contracts == nil {
+		return false
+	}
+	for _, candidate := range contracts.ModelCandidates {
+		if candidate.Exists {
+			return true
+		}
+	}
+	return false
+}
+
+func indexOfStep(steps []core.EnsureStep, target core.EnsureStepID) int {
+	for index, step := range steps {
+		if step.ID == target {
+			return index
+		}
+	}
+	return -1
 }

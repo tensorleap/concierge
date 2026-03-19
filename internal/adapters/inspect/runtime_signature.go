@@ -53,9 +53,18 @@ func runtimeSignatureModelPath(repoRoot string, contracts *core.IntegrationContr
 		return path, modelType
 	}
 
+	verified := make([]string, 0, len(contracts.ModelCandidates))
 	for _, candidate := range contracts.ModelCandidates {
-		if path, modelType, ok := resolveRuntimeSignatureModelPath(repoRoot, candidate.Path); ok {
-			return path, modelType
+		if candidate.VerificationState != core.ModelCandidateVerificationStateVerified {
+			continue
+		}
+		if path, _, ok := resolveRuntimeSignatureModelPath(repoRoot, candidate.Path); ok {
+			verified = append(verified, path)
+		}
+	}
+	if len(verified) == 1 {
+		if modelType := runtimeSignatureModelType(verified[0]); modelType != "" {
+			return verified[0], modelType
 		}
 	}
 
@@ -81,12 +90,25 @@ func resolveRuntimeSignatureModelPath(repoRoot string, modelPath string) (string
 	}
 
 	switch strings.ToLower(filepath.Ext(absPath)) {
+	case ".keras":
+		return absPath, "keras", true
 	case ".onnx":
 		return absPath, "onnx", true
-	case ".h5", ".keras":
+	case ".h5":
 		return absPath, "keras", true
 	default:
 		return "", "", false
+	}
+}
+
+func runtimeSignatureModelType(path string) string {
+	switch strings.ToLower(filepath.Ext(strings.TrimSpace(path))) {
+	case ".onnx":
+		return "onnx"
+	case ".h5", ".keras":
+		return "keras"
+	default:
+		return ""
 	}
 }
 

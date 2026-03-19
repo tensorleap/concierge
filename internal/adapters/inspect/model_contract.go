@@ -9,6 +9,7 @@ import (
 )
 
 func inspectModelContract(repoRoot string, contract *leapYAMLContract, selectedModelPath string, status *core.IntegrationStatus) error {
+	_ = selectedModelPath
 	if contract == nil || status == nil || status.Contracts == nil {
 		return nil
 	}
@@ -25,17 +26,6 @@ func inspectModelContract(repoRoot string, contract *leapYAMLContract, selectedM
 			core.SeverityError,
 		)
 		return nil
-	}
-
-	selected := normalizeSelectedModelPath(selectedModelPath)
-	if selected != "" {
-		evaluation, _, err := evaluateSelectedModelPath(repoRoot, selected)
-		if err != nil {
-			return err
-		}
-		if evaluation.SupportedFormat && evaluation.InsideRepo && evaluation.Exists {
-			status.Contracts.ResolvedModelPath = strings.TrimSpace(evaluation.DisplayPath)
-		}
 	}
 
 	resolved := strings.TrimSpace(status.Contracts.ResolvedModelPath)

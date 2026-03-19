@@ -8,6 +8,7 @@ CHECKPOINT_MANIFEST_PATH="${REPO_ROOT}/fixtures/checkpoints/manifest.json"
 FIXTURES_ROOT="${REPO_ROOT}/.fixtures"
 DOCKERFILE_PATH="${REPO_ROOT}/QA/docker/fixture.Dockerfile"
 CHECKPOINT_RESOLVER_PATH="${REPO_ROOT}/scripts/qa_checkpoint_resolver.py"
+SANITIZER_PATH="${REPO_ROOT}/scripts/qa_sanitize_workspace.sh"
 
 DEFAULT_CLAUDE_CODE_VERSION="${QA_CLAUDE_CODE_VERSION:-2.1.76}"
 
@@ -212,6 +213,7 @@ qa_args=("$@")
 [[ -f "${CHECKPOINT_MANIFEST_PATH}" ]] || fail "checkpoint manifest not found: ${CHECKPOINT_MANIFEST_PATH}"
 [[ -f "${DOCKERFILE_PATH}" ]] || fail "fixture Dockerfile not found: ${DOCKERFILE_PATH}"
 [[ -f "${CHECKPOINT_RESOLVER_PATH}" ]] || fail "checkpoint resolver not found: ${CHECKPOINT_RESOLVER_PATH}"
+[[ -f "${SANITIZER_PATH}" ]] || fail "workspace sanitizer not found: ${SANITIZER_PATH}"
 
 command -v python3 >/dev/null 2>&1 || fail "required command 'python3' not found"
 command -v jq >/dev/null 2>&1 || fail "required command 'jq' not found"
@@ -296,7 +298,7 @@ context_dir="${tmpdir}/context"
 mkdir -p "${context_dir}/workspace" "${context_dir}/bin"
 
 log "Copying checkpoint workspace into Docker build context"
-cp -a "${selected_repo_dir}/." "${context_dir}/workspace/"
+bash "${SANITIZER_PATH}" "${selected_repo_dir}" "${context_dir}/workspace"
 
 log "Building Linux Concierge binary for ${go_arch}"
 (
@@ -308,6 +310,7 @@ chmod +x "${context_dir}/bin/concierge"
 concierge_sha="$(hash_file "${context_dir}/bin/concierge")"
 dockerfile_sha="$(hash_file "${DOCKERFILE_PATH}")"
 runner_sha="$(hash_file "${SCRIPT_DIR}/qa_fixture_run.sh")"
+sanitizer_sha="$(hash_file "${SANITIZER_PATH}")"
 resolver_sha="$(hash_file "${CHECKPOINT_RESOLVER_PATH}")"
 image_key="$(compute_image_key \
   --fixture-id "${fixture_id}" \
@@ -323,6 +326,7 @@ image_key="$(compute_image_key \
   --build-mode "${selected_build_mode}" \
   --dockerfile-sha "${dockerfile_sha}" \
   --runner-sha "${runner_sha}" \
+  --sanitizer-sha "${sanitizer_sha}" \
   --resolver-sha "${resolver_sha}"
 )"
 image_ref="concierge-qa-${safe_fixture_id}:${selected_build_mode}-py${python_version//./-}-${image_key}"

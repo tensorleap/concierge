@@ -521,12 +521,15 @@ func TestRunDeclineStepApprovalLeavesRepoUnchanged(t *testing.T) {
 	repo := initRunTestRepo(t, false)
 	withWorkingDir(t, repo)
 
-	output, err := executeCLIWithInput(t, "n\n", "run", "--max-iterations=1")
-	if err == nil {
-		t.Fatal("expected max-iterations stop to return error")
+	output, err := executeCLIWithInput(t, "n\n", "run", "--max-iterations=3")
+	if err != nil {
+		t.Fatalf("expected declining approval to stop cleanly, got: %v\noutput=%q", err, output)
 	}
 	if !strings.Contains(output, "You > Continue now? [y/N]:") {
 		t.Fatalf("expected pre-change approval prompt, got output: %q", output)
+	}
+	if !strings.Contains(output, "No changes were made because approval was not granted. Rerun `concierge run` when you're ready to continue.") {
+		t.Fatalf("expected clean approval-rejected handoff, got output: %q", output)
 	}
 	if strings.Contains(output, "Keep these changes in your working tree for local review? [Y/n]:") {
 		t.Fatalf("did not expect commit approval prompt after declining pre-change prompt, got output: %q", output)

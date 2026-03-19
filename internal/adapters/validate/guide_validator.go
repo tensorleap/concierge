@@ -538,7 +538,21 @@ func deriveGuideRecommendation(summary core.GuideValidationSummary) core.GuideRe
 		gtStatus = guideStatus(summary.Local, "tensorleap_gt_encoder")
 	}
 
-	if payloadFailed(summary.Parser, "preprocess") || (hasLocalStatusTable && preprocessStatus != "pass") {
+	if payloadFailed(summary.Parser, "preprocess") {
+		return core.GuideRecommendation{
+			Stage:   "preprocess",
+			Message: "Next recommended interface: make preprocess run directly and return training and validation subsets.",
+		}
+	}
+
+	if summary.Local.MappingFailure || parserHasGeneralFailure(summary.Parser) {
+		return core.GuideRecommendation{
+			Stage:   "thin_integration_test",
+			Message: "Next recommended interface: add or repair a thin @tensorleap_integration_test that only calls Tensorleap decorators.",
+		}
+	}
+
+	if hasLocalStatusTable && preprocessStatus != "pass" {
 		return core.GuideRecommendation{
 			Stage:   "preprocess",
 			Message: "Next recommended interface: make preprocess run directly and return training and validation subsets.",
@@ -559,7 +573,7 @@ func deriveGuideRecommendation(summary core.GuideValidationSummary) core.GuideRe
 		}
 	}
 
-	if summary.Local.MappingFailure || parserHasGeneralFailure(summary.Parser) || (hasLocalStatusTable && integrationStatus != "pass") {
+	if hasLocalStatusTable && integrationStatus != "pass" {
 		return core.GuideRecommendation{
 			Stage:   "thin_integration_test",
 			Message: "Next recommended interface: add or repair a thin @tensorleap_integration_test that only calls Tensorleap decorators.",

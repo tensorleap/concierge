@@ -214,6 +214,28 @@ func TestGuideValidatorPrefersSpecificPayloadFailureOverGenericParserImportError
 	}
 }
 
+func TestDeriveGuideRecommendationDoesNotMislabelGenericParserFailureAsPreprocess(t *testing.T) {
+	summary := core.GuideValidationSummary{
+		Local: core.GuideLocalRunSummary{
+			StatusRows: []core.GuideStatusRow{
+				{Name: "tensorleap_preprocess", Status: "fail"},
+				{Name: "tensorleap_input_encoder", Status: "pass"},
+				{Name: "tensorleap_load_model", Status: "pass"},
+				{Name: "tensorleap_integration_test", Status: "fail"},
+			},
+		},
+		Parser: core.GuideParserRunSummary{
+			Available:    true,
+			GeneralError: "Something went wrong. PermissionError(13, 'Permission denied') in file pathlib.py, line_number:  1175",
+		},
+	}
+
+	recommendation := deriveGuideRecommendation(summary)
+	if recommendation.Stage != "thin_integration_test" {
+		t.Fatalf("expected generic parser failures to fall through to thin integration test, got %+v", recommendation)
+	}
+}
+
 func TestGuideValidatorPrefersASTIntegrationTestIssuesOverGenericMappingFailure(t *testing.T) {
 	repoRoot := buildGuideValidationRepo(t)
 	validator := &GuideValidator{

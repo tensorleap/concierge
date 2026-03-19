@@ -200,6 +200,7 @@ def compute_image_key(
     build_mode: str,
     dockerfile_sha: str,
     runner_sha: str,
+    sanitizer_sha: str,
     resolver_sha: str,
 ) -> str:
     payload = {
@@ -216,6 +217,7 @@ def compute_image_key(
         "build_mode": normalize_build_mode(build_mode),
         "dockerfile_sha": dockerfile_sha,
         "runner_sha": runner_sha,
+        "sanitizer_sha": sanitizer_sha,
         "resolver_sha": resolver_sha,
     }
     encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
@@ -259,6 +261,7 @@ def build_parser() -> argparse.ArgumentParser:
     key_parser.add_argument("--build-mode", required=True)
     key_parser.add_argument("--dockerfile-sha", required=True)
     key_parser.add_argument("--runner-sha", required=True)
+    key_parser.add_argument("--sanitizer-sha", required=True)
     key_parser.add_argument("--resolver-sha", required=True)
     return parser
 
@@ -316,6 +319,7 @@ def main(argv: list[str] | None = None) -> int:
                     build_mode=args.build_mode,
                     dockerfile_sha=args.dockerfile_sha,
                     runner_sha=args.runner_sha,
+                    sanitizer_sha=args.sanitizer_sha,
                     resolver_sha=args.resolver_sha,
                 )
             )

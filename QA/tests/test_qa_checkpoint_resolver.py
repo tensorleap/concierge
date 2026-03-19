@@ -296,11 +296,36 @@ class QACheckpointResolverTest(unittest.TestCase):
             "build_mode": "cold",
             "dockerfile_sha": "docker",
             "runner_sha": "runner",
+            "sanitizer_sha": "sanitizer-a",
             "resolver_sha": "resolver",
         }
 
         first = compute_image_key(**base_payload)
         second = compute_image_key(**{**base_payload, "checkpoint_key": "mnist:gt_encoders", "requested_step": "gt_encoders"})
+
+        self.assertNotEqual(first, second)
+
+    def test_compute_image_key_changes_when_sanitizer_changes(self) -> None:
+        base_payload = {
+            "fixture_id": "mnist",
+            "checkpoint_key": "mnist:input_encoders",
+            "requested_step": "input_encoders",
+            "source_kind": "case",
+            "source_id": "mnist_minimum_inputs",
+            "fixture_ref": "abc123",
+            "python_version": "3.11.11",
+            "poetry_version": "2.2.1",
+            "claude_version": "2.1.76",
+            "concierge_sha": "deadbeef",
+            "build_mode": "cold",
+            "dockerfile_sha": "docker",
+            "runner_sha": "runner",
+            "sanitizer_sha": "sanitizer-a",
+            "resolver_sha": "resolver",
+        }
+
+        first = compute_image_key(**base_payload)
+        second = compute_image_key(**{**base_payload, "sanitizer_sha": "sanitizer-b"})
 
         self.assertNotEqual(first, second)
 

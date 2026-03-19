@@ -27,6 +27,8 @@ class QARunnerSurfaceTest(unittest.TestCase):
         self.assertIn("selected_repo_dir", script)
         self.assertIn("selected_build_mode", script)
         self.assertNotIn('cp -a "${pre_dir}/." "${context_dir}/workspace/"', script)
+        self.assertIn("qa_sanitize_workspace.sh", script)
+        self.assertNotIn('cp -a "${selected_repo_dir}/." "${context_dir}/workspace/"', script)
 
 
 if __name__ == "__main__":

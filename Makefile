@@ -14,7 +14,7 @@ UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v '/internal/e2e/fixtures$$'
 PYTHON ?= python3
 QA_DIR ?= QA
 QA_TEST_DIR ?= $(QA_DIR)/tests
-REPO ?= ultralytics
+REPO ?=
 QA_STEP ?=
 QA_ARGS ?=
 QA_IMAGE_MODE ?=
@@ -39,7 +39,7 @@ test-fixtures: fixtures-prepare fixtures-verify
 	go test ./internal/e2e/fixtures -v
 
 qa:
-	bash scripts/qa_fixture_run.sh --repo "$(REPO)" $(if $(strip $(QA_STEP)),--step "$(QA_STEP)") $(if $(strip $(QA_IMAGE_MODE)),--image-mode "$(QA_IMAGE_MODE)") -- $(QA_ARGS)
+	bash scripts/qa_fixture_run.sh $(if $(strip $(REPO)),--repo "$(REPO)") $(if $(strip $(QA_STEP)),--step "$(QA_STEP)") $(if $(strip $(QA_IMAGE_MODE)),--image-mode "$(QA_IMAGE_MODE)") -- $(QA_ARGS)
 
 clean:
 	rm -rf $(BIN_DIR)

@@ -897,13 +897,16 @@ Minimal usage:
 
 ```bash
 make qa
-make qa REPO=mnist
+make qa REPO=mnist QA_STEP=preprocess
+make qa REPO=ultralytics QA_STEP=input_encoders
 
 # or run the harness directly against an already-started fixture container
 python3 QA/qa_loop.py --container-name <running-container> --container-workdir /workspace
 ```
 
-`make qa` resets the chosen built-in fixture to a clean pinned `pre`/`post` state, builds a fixture-scoped Docker image from the `pre` repo only, starts an isolated container, streams readable Codex/Concierge progress in the terminal, and prints the absolute path to the full-session transcript when the run ends.
+`make qa` now treats fixture plus guide-native step as the canonical QA selector surface. If either selector is omitted in an interactive shell, it shows a small numbered picker first. In non-interactive shells, you should pass both selectors explicitly.
+
+`make qa` resets the selected built-in fixture to a clean pinned `pre`/`post` state, builds a fixture-scoped Docker image from the resolved checkpoint source, starts an isolated container, streams readable Codex/Concierge progress in the terminal, and prints the absolute path to the full-session transcript when the run ends.
 
 If no command is supplied, the harness defaults to `/usr/local/bin/concierge run` inside the target container. For a blind-first comparison flow, pass `--fixture-post-path /path/to/post-fixture`; the prompt will not reveal that path to Codex until the run stalls. The `post` fixture is kept on the host and is never copied into the target container.
 

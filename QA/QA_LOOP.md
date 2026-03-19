@@ -30,15 +30,18 @@ That creates:
 Typical fixture run:
 
 ```bash
-bash scripts/qa_fixture_run.sh --repo <fixture-id>
+bash scripts/qa_fixture_run.sh --repo <fixture-id> --step <guide-step>
 ```
 
 Shortcut from the repo root:
 
 ```bash
 make qa
-make qa REPO=mnist
+make qa REPO=mnist QA_STEP=preprocess
+make qa REPO=ultralytics QA_STEP=input_encoders
 ```
+
+If you omit `REPO` or `QA_STEP` in an interactive shell, `make qa` and `scripts/qa_fixture_run.sh` show a simple numbered menu. In non-interactive shells, missing selectors are treated as an error and the runner prints the valid fixture ids and guide-native steps.
 
 What this does:
 
@@ -153,4 +156,10 @@ If you want the shortest working path with the built-in fixtures:
 
 ```bash
 make qa
+```
+
+If you want the shortest explicit non-interactive path:
+
+```bash
+make qa REPO=mnist QA_STEP=preprocess
 ```

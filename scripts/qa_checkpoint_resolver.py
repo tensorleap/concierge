@@ -4,12 +4,21 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 DEFAULT_BUILD_MODE = "cold"
 VALID_BUILD_MODES = {"cold", "prewarmed"}
 VALID_SOURCE_KINDS = {"variant", "case"}
+GUIDE_STEP_ORDER = (
+    "integration_script",
+    "preprocess",
+    "input_encoders",
+    "model_acquisition",
+    "integration_test",
+    "ground_truth_encoders",
+)
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -21,6 +30,100 @@ def normalize_build_mode(value: str | None) -> str:
     if candidate not in VALID_BUILD_MODES:
         raise ValueError(f"unsupported build mode {candidate!r}")
     return candidate
+
+
+def fixture_ids(repo_root: Path) -> list[str]:
+    repo_root = Path(repo_root).resolve()
+    fixtures_manifest = load_json(repo_root / "fixtures" / "manifest.json")
+    fixture_ids = [str(entry.get("id", "")).strip() for entry in fixtures_manifest.get("fixtures", [])]
+    return [fixture_id for fixture_id in fixture_ids if fixture_id]
+
+
+def guide_steps_for_fixture(repo_root: Path, *, fixture_id: str) -> list[str]:
+    if fixture_id not in fixture_ids(repo_root):
+        raise ValueError(f"unknown fixture id {fixture_id!r}")
+    return list(GUIDE_STEP_ORDER)
+
+
+def format_choices(values: list[str]) -> str:
+    return ", ".join(values)
+
+
+def prompt_for_choice(
+    options: list[str],
+    *,
+    heading: str,
+    prompt: str,
+    input_stream: TextIO,
+    output_stream: TextIO,
+) -> str:
+    output_stream.write(f"{heading}\n")
+    for index, option in enumerate(options, start=1):
+        output_stream.write(f"{index}. {option}\n")
+    while True:
+        output_stream.write(f"{prompt} [1-{len(options)}]: ")
+        output_stream.flush()
+        raw_value = input_stream.readline()
+        if raw_value == "":
+            raise ValueError("interactive selection ended before a valid choice was entered")
+        candidate = raw_value.strip()
+        if candidate.isdigit():
+            selected_index = int(candidate)
+            if 1 <= selected_index <= len(options):
+                return options[selected_index - 1]
+        output_stream.write(f"Invalid selection. Choose a number from 1 to {len(options)}.\n")
+
+
+def select_runner_target(
+    repo_root: Path,
+    *,
+    fixture_id: str | None = None,
+    step: str | None = None,
+    interactive: bool = False,
+    input_stream: TextIO | None = None,
+    output_stream: TextIO | None = None,
+) -> dict[str, str]:
+    input_stream = input_stream or sys.stdin
+    output_stream = output_stream or sys.stderr
+
+    available_fixtures = fixture_ids(repo_root)
+    available_steps = list(GUIDE_STEP_ORDER)
+    missing_selector_message = (
+        "missing required QA selectors for non-interactive run. "
+        f"Valid fixtures: {format_choices(available_fixtures)}. "
+        f"Valid steps: {format_choices(available_steps)}"
+    )
+
+    selected_fixture = (fixture_id or "").strip()
+    if not selected_fixture:
+        if not interactive:
+            raise ValueError(missing_selector_message)
+        selected_fixture = prompt_for_choice(
+            available_fixtures,
+            heading="Choose a fixture:",
+            prompt="Enter fixture number",
+            input_stream=input_stream,
+            output_stream=output_stream,
+        )
+    elif selected_fixture not in available_fixtures:
+        raise ValueError(f"unknown fixture id {selected_fixture!r}. Valid fixtures: {format_choices(available_fixtures)}")
+
+    selected_step = (step or "").strip()
+    fixture_steps = guide_steps_for_fixture(repo_root, fixture_id=selected_fixture)
+    if not selected_step:
+        if not interactive:
+            raise ValueError(missing_selector_message)
+        selected_step = prompt_for_choice(
+            fixture_steps,
+            heading="Choose a starting step:",
+            prompt="Enter step number",
+            input_stream=input_stream,
+            output_stream=output_stream,
+        )
+    elif selected_step not in fixture_steps:
+        raise ValueError(f"unknown checkpoint step {selected_step!r}. Valid steps: {format_choices(fixture_steps)}")
+
+    return {"fixture_id": selected_fixture, "step": selected_step}
 
 
 def resolve_checkpoint(
@@ -123,6 +226,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    list_fixtures_parser = subparsers.add_parser("list-fixtures")
+    list_fixtures_parser.add_argument("--repo-root", required=True)
+
+    list_steps_parser = subparsers.add_parser("list-steps")
+    list_steps_parser.add_argument("--repo-root", required=True)
+    list_steps_parser.add_argument("--fixture-id", required=True)
+
+    select_runner_parser = subparsers.add_parser("select-runner")
+    select_runner_parser.add_argument("--repo-root", required=True)
+    select_runner_parser.add_argument("--fixture-id", default=None)
+    select_runner_parser.add_argument("--step", default=None)
+    select_runner_parser.add_argument("--interactive", action="store_true")
+
     resolve_parser = subparsers.add_parser("resolve")
     resolve_parser.add_argument("--repo-root", required=True)
     resolve_parser.add_argument("--fixture-id", required=True)
@@ -151,36 +267,62 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.command == "resolve":
-        payload = resolve_checkpoint(
-            Path(args.repo_root),
-            fixture_id=args.fixture_id,
-            step=args.step,
-            build_mode_override=args.build_mode_override,
-        )
-        print(json.dumps(payload, sort_keys=True))
-        return 0
+    try:
+        if args.command == "list-fixtures":
+            print(json.dumps(fixture_ids(Path(args.repo_root))))
+            return 0
 
-    if args.command == "image-key":
-        print(
-            compute_image_key(
-                fixture_id=args.fixture_id,
-                checkpoint_key=args.checkpoint_key,
-                requested_step=args.requested_step,
-                source_kind=args.source_kind,
-                source_id=args.source_id,
-                fixture_ref=args.fixture_ref,
-                python_version=args.python_version,
-                poetry_version=args.poetry_version,
-                claude_version=args.claude_version,
-                concierge_sha=args.concierge_sha,
-                build_mode=args.build_mode,
-                dockerfile_sha=args.dockerfile_sha,
-                runner_sha=args.runner_sha,
-                resolver_sha=args.resolver_sha,
+        if args.command == "list-steps":
+            print(json.dumps(guide_steps_for_fixture(Path(args.repo_root), fixture_id=args.fixture_id)))
+            return 0
+
+        if args.command == "select-runner":
+            print(
+                json.dumps(
+                    select_runner_target(
+                        Path(args.repo_root),
+                        fixture_id=args.fixture_id,
+                        step=args.step,
+                        interactive=args.interactive,
+                    ),
+                    sort_keys=True,
+                )
             )
-        )
-        return 0
+            return 0
+
+        if args.command == "resolve":
+            payload = resolve_checkpoint(
+                Path(args.repo_root),
+                fixture_id=args.fixture_id,
+                step=args.step,
+                build_mode_override=args.build_mode_override,
+            )
+            print(json.dumps(payload, sort_keys=True))
+            return 0
+
+        if args.command == "image-key":
+            print(
+                compute_image_key(
+                    fixture_id=args.fixture_id,
+                    checkpoint_key=args.checkpoint_key,
+                    requested_step=args.requested_step,
+                    source_kind=args.source_kind,
+                    source_id=args.source_id,
+                    fixture_ref=args.fixture_ref,
+                    python_version=args.python_version,
+                    poetry_version=args.poetry_version,
+                    claude_version=args.claude_version,
+                    concierge_sha=args.concierge_sha,
+                    build_mode=args.build_mode,
+                    dockerfile_sha=args.dockerfile_sha,
+                    runner_sha=args.runner_sha,
+                    resolver_sha=args.resolver_sha,
+                )
+            )
+            return 0
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     parser.error(f"unknown command {args.command!r}")
     return 2

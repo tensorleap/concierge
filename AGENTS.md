@@ -39,6 +39,7 @@ This repository is implemented through small, issue-scoped changes.
 - Never commit directly to `main` or `master` unless specifically instructed to do so by the user.
 - Never push directly to `main` or `master` unless specifically instructed to do so by the user.
 - All implementation work must be done on a feature branch and merged via PR.
+- Never branch out from a stale local `main` / `master`. Sync the protected branch to the latest remote tip before creating a feature worktree or feature branch.
 - Use `git worktree` as the default mechanism for branch creation and branch switching.
 - Do not rely on regular branch checkouts (`git checkout` / `git switch`) for implementation flow between branches.
 
@@ -49,7 +50,11 @@ Run these before any file edits or commits:
 1. `git rev-parse --abbrev-ref HEAD`
 2. `git status --short --branch`
 
-If current branch is `main` or `master`, create and switch immediately using a new worktree:
+If current branch is `main` or `master`, sync it to the latest remote tip before creating and switching to a new worktree:
+
+- `git fetch origin $(git rev-parse --abbrev-ref HEAD)`
+- `git pull --ff-only origin $(git rev-parse --abbrev-ref HEAD)`
+- `test "$(git rev-parse HEAD)" = "$(git rev-parse FETCH_HEAD)"`
 
 - `git worktree add ../concierge-issue-<issue-id>-<short-name> -b feature/issue-<issue-id>-<short-name>`
 - `cd ../concierge-issue-<issue-id>-<short-name>`

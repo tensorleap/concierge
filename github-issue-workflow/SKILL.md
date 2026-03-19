@@ -28,8 +28,9 @@ Use this skill when:
 1. Read `README.md`.
 2. Read the active GitHub issue body.
 3. If the active issue is a child issue, also read the umbrella issue body, but treat the active child issue as the primary execution record.
-4. Read comments only if the body points to them or if recent milestone context is actually needed.
-5. If comments contain durable facts that are missing from the body, fold those facts back into the body before continuing.
+4. Before creating a new issue branch or worktree from `main`, sync the local `main` worktree with the remote `main` tip and verify the protected branch now matches `FETCH_HEAD`. Do not branch from a stale local protected branch.
+5. Read comments only if the body points to them or if recent milestone context is actually needed.
+6. If comments contain durable facts that are missing from the body, fold those facts back into the body before continuing.
 
 ## Body Maintenance
 

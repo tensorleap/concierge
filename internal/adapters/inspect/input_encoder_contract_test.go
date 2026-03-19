@@ -139,6 +139,96 @@ func TestInputEncoderDetectorNoFalsePositiveWhenCoverageComplete(t *testing.T) {
 	}
 }
 
+func TestInputEncoderDetectorAcceptsBinderHostedEncoderDefinition(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "model/demo.h5", "binary\n")
+	writeFixtureFile(t, root, "leap_binder.py", strings.Join([]string{
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_input_encoder, tensorleap_preprocess",
+		"",
+		"@tensorleap_preprocess()",
+		"def preprocess_func_leap():",
+		"    return []",
+		"",
+		"@tensorleap_input_encoder('image')",
+		"def input_encoder(idx, preprocess):",
+		"    return 1",
+		"",
+	}, "\n"))
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
+		"from leap_binder import input_encoder, preprocess_func_leap",
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model, tensorleap_integration_test",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    return 'model/demo.h5'",
+		"",
+		"@tensorleap_integration_test()",
+		"def run_flow():",
+		"    load_model()",
+		"    preprocess_func_leap()",
+		"    input_encoder(0, None)",
+		"",
+	}, "\n"))
+
+	status := inspectStatusWithConfirmedMapping(t, root, []string{"image"}, nil)
+
+	if hasIssueCode(status.Issues, core.IssueCodeInputEncoderMissing) {
+		t.Fatalf("did not expect %q issue for binder-hosted encoder, got %+v", core.IssueCodeInputEncoderMissing, status.Issues)
+	}
+	if hasIssueCode(status.Issues, core.IssueCodeInputEncoderCoverageIncomplete) {
+		t.Fatalf("did not expect %q issue for binder-hosted encoder, got %+v", core.IssueCodeInputEncoderCoverageIncomplete, status.Issues)
+	}
+}
+
+func TestInputEncoderDetectorAcceptsUltralyticsStyleBinderImport(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "model/demo.h5", "binary\n")
+	writeFixtureFile(t, root, "leap_binder.py", strings.Join([]string{
+		"from typing import List, Dict, Union",
+		"import numpy as np",
+		"from code_loader.contract.datasetclasses import PreprocessResponse, DataStateType",
+		"from code_loader.inner_leap_binder.leapbinder_decorators import (tensorleap_preprocess, tensorleap_gt_encoder,",
+		"                                                                 tensorleap_input_encoder)",
+		"",
+		"@tensorleap_preprocess()",
+		"def preprocess_func_leap() -> List[PreprocessResponse]:",
+		"    return []",
+		"",
+		"@tensorleap_input_encoder('image', channel_dim=1)",
+		"def input_encoder(idx: int, preprocess: PreprocessResponse) -> np.ndarray:",
+		"    return np.zeros((1, 3, 640, 640), dtype=np.float32)",
+		"",
+	}, "\n"))
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
+		"from code_loader.contract.datasetclasses import SamplePreprocessResponse",
+		"from leap_binder import (input_encoder, preprocess_func_leap, gt_encoder,",
+		"                         loss, gt_bb_decoder, image_visualizer, bb_decoder,",
+		"                         cost, metadata_per_img, ious, confusion_matrix_metric)",
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model, tensorleap_integration_test",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    return 'model/demo.h5'",
+		"",
+		"@tensorleap_integration_test()",
+		"def check_custom_test_mapping(idx, subset):",
+		"    image = input_encoder(idx, subset)",
+		"    return image",
+		"",
+	}, "\n"))
+
+	status := inspectStatusWithConfirmedMapping(t, root, []string{"image"}, nil)
+
+	if hasIssueCode(status.Issues, core.IssueCodeInputEncoderMissing) {
+		t.Fatalf("did not expect %q issue for ultralytics-style binder import, got %+v", core.IssueCodeInputEncoderMissing, status.Issues)
+	}
+	if hasIssueCode(status.Issues, core.IssueCodeInputEncoderCoverageIncomplete) {
+		t.Fatalf("did not expect %q issue for ultralytics-style binder import, got %+v", core.IssueCodeInputEncoderCoverageIncomplete, status.Issues)
+	}
+}
+
 func inspectStatusWithConfirmedMapping(
 	t *testing.T,
 	root string,

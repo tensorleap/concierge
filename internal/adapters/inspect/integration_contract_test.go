@@ -144,6 +144,34 @@ func TestContractDiscoveryHandlesMultilineFunctionDefinitions(t *testing.T) {
 	}
 }
 
+func TestContractDiscoveryIgnoresBodyAssignmentsWhoseNamesStartWithDef(t *testing.T) {
+	source := strings.Join([]string{
+		"@tensorleap_preprocess()",
+		"def preprocess_func_leap():",
+		"    default_value = []",
+		"    return default_value",
+		"",
+		"@tensorleap_input_encoder('image')",
+		"def input_encoder(idx, preprocess):",
+		"    return idx",
+		"",
+	}, "\n")
+
+	contracts, err := discoverContractsFromPythonSource("leap_binder.py", source)
+	if err != nil {
+		t.Fatalf("did not expect contract discovery error, got %v", err)
+	}
+	if contracts == nil {
+		t.Fatal("expected discovered contracts, got nil")
+	}
+	if !reflect.DeepEqual(contracts.PreprocessFunctions, []string{"preprocess_func_leap"}) {
+		t.Fatalf("expected preprocess functions %v, got %v", []string{"preprocess_func_leap"}, contracts.PreprocessFunctions)
+	}
+	if !reflect.DeepEqual(contracts.InputEncoders, []string{"input_encoder"}) {
+		t.Fatalf("expected input encoders %v, got %v", []string{"input_encoder"}, contracts.InputEncoders)
+	}
+}
+
 func TestContractDiscoveryGracefullyHandlesMissingEntryFile(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", "entryFile: missing_entry.py\n")

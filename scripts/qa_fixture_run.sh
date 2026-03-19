@@ -46,55 +46,7 @@ cleanup() {
 
 resolve_python_version() {
   local pyproject_path="$1"
-  python3 - "$pyproject_path" <<'PY'
-import re
-import sys
-import tomllib
-from pathlib import Path
-
-PATCH_MAP = {
-    "3.11": "3.11.11",
-    "3.10": "3.10.16",
-    "3.9": "3.9.21",
-    "3.8": "3.8.20",
-}
-
-
-def parse_version(value: str) -> tuple[int, int, int]:
-    parts = [int(part) for part in value.split(".")]
-    while len(parts) < 3:
-        parts.append(0)
-    return tuple(parts[:3])
-
-
-def satisfies(candidate: tuple[int, int, int], token: str) -> bool:
-    match = re.fullmatch(r"\s*(<=|>=|==|!=|<|>)\s*([0-9]+(?:\.[0-9]+){0,2})\s*", token)
-    if not match:
-        raise SystemExit(f"unsupported python constraint token: {token!r}")
-    operator, version_text = match.groups()
-    required = parse_version(version_text)
-    return {
-        "<": candidate < required,
-        "<=": candidate <= required,
-        ">": candidate > required,
-        ">=": candidate >= required,
-        "==": candidate == required,
-        "!=": candidate != required,
-    }[operator]
-
-
-pyproject_path = Path(sys.argv[1])
-data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-constraint = str(data["tool"]["poetry"]["dependencies"]["python"]).strip()
-tokens = [token.strip() for token in constraint.split(",") if token.strip()]
-for minor in sorted(PATCH_MAP.keys(), reverse=True):
-    exact = PATCH_MAP[minor]
-    candidate = parse_version(exact)
-    if all(satisfies(candidate, token) for token in tokens):
-        print(exact)
-        raise SystemExit(0)
-raise SystemExit(f"no curated Python image satisfies constraint {constraint!r}")
-PY
+  python3 "${REPO_ROOT}/scripts/qa_python_runtime.py" resolve-python-version --pyproject "${pyproject_path}"
 }
 
 resolve_poetry_version() {
@@ -246,6 +198,7 @@ selected_repo_dir="$(jq -r '.repo_path' <<<"${resolution_json}")"
 selected_source_kind="$(jq -r '.source_kind' <<<"${resolution_json}")"
 selected_source_id="$(jq -r '.source_id' <<<"${resolution_json}")"
 selected_build_mode="$(jq -r '.build_mode' <<<"${resolution_json}")"
+selected_warmup_script="$(jq -r '.warmup_script // empty' <<<"${resolution_json}")"
 checkpoint_key="$(jq -r '.checkpoint_key' <<<"${resolution_json}")"
 
 if [[ ! -x "${pre_dir}/.fixture_reset.sh" || ! -x "${post_dir}/.fixture_reset.sh" ]]; then
@@ -299,6 +252,13 @@ mkdir -p "${context_dir}/workspace" "${context_dir}/bin"
 
 log "Copying checkpoint workspace into Docker build context"
 bash "${SANITIZER_PATH}" "${selected_repo_dir}" "${context_dir}/workspace"
+warmup_sha=""
+if [[ -n "${selected_warmup_script}" ]]; then
+  [[ -f "${selected_warmup_script}" ]] || fail "checkpoint warmup script not found: ${selected_warmup_script}"
+  cp "${selected_warmup_script}" "${context_dir}/workspace/.checkpoint_warmup.sh"
+  chmod +x "${context_dir}/workspace/.checkpoint_warmup.sh"
+  warmup_sha="$(hash_file "${selected_warmup_script}")"
+fi
 
 log "Building Linux Concierge binary for ${go_arch}"
 (
@@ -327,7 +287,8 @@ image_key="$(compute_image_key \
   --dockerfile-sha "${dockerfile_sha}" \
   --runner-sha "${runner_sha}" \
   --sanitizer-sha "${sanitizer_sha}" \
-  --resolver-sha "${resolver_sha}"
+  --resolver-sha "${resolver_sha}" \
+  --warmup-sha "${warmup_sha}"
 )"
 image_ref="concierge-qa-${safe_fixture_id}:${selected_build_mode}-py${python_version//./-}-${image_key}"
 build_target="fixture-${selected_build_mode}"

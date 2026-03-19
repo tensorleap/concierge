@@ -30,6 +30,35 @@ class QARunnerSurfaceTest(unittest.TestCase):
         self.assertIn("qa_sanitize_workspace.sh", script)
         self.assertNotIn('cp -a "${selected_repo_dir}/." "${context_dir}/workspace/"', script)
 
+    def test_runner_script_tracks_selected_warmup_script(self) -> None:
+        script = (REPO_ROOT / "scripts" / "qa_fixture_run.sh").read_text(encoding="utf-8")
+
+        self.assertIn("selected_warmup_script", script)
+        self.assertIn("warmup_sha", script)
+        self.assertIn(".checkpoint_warmup.sh", script)
+
+    def test_dockerfile_runs_checkpoint_warmup_for_prewarmed_images(self) -> None:
+        dockerfile = (REPO_ROOT / "QA" / "docker" / "fixture.Dockerfile").read_text(encoding="utf-8")
+
+        self.assertIn(".checkpoint_warmup.sh", dockerfile)
+        self.assertIn("fixture-prewarmed", dockerfile)
+
+    def test_ultralytics_warmup_validates_root_entrypoints(self) -> None:
+        warmup = (
+            REPO_ROOT / "fixtures" / "checkpoints" / "warmup" / "ultralytics_input_encoders.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("li.preprocess()", warmup)
+        self.assertIn("li.load_model()", warmup)
+
+    def test_ultralytics_warmup_uses_supported_runtime_for_published_onnx(self) -> None:
+        warmup = (
+            REPO_ROOT / "fixtures" / "checkpoints" / "warmup" / "ultralytics_input_encoders.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("onnxruntime==1.21.1", warmup)
+        self.assertNotIn("version_converter.convert_version", warmup)
+
 
 if __name__ == "__main__":
     unittest.main()

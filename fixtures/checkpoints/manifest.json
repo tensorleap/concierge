@@ -1,6 +1,16 @@
 {
   "checkpoints": [
     {
+      "fixture_id": "ultralytics",
+      "step": "input_encoders",
+      "source_kind": "case",
+      "source_id": "ultralytics_input_encoders",
+      "build_mode": "prewarmed",
+      "expected_primary_step": "ensure.input_encoders",
+      "warmup_script": "fixtures/checkpoints/warmup/ultralytics_input_encoders.sh",
+      "notes": "Ultralytics encoder-start QA uses a prewarmed case that validates preprocess and load_model before Concierge starts."
+    },
+    {
       "fixture_id": "mnist",
       "step": "integration_script",
       "source_kind": "case",

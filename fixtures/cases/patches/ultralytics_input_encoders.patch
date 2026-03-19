@@ -1,0 +1,126 @@
+diff --git a/leap_binder.py b/leap_binder.py
+index 0adf068..b853bc0 100644
+--- a/leap_binder.py
++++ b/leap_binder.py
+@@ -45,13 +45,11 @@ def preprocess_func_leap() -> List[PreprocessResponse]:
+ 
+ # ------------------------------------------input and gt----------------------------------------------------------------
+ 
+-@tensorleap_input_encoder('image', channel_dim=1)
+ def input_encoder(idx: int, preprocess: PreprocessResponse) -> np.ndarray:
+     imgs, _, _,_=pre_process_dataloader(preprocess, idx, predictor)
+     return imgs.astype('float32')
+ 
+ 
+-@tensorleap_gt_encoder('classes')
+ def gt_encoder(idx: int, preprocessing: PreprocessResponse) -> np.ndarray:
+     if preprocessing.state == DataStateType.unlabeled:
+         return np.full((1, 5), np.nan,dtype=np.float32)
+diff --git a/leap_integration.py b/leap_integration.py
+index 96070d7..de150f4 100644
+--- a/leap_integration.py
++++ b/leap_integration.py
+@@ -1,42 +1,47 @@
+-import os
++from pathlib import Path
+ from code_loader.contract.datasetclasses import SamplePreprocessResponse
+-from leap_binder import (input_encoder, preprocess_func_leap, gt_encoder,
++from leap_binder import (input_encoder as binder_input_encoder, preprocess_func_leap, gt_encoder as binder_gt_encoder,
+                          loss, gt_bb_decoder, image_visualizer, bb_decoder,
+                          cost, metadata_per_img, ious, confusion_matrix_metric)
+ import onnxruntime as ort
+ import numpy as np
+-from ultralytics.tensorleap_folder.utils import validate_supported_models, set_leap_yaml2root
++from ultralytics.tensorleap_folder.utils import set_leap_yaml2root
+ from ultralytics.tensorleap_folder.global_params import cfg, all_clss
+ from code_loader.plot_functions.visualize import visualize
+ from code_loader.contract.datasetclasses import PredictionTypeHandler
+-from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model, tensorleap_integration_test
++from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_gt_encoder, tensorleap_load_model, tensorleap_integration_test, tensorleap_preprocess
+ 
+ prediction_type1 = PredictionTypeHandler(name='object detection', labels=["x", "y", "w", "h"] + [cl for cl in all_clss.values()], channel_dim=1)
+ prediction_type2 = PredictionTypeHandler(name='concatenate_20', labels=[str(i) for i in range(20)], channel_dim=-1)
+ prediction_type3 = PredictionTypeHandler(name='concatenate_40', labels=[str(i) for i in range(40)], channel_dim=-1)
+ prediction_type4 = PredictionTypeHandler(name='concatenate_80', labels=[str(i) for i in range(80)], channel_dim=-1)
+ 
++@tensorleap_preprocess()
++def preprocess():
++    return preprocess_func_leap()
++
++
++@tensorleap_gt_encoder('classes')
++def classes_encoder(idx, subset):
++    return binder_gt_encoder(idx, subset)
++
++
+ @tensorleap_load_model([prediction_type1,prediction_type2,prediction_type3,prediction_type4])
+ def load_model():
+-    model_path="/Users/yamtawachi/tensorleap/ultralytics/yolo11s.onnx"
+-    m_path = model_path if model_path != None else 'None_path'
+-    print("started custom tests")
+-    validate_supported_models(os.path.basename(cfg.model), m_path)
+-    if not os.path.exists(m_path):
+-        from export_model_to_tf import onnx_exporter  # TODO - currently supports only onnx
+-        m_path = onnx_exporter()
+-    model = ort.InferenceSession(m_path)
+-    return model
++    model_path = Path(__file__).resolve().parent / ".concierge" / "materialized_models" / "model.onnx"
++    if not model_path.exists():
++        raise FileNotFoundError(f"warmed model artifact not found: {model_path}")
++    return ort.InferenceSession(str(model_path))
+ 
+ 
+ @tensorleap_integration_test()
+ def check_custom_test_mapping(idx, subset):
+     s_prepro = SamplePreprocessResponse(np.array(idx), subset)
+-    image = input_encoder(idx, subset)
++    image = binder_input_encoder(idx, subset)
+     model = load_model()
+     y_pred = model.run(None, {'images': image})
+     # get gt
+-    gt = gt_encoder(idx, subset)
++    gt = classes_encoder(idx, subset)
+     # custom metrics
+     total_loss=loss(y_pred[1],y_pred[2],y_pred[3],gt ,y_pred[0])
+     cost_dic=cost(y_pred[1],y_pred[2],y_pred[3],gt)
+@@ -56,4 +61,4 @@ def check_custom_test_mapping(idx, subset):
+ 
+ if __name__ == '__main__':
+     set_leap_yaml2root(cfg)
+-    check_custom_test_mapping(0, preprocess_func_leap()[1])
++    check_custom_test_mapping(0, preprocess()[1])
+diff --git a/ultralytics/cfg/default.yaml b/ultralytics/cfg/default.yaml
+index 22c4dcb..67f9254 100644
+--- a/ultralytics/cfg/default.yaml
++++ b/ultralytics/cfg/default.yaml
+@@ -5,12 +5,12 @@
+ 
+ task: detect # (str) YOLO task, i.e. detect, segment, classify, pose, obb
+ mode: val # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
+-tensorleap_path: /Users/yamtawachi/tensorleap/datasets  #folder where coco dataset folder will be created --TENSORLEAP FLAG
++tensorleap_path: .concierge/materialized_data  # QA warmup stores checkpoint assets here.
+ tensorleap_use_test: False
+ tensorleap_use_unlabeled: False
+ # Train settings -------------------------------------------------------------------------------------------------------
+ model: models/yolo11s.pt  # set to the core of your.h5 model
+-data: coco128.yaml #/Users/yamtawachi/tensorleap/datasets/VOC/od_bench_check.yaml # (str, optional) path to data file, i.e. coco8.yaml i.e /Users/yamtawachi/tensorleap/datasets/VOC/od_bench_check.yaml
++data: coco8.yaml # Warmed QA checkpoint uses the smallest built-in detection dataset.
+ use_data_split_file:
+   - False
+   - dataset_split_bad_init_pool.npz
+diff --git a/ultralytics/tensorleap_folder/global_params.py b/ultralytics/tensorleap_folder/global_params.py
+index 75ca9bd..c2014f3 100644
+--- a/ultralytics/tensorleap_folder/global_params.py
++++ b/ultralytics/tensorleap_folder/global_params.py
+@@ -67,7 +67,10 @@ def set_cfg_dict():
+     with open(file_path, 'r') as file:
+         config_dict = yaml.safe_load(file)
+     if isinstance(config_dict, dict):
+-        return SimpleNamespace(**{k: dict_to_namespace(v) for k, v in config_dict.items()})
++        namespace = SimpleNamespace(**{k: dict_to_namespace(v) for k, v in config_dict.items()})
++        if hasattr(namespace, 'tensorleap_path'):
++            namespace.tensorleap_path = Path(namespace.tensorleap_path).resolve()
++        return namespace
+     elif isinstance(config_dict, list):
+         return [dict_to_namespace(i) for i in config_dict]
+     else:

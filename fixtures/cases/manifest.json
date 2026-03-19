@@ -1,6 +1,20 @@
 {
   "cases": [
     {
+      "id": "ultralytics_input_encoders",
+      "source_fixture_id": "ultralytics",
+      "source_variant": "post",
+      "family": "input_encoder_missing",
+      "patch": "fixtures/cases/patches/ultralytics_input_encoders.patch",
+      "expected_primary_step": "ensure.input_encoders",
+      "expected_issue_codes": ["input_encoder_missing"],
+      "confirmed_mapping": {
+        "input_symbols": ["image"],
+        "ground_truth_symbols": ["classes"]
+      },
+      "notes": "Keeps preprocess and model loading intact while removing the input encoder registration for the warmed QA checkpoint."
+    },
+    {
       "id": "mnist_canonical_layout",
       "source_fixture_id": "mnist",
       "source_variant": "post",

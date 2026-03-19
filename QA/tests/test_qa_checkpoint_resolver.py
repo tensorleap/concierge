@@ -371,6 +371,7 @@ class QACheckpointResolverTest(unittest.TestCase):
             "build_mode": "prewarmed",
             "dockerfile_sha": "docker",
             "runner_sha": "runner",
+            "sanitizer_sha": "sanitizer-a",
             "resolver_sha": "resolver",
             "warmup_sha": "warmup-a",
         }

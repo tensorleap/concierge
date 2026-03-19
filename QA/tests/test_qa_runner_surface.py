@@ -51,13 +51,15 @@ class QARunnerSurfaceTest(unittest.TestCase):
         self.assertIn("li.preprocess()", warmup)
         self.assertIn("li.load_model()", warmup)
 
-    def test_ultralytics_warmup_uses_supported_runtime_for_published_onnx(self) -> None:
+    def test_ultralytics_warmup_exports_repo_native_onnx_without_runtime_bump(self) -> None:
         warmup = (
             REPO_ROOT / "fixtures" / "checkpoints" / "warmup" / "ultralytics_input_encoders.sh"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("onnxruntime==1.21.1", warmup)
-        self.assertNotIn("version_converter.convert_version", warmup)
+        self.assertIn("onnxslim==0.1.89", warmup)
+        self.assertIn("onnx_exporter()", warmup)
+        self.assertNotIn("onnxruntime==1.21.1", warmup)
+        self.assertNotIn("yolo11n.onnx", warmup)
 
 
 if __name__ == "__main__":

@@ -89,6 +89,26 @@ index 96070d7..de150f4 100644
      set_leap_yaml2root(cfg)
 -    check_custom_test_mapping(0, preprocess_func_leap()[1])
 +    check_custom_test_mapping(0, preprocess()[1])
+diff --git a/export_model_to_tf.py b/export_model_to_tf.py
+index 7628f9b..247f454 100644
+--- a/export_model_to_tf.py
++++ b/export_model_to_tf.py
+@@ -32,9 +32,11 @@ def onnx_exporter(h5=False):
+ 
+ 
+     model_path=Path(cfg.model)
++    tensorleap_path = Path(cfg.tensorleap_path).resolve()
+     if not model_path.is_absolute():
+-        model_path = (cfg.tensorleap_path / model_path).resolve()
+-    assert model_path.is_relative_to(cfg.tensorleap_path), (
+-        f"❌ {model_path!r} is not inside tensorleap path {cfg.tensorleap_path!r}" )
++        model_path = (tensorleap_path / model_path).resolve()
++    assert model_path.is_relative_to(tensorleap_path), (
++        f"❌ {model_path!r} is not inside tensorleap path {tensorleap_path!r}" )
++    cfg.tensorleap_path = tensorleap_path
+     cfg.model=model_path
+     export_to_onnx(cfg)
+     exported_model_path=yolo_version_check(model_path)
 diff --git a/ultralytics/cfg/default.yaml b/ultralytics/cfg/default.yaml
 index 22c4dcb..67f9254 100644
 --- a/ultralytics/cfg/default.yaml

@@ -2,6 +2,7 @@ package execute
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -24,6 +25,7 @@ type agentTaskRunner interface {
 type AgentExecutor struct {
 	runner            agentTaskRunner
 	loadKnowledgePack func() (agent.DomainKnowledgePack, error)
+	inspectStatus     func(context.Context, core.WorkspaceSnapshot) (core.IntegrationStatus, error)
 	observer          observe.Sink
 }
 
@@ -35,6 +37,7 @@ func NewAgentExecutor(runner agentTaskRunner) *AgentExecutor {
 	return &AgentExecutor{
 		runner:            runner,
 		loadKnowledgePack: agentcontext.LoadDomainKnowledgePack,
+		inspectStatus:     inspect.NewBaselineInspector().Inspect,
 	}
 }
 
@@ -58,8 +61,7 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 	taskStatus := core.IntegrationStatus{}
 	recommendations := make([]core.AuthoringRecommendation, 0, 1)
 	if stepRequiresInspectStatus(canonicalStep.ID) {
-		inspector := inspect.NewBaselineInspector()
-		status, err := inspector.Inspect(ctx, taskSnapshot)
+		status, err := e.inspect(ctx, taskSnapshot)
 		if err != nil {
 			return core.ExecutionResult{}, err
 		}
@@ -73,18 +75,20 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		recommendations = append(recommendations, recommendation)
 	}
 	if canonicalStep.ID == core.EnsureStepModelAcquisition {
+		if taskStatus.Contracts == nil {
+			taskStatus.Contracts = &core.IntegrationContracts{}
+		}
+		if taskStatus.Contracts.ModelAcquisition == nil {
+			taskStatus.Contracts.ModelAcquisition = &core.ModelAcquisitionArtifacts{}
+		}
+		if plan := selectedModelAcquisitionPlan(taskSnapshot, taskStatus); plan != nil {
+			taskStatus.Contracts.ModelAcquisition.NormalizedPlan = cloneExecuteModelAcquisitionPlan(plan)
+		}
 		recommendation, err := BuildModelAcquisitionRecommendation(taskSnapshot, taskStatus)
 		if err != nil {
 			return core.ExecutionResult{}, err
 		}
 		recommendations = append(recommendations, recommendation)
-		if strings.TrimSpace(taskSnapshot.SelectedModelPath) == "" {
-			taskSnapshot.SelectedModelPath = strings.TrimSpace(recommendation.Target)
-		}
-		if taskStatus.Contracts == nil {
-			taskStatus.Contracts = &core.IntegrationContracts{}
-		}
-		taskStatus.Contracts.ResolvedModelPath = strings.TrimSpace(taskSnapshot.SelectedModelPath)
 	}
 	if canonicalStep.ID == core.EnsureStepModelContract {
 		recommendation, err := BuildModelAuthoringRecommendation(taskSnapshot, taskStatus)
@@ -144,7 +148,7 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		return core.ExecutionResult{}, err
 	}
 
-	task, err := agentTaskForStep(taskSnapshot, canonicalStep, scopePolicy, repoContext, knowledgePack, recommendations)
+	task, err := agentTaskForStep(taskSnapshot, taskStatus, canonicalStep, scopePolicy, repoContext, knowledgePack, recommendations)
 	if err != nil {
 		return core.ExecutionResult{}, err
 	}
@@ -189,6 +193,9 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 	evidence = append(evidence, scopePolicyEvidence(scopePolicy)...)
 	evidence = append(evidence, repoContextEvidence(repoContext)...)
 	evidence = append(evidence, recommendationEvidence(recommendations)...)
+	if canonicalStep.ID == core.EnsureStepModelAcquisition {
+		evidence = append(evidence, e.modelAcquisitionExecutionEvidence(ctx, taskSnapshot, taskStatus, runnerResult, recommendations)...)
+	}
 	evidence = append(evidence, runnerResult.Evidence...)
 
 	return core.ExecutionResult{
@@ -198,6 +205,13 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		Evidence:        evidence,
 		Recommendations: append([]core.AuthoringRecommendation(nil), recommendations...),
 	}, nil
+}
+
+func (e *AgentExecutor) inspect(ctx context.Context, snapshot core.WorkspaceSnapshot) (core.IntegrationStatus, error) {
+	if e != nil && e.inspectStatus != nil {
+		return e.inspectStatus(ctx, snapshot)
+	}
+	return inspect.NewBaselineInspector().Inspect(ctx, snapshot)
 }
 
 func stepRequiresInspectStatus(stepID core.EnsureStepID) bool {
@@ -353,7 +367,7 @@ func scopePolicyEvidence(policy agent.AgentScopePolicy) []core.EvidenceItem {
 }
 
 func repoContextEvidence(context core.AgentRepoContext) []core.EvidenceItem {
-	return []core.EvidenceItem{
+	evidence := []core.EvidenceItem{
 		{Name: "agent.repo_context.entry_file", Value: context.EntryFile},
 		{Name: "agent.repo_context.leap_yaml_boundary", Value: context.LeapYAMLBoundary},
 		{Name: "agent.repo_context.runtime_kind", Value: context.RuntimeKind},
@@ -368,10 +382,21 @@ func repoContextEvidence(context core.AgentRepoContext) []core.EvidenceItem {
 		{Name: "agent.repo_context.blocking_issues", Value: strings.Join(context.BlockingIssues, " | ")},
 		{Name: "agent.repo_context.validation_findings", Value: strings.Join(context.ValidationFindings, " | ")},
 	}
+	if context.ModelAcquisitionPlan != nil {
+		evidence = append(evidence,
+			core.EvidenceItem{Name: "agent.repo_context.model_acquisition_plan.strategy", Value: strings.TrimSpace(context.ModelAcquisitionPlan.Strategy)},
+			core.EvidenceItem{Name: "agent.repo_context.model_acquisition_plan.expected_output_path", Value: strings.TrimSpace(context.ModelAcquisitionPlan.ExpectedOutputPath)},
+			core.EvidenceItem{Name: "agent.repo_context.model_acquisition_plan.command", Value: strings.Join(context.ModelAcquisitionPlan.RuntimeInvocation, " ")},
+			core.EvidenceItem{Name: "agent.repo_context.model_acquisition_plan.working_dir", Value: strings.TrimSpace(context.ModelAcquisitionPlan.WorkingDir)},
+			core.EvidenceItem{Name: "agent.repo_context.model_acquisition_plan.helper_path", Value: strings.TrimSpace(context.ModelAcquisitionPlan.HelperPath)},
+		)
+	}
+	return evidence
 }
 
 func agentTaskForStep(
 	snapshot core.WorkspaceSnapshot,
+	status core.IntegrationStatus,
 	step core.EnsureStep,
 	policy agent.AgentScopePolicy,
 	repoContext core.AgentRepoContext,
@@ -383,7 +408,7 @@ func agentTaskForStep(
 		return agent.AgentTask{}, core.NewError(core.KindUnknown, "execute.agent.repo_root", "snapshot repository root is empty")
 	}
 
-	objective, acceptanceChecks, supported := objectiveForStep(snapshot, step.ID, recommendations)
+	objective, acceptanceChecks, supported := objectiveForStep(snapshot, status, step.ID, recommendations)
 	if !supported {
 		return agent.AgentTask{}, core.WrapError(
 			core.KindStepNotApplicable,
@@ -417,6 +442,7 @@ func agentTaskForStep(
 
 func objectiveForStep(
 	snapshot core.WorkspaceSnapshot,
+	status core.IntegrationStatus,
 	stepID core.EnsureStepID,
 	recommendations []core.AuthoringRecommendation,
 ) (string, []string, bool) {
@@ -443,6 +469,13 @@ func objectiveForStep(
 			}
 			constraints = append(constraints, recommendation.Constraints...)
 			break
+		}
+		if plan := selectedModelAcquisitionPlan(snapshot, status); plan != nil {
+			objective := "Execute the selected model acquisition strategy and materialize one Tensorleap-compatible model artifact"
+			if strategy := strings.TrimSpace(plan.Strategy); strategy != "" {
+				objective = fmt.Sprintf("Execute the selected model acquisition strategy %q and materialize one Tensorleap-compatible model artifact", strategy)
+			}
+			return objective, constraints, true
 		}
 		return "Investigate repository model acquisition logic and materialize one Tensorleap-compatible model artifact", constraints, true
 	case core.EnsureStepModelContract:
@@ -565,6 +598,112 @@ func objectiveForStep(
 	default:
 		return "", nil, false
 	}
+}
+
+func (e *AgentExecutor) modelAcquisitionExecutionEvidence(
+	ctx context.Context,
+	snapshot core.WorkspaceSnapshot,
+	status core.IntegrationStatus,
+	runnerResult agent.AgentResult,
+	recommendations []core.AuthoringRecommendation,
+) []core.EvidenceItem {
+	plan := selectedModelAcquisitionPlan(snapshot, status)
+	if plan == nil {
+		for _, recommendation := range recommendations {
+			if recommendation.StepID != core.EnsureStepModelAcquisition {
+				continue
+			}
+			plan = &core.ModelAcquisitionPlan{
+				SchemaVersion:      "v1",
+				CanMaterialize:     true,
+				Strategy:           "materialize_supported_artifact",
+				ExpectedOutputPath: strings.TrimSpace(recommendation.Target),
+			}
+			break
+		}
+	}
+	if plan == nil {
+		return nil
+	}
+
+	materialization := &core.ModelMaterializationResult{
+		Applied:            runnerResult.Applied,
+		Strategy:           strings.TrimSpace(plan.Strategy),
+		OutputPath:         strings.TrimSpace(plan.ExpectedOutputPath),
+		WorkingDir:         strings.TrimSpace(plan.WorkingDir),
+		Command:            append([]string(nil), plan.RuntimeInvocation...),
+		HelperPath:         strings.TrimSpace(plan.HelperPath),
+		ExpectedOutputPath: strings.TrimSpace(plan.ExpectedOutputPath),
+	}
+	if summary := strings.TrimSpace(runnerResult.Summary); summary != "" {
+		materialization.Notes = append(materialization.Notes, summary)
+	}
+
+	verificationState := "unavailable"
+	if modelAcquisitionRuntimeVerificationAvailable(snapshot) && materialization.ExpectedOutputPath != "" {
+		verifySnapshot := snapshot
+		verifySnapshot.SelectedModelPath = materialization.ExpectedOutputPath
+		verificationStatus, err := e.inspect(ctx, verifySnapshot)
+		if err != nil {
+			verificationState = "failed"
+			materialization.FailureReason = err.Error()
+		} else if verificationResolvedExpectedOutput(verificationStatus, materialization.ExpectedOutputPath) {
+			verificationState = "passed"
+			materialization.OutputPath = materialization.ExpectedOutputPath
+		} else {
+			verificationState = "failed"
+			materialization.FailureReason = modelAcquisitionVerificationFailure(verificationStatus)
+		}
+	}
+
+	evidence := []core.EvidenceItem{
+		{Name: "model_acquisition.plan.strategy", Value: strings.TrimSpace(plan.Strategy)},
+		{Name: "model_acquisition.plan.default_choice", Value: strings.TrimSpace(plan.DefaultChoice)},
+		{Name: "model_acquisition.plan.command", Value: strings.Join(plan.RuntimeInvocation, " ")},
+		{Name: "model_acquisition.plan.working_dir", Value: strings.TrimSpace(plan.WorkingDir)},
+		{Name: "model_acquisition.plan.helper_path", Value: strings.TrimSpace(plan.HelperPath)},
+		{Name: "model_acquisition.plan.expected_output_path", Value: strings.TrimSpace(plan.ExpectedOutputPath)},
+		{Name: "model_acquisition.materialization.applied", Value: fmt.Sprintf("%t", materialization.Applied)},
+		{Name: "model_acquisition.materialization.strategy", Value: strings.TrimSpace(materialization.Strategy)},
+		{Name: "model_acquisition.materialization.command", Value: strings.Join(materialization.Command, " ")},
+		{Name: "model_acquisition.materialization.working_dir", Value: strings.TrimSpace(materialization.WorkingDir)},
+		{Name: "model_acquisition.materialization.helper_path", Value: strings.TrimSpace(materialization.HelperPath)},
+		{Name: "model_acquisition.materialization.expected_output_path", Value: strings.TrimSpace(materialization.ExpectedOutputPath)},
+		{Name: "model_acquisition.materialization.output_path", Value: strings.TrimSpace(materialization.OutputPath)},
+		{Name: "model_acquisition.materialization.failure_reason", Value: strings.TrimSpace(materialization.FailureReason)},
+		{Name: "model_acquisition.materialization.runtime_verification", Value: verificationState},
+	}
+	if payload, err := json.Marshal(plan); err == nil {
+		evidence = append(evidence, core.EvidenceItem{Name: "model_acquisition.plan.json", Value: string(payload)})
+	}
+	if payload, err := json.Marshal(materialization); err == nil {
+		evidence = append(evidence, core.EvidenceItem{Name: "model_acquisition.materialization.json", Value: string(payload)})
+	}
+	return evidence
+}
+
+func modelAcquisitionRuntimeVerificationAvailable(snapshot core.WorkspaceSnapshot) bool {
+	return snapshot.Runtime.ProbeRan &&
+		snapshot.RuntimeProfile != nil &&
+		strings.TrimSpace(snapshot.RuntimeProfile.InterpreterPath) != "" &&
+		snapshot.RuntimeProfile.DependenciesReady &&
+		snapshot.RuntimeProfile.CodeLoaderReady
+}
+
+func verificationResolvedExpectedOutput(status core.IntegrationStatus, expectedOutputPath string) bool {
+	if status.Contracts == nil {
+		return false
+	}
+	return strings.TrimSpace(status.Contracts.ResolvedModelPath) == strings.TrimSpace(expectedOutputPath)
+}
+
+func modelAcquisitionVerificationFailure(status core.IntegrationStatus) string {
+	for _, issue := range status.Issues {
+		if issue.Scope == core.IssueScopeModel && strings.TrimSpace(issue.Message) != "" {
+			return strings.TrimSpace(issue.Message)
+		}
+	}
+	return "runtime verification did not resolve the expected model artifact"
 }
 
 func mergeAcceptanceChecks(groups ...[]string) []string {

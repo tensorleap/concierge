@@ -43,6 +43,7 @@ func BuildAgentRepoContext(
 		RuntimeInterpreter:         normalizeRepoContextPath(runtimeInterpreterForContext(snapshot.RuntimeProfile)),
 		RuntimeStatus:              runtimeStatusForContext(snapshot.RuntimeProfile),
 		SelectedModelPath:          normalizeRepoContextPath(resolveSelectedModelPath(snapshot, status)),
+		ModelAcquisitionPlan:       selectedModelAcquisitionPlan(snapshot, status),
 		RequiredInputSymbols:       requiredInputSymbolsForContext(status.Contracts),
 		RequiredGroundTruthSymbols: requiredGroundTruthSymbolsForContext(status.Contracts),
 		ModelCandidates:            truncateRepoContextValues(modelCandidatesForContext(snapshot, status), maxRepoContextModelCandidates),

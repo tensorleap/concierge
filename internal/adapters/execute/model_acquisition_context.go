@@ -38,6 +38,11 @@ func BuildModelAcquisitionRecommendation(snapshot core.WorkspaceSnapshot, status
 	helperPath := filepath.ToSlash(filepath.Join(".concierge", "materializers", defaultMaterializerHelperName))
 	target = filepath.ToSlash(filepath.Clean(target))
 
+	plan := selectedModelAcquisitionPlan(snapshot, status)
+	if plan != nil && strings.TrimSpace(plan.ExpectedOutputPath) != "" {
+		target = strings.TrimSpace(plan.ExpectedOutputPath)
+	}
+
 	candidates := make([]string, 0, 8)
 	leadHints := make([]string, 0, 8)
 	if status.Contracts != nil {
@@ -57,6 +62,37 @@ func BuildModelAcquisitionRecommendation(snapshot core.WorkspaceSnapshot, status
 	candidates = ensureValuePresent(uniqueSortedStrings(candidates), target)
 	candidates = truncateCandidatePaths(candidates, target, maxRepoContextModelCandidates)
 	leadHints = truncateRepoContextValues(uniqueSortedStrings(leadHints), maxRepoContextModelCandidates)
+
+	if plan != nil {
+		constraints := []string{
+			fmt.Sprintf("Execute the selected acquisition strategy %q instead of rediscovering how this repository should obtain its model.", strings.TrimSpace(plan.Strategy)),
+		}
+		if len(plan.RuntimeInvocation) > 0 {
+			constraints = append(constraints, fmt.Sprintf("Run the planned repository invocation: %s", strings.Join(plan.RuntimeInvocation, " ")))
+		}
+		if workingDir := strings.TrimSpace(plan.WorkingDir); workingDir != "" {
+			constraints = append(constraints, fmt.Sprintf("Run the planned invocation from %q.", workingDir))
+		}
+		if target != "" {
+			constraints = append(constraints, fmt.Sprintf("Expected supported artifact output: %q.", target))
+		}
+		if helper := strings.TrimSpace(plan.HelperPath); helper != "" {
+			constraints = append(constraints, fmt.Sprintf("If a helper script is required, use %q.", helper))
+		}
+		if plan.RequiresNetwork {
+			constraints = append(constraints, "This strategy may require network access; if the current environment cannot reach the network, stop and report that blocker instead of inventing a different strategy.")
+		}
+		for _, detail := range modelAcquisitionPlanConstraintEvidence(plan) {
+			constraints = append(constraints, fmt.Sprintf("Plan evidence: %s", detail))
+		}
+		return core.AuthoringRecommendation{
+			StepID:      core.EnsureStepModelAcquisition,
+			Target:      target,
+			Rationale:   "execute_selected_model_acquisition_strategy",
+			Candidates:  []string{target},
+			Constraints: constraints,
+		}, nil
+	}
 
 	constraints := []string{
 		fmt.Sprintf("Prefer existing repository commands or Python entrypoints to materialize %q.", target),

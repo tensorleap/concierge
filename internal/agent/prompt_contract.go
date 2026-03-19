@@ -58,6 +58,13 @@ func BuildClaudeTaskPrompt(task AgentTask) string {
 	b.WriteString(fmt.Sprintf("- Runtime interpreter: %s\n", nonEmptyOrFallback(repoContextValue(task, "runtime_interpreter"), "<none>")))
 	b.WriteString(fmt.Sprintf("- Runtime status: %s\n", nonEmptyOrFallback(repoContextValue(task, "runtime_status"), "<none>")))
 	b.WriteString(fmt.Sprintf("- Selected model path: %s\n", nonEmptyOrFallback(repoContextValue(task, "selected_model_path"), "<none>")))
+	if plan := task.RepoContext.ModelAcquisitionPlan; plan != nil {
+		b.WriteString(fmt.Sprintf("- Model acquisition strategy: %s\n", nonEmptyOrFallback(plan.Strategy, "<none>")))
+		b.WriteString(fmt.Sprintf("- Model acquisition expected output: %s\n", nonEmptyOrFallback(plan.ExpectedOutputPath, "<none>")))
+		b.WriteString(fmt.Sprintf("- Model acquisition command: %s\n", renderInlineList(plan.RuntimeInvocation)))
+		b.WriteString(fmt.Sprintf("- Model acquisition working dir: %s\n", nonEmptyOrFallback(plan.WorkingDir, "<none>")))
+		b.WriteString(fmt.Sprintf("- Model acquisition helper: %s\n", nonEmptyOrFallback(plan.HelperPath, "<none>")))
+	}
 	b.WriteString(fmt.Sprintf("- Required input symbols: %s\n", renderInlineList(repoContextValues(task, "required_input_symbols"))))
 	b.WriteString(fmt.Sprintf("- Required ground-truth symbols: %s\n", renderInlineList(repoContextValues(task, "required_ground_truth_symbols"))))
 	b.WriteString(fmt.Sprintf("- Model candidates: %s\n", renderInlineList(repoContextValues(task, "model_candidates"))))

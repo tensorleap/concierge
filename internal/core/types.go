@@ -50,6 +50,7 @@ type WorkspaceSnapshot struct {
 	CapturedAt              time.Time               `json:"capturedAt"`
 	WorktreeFingerprint     string                  `json:"worktreeFingerprint"`
 	SelectedModelPath       string                  `json:"selectedModelPath,omitempty"`
+	ModelAcquisitionPlan    *ModelAcquisitionPlan   `json:"modelAcquisitionPlan,omitempty"`
 	ConfirmedEncoderMapping *EncoderMappingContract `json:"confirmedEncoderMapping,omitempty"`
 	Repository              RepositoryState         `json:"repository"`
 	FileHashes              map[string]string       `json:"fileHashes,omitempty"`
@@ -437,6 +438,7 @@ type AgentRepoContext struct {
 	RuntimeInterpreter         string   `json:"runtimeInterpreter,omitempty"`
 	RuntimeStatus              string   `json:"runtimeStatus,omitempty"`
 	SelectedModelPath          string   `json:"selectedModelPath,omitempty"`
+	ModelAcquisitionPlan       *ModelAcquisitionPlan `json:"modelAcquisitionPlan,omitempty"`
 	RequiredInputSymbols       []string `json:"requiredInputSymbols,omitempty"`
 	RequiredGroundTruthSymbols []string `json:"requiredGroundTruthSymbols,omitempty"`
 	ModelCandidates            []string `json:"modelCandidates,omitempty"`

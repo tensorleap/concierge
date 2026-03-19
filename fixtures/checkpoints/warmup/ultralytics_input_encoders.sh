@@ -15,6 +15,7 @@ poetry run python - <<'PY'
 from pathlib import Path
 from shutil import copyfile
 
+import torch
 from export_model_to_tf import onnx_exporter
 from ultralytics.utils.downloads import attempt_download_asset
 
@@ -24,6 +25,8 @@ model_root = repo_root / ".concierge" / "materialized_models"
 pt_path = data_root / "models" / "yolo11s.pt"
 final_onnx_path = model_root / "model.onnx"
 
+# Torch 2.1.0 on Linux/arm64 segfaults in Ultralytics export with MKLDNN enabled.
+torch.backends.mkldnn.enabled = False
 attempt_download_asset(str(pt_path), repo="ultralytics/assets", release="v8.3.0")
 exported_onnx_path = Path(onnx_exporter())
 copyfile(exported_onnx_path, final_onnx_path)

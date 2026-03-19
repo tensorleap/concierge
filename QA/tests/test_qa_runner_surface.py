@@ -57,6 +57,7 @@ class QARunnerSurfaceTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("onnxslim==0.1.89", warmup)
+        self.assertIn("torch.backends.mkldnn.enabled = False", warmup)
         self.assertIn("onnx_exporter()", warmup)
         self.assertNotIn("onnxruntime==1.21.1", warmup)
         self.assertNotIn("yolo11n.onnx", warmup)

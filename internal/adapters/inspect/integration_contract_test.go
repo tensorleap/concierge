@@ -282,8 +282,8 @@ func TestContractDiscoveryNoMainBlockIssueWhenPresent(t *testing.T) {
 		`if __name__ == "__main__":`,
 		"    responses = preprocess_func()",
 		"    for subset in responses:",
-		"        for i in range(5):",
-		"            integration_test(i, subset)",
+		"        for sample_id in subset.sample_ids[:5]:",
+		"            integration_test(sample_id, subset)",
 		"",
 	}, "\n"))
 

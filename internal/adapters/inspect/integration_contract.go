@@ -460,9 +460,10 @@ func inspectMainBlock(entryFilePath string, source string, contracts *core.Integ
 	if len(contracts.PreprocessFunctions) == 0 || len(contracts.IntegrationTestFunctions) == 0 {
 		return
 	}
-	if strings.Contains(source, "if __name__") {
+	if strings.Contains(source, "if __name__ ==") {
 		return
 	}
+	lastLine := strings.Count(source, "\n") + 1
 	status.Issues = append(status.Issues, core.Issue{
 		Code:     core.IssueCodeIntegrationTestMainBlockMissing,
 		Message:  fmt.Sprintf("%s has @tensorleap_preprocess and @tensorleap_integration_test but no if __name__ == \"__main__\" entry-point", entryFilePath),
@@ -470,6 +471,7 @@ func inspectMainBlock(entryFilePath string, source string, contracts *core.Integ
 		Scope:    core.IssueScopeIntegrationTest,
 		Location: &core.IssueLocation{
 			Path: entryFilePath,
+			Line: lastLine,
 		},
 	})
 }

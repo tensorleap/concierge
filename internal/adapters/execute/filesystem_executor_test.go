@@ -601,6 +601,39 @@ func TestExecutorFirstRunIncludesRequirementsFiles(t *testing.T) {
 	assertContainsAll(t, contract.Include, []string{"leap.yaml", "leap_integration.py", "requirements.txt"})
 }
 
+func TestExecutorPreservesBroadExcludeGlob(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
+
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), "def noop():\n    return None\n")
+	writeFile(t, filepath.Join(repoRoot, "requirements.txt"), "numpy>=1.0\n")
+	writeFile(t, filepath.Join(repoRoot, "leap.yaml"), strings.Join([]string{
+		fmt.Sprintf("entryFile: %s", core.CanonicalIntegrationEntryFile),
+		"include:",
+		"  - leap.yaml",
+		"  - leap_integration.py",
+		"exclude:",
+		"  - \"*.txt\"",
+		"  - .git/**",
+		"",
+	}, "\n"))
+
+	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("expected leap.yaml to be updated with requirements.txt in include")
+	}
+	contract := readLeapYAMLContract(t, filepath.Join(repoRoot, "leap.yaml"))
+	assertContainsAll(t, contract.Include, []string{"requirements.txt"})
+	// Broad glob *.txt must NOT be removed from exclude
+	if !contains(contract.Exclude, "*.txt") {
+		t.Fatalf("expected broad glob *.txt to remain in exclude, got %v", contract.Exclude)
+	}
+}
+
 func snapshotForRepo(root string) core.WorkspaceSnapshot {
 	return core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: root}}
 }

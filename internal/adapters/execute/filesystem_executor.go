@@ -320,14 +320,14 @@ func reconcileLeapYAML(contents []byte, repoRoot string) ([]byte, bool, string, 
 				continue
 			}
 
-			blocksRequired := false
+			exactMatch := false
 			for _, req := range required {
-				if matchesPattern(req, pattern) {
-					blocksRequired = true
+				if normalizeUploadPath(pattern) == normalizeUploadPath(req) {
+					exactMatch = true
 					break
 				}
 			}
-			if blocksRequired {
+			if exactMatch {
 				changed = true
 				excludeAdjusted = true
 				continue

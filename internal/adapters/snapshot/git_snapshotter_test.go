@@ -250,6 +250,7 @@ func TestSnapshotIncludesEnvironmentFingerprints(t *testing.T) {
 		"version = \"0.1.0\"",
 		"",
 	}, "\n"))
+	writeFile(t, filepath.Join(repo, "poetry.lock"), "# lock\n")
 
 	snapshotter := NewGitSnapshotter()
 	snapshotter.lookPath = func(file string) (string, error) {
@@ -297,8 +298,8 @@ func TestSnapshotIncludesEnvironmentFingerprints(t *testing.T) {
 	if !snapshotValue.Runtime.SupportedProject {
 		t.Fatalf("expected poetry project classification to pass, got reason %q", snapshotValue.Runtime.ProjectSupportReason)
 	}
-	if len(snapshotValue.Runtime.RequirementsFiles) != 2 {
-		t.Fatalf("expected requirements file detection, got %+v", snapshotValue.Runtime.RequirementsFiles)
+	if len(snapshotValue.Runtime.RequirementsFiles) != 3 {
+		t.Fatalf("expected 3 requirements files (requirements.txt + pyproject.toml + poetry.lock), got %+v", snapshotValue.Runtime.RequirementsFiles)
 	}
 
 	if !snapshotValue.LeapCLI.Available {

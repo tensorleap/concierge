@@ -417,6 +417,223 @@ func TestFindDecoratedFunctionNameWithModulePrefix(t *testing.T) {
 	}
 }
 
+func TestExecutorAddsRequirementsFileToLeapYAMLInclude(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
+
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), "def noop():\n    return None\n")
+	writeFile(t, filepath.Join(repoRoot, "requirements.txt"), "numpy>=1.0\n")
+	writeFile(t, filepath.Join(repoRoot, "leap.yaml"), strings.Join([]string{
+		fmt.Sprintf("entryFile: %s", core.CanonicalIntegrationEntryFile),
+		"include:",
+		"  - leap.yaml",
+		"  - leap_integration.py",
+		"",
+	}, "\n"))
+
+	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("expected leap.yaml to be updated with requirements.txt")
+	}
+	contract := readLeapYAMLContract(t, filepath.Join(repoRoot, "leap.yaml"))
+	assertContainsAll(t, contract.Include, []string{"leap.yaml", "leap_integration.py", "requirements.txt"})
+}
+
+func TestExecutorAddsMultipleRequirementsFilesToLeapYAML(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
+
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), "def noop():\n    return None\n")
+	writeFile(t, filepath.Join(repoRoot, "requirements.txt"), "numpy>=1.0\n")
+	writeFile(t, filepath.Join(repoRoot, "pyproject.toml"), "[tool.poetry]\n")
+	writeFile(t, filepath.Join(repoRoot, "poetry.lock"), "# lock\n")
+	writeFile(t, filepath.Join(repoRoot, "leap.yaml"), strings.Join([]string{
+		fmt.Sprintf("entryFile: %s", core.CanonicalIntegrationEntryFile),
+		"include:",
+		"  - leap.yaml",
+		"  - leap_integration.py",
+		"",
+	}, "\n"))
+
+	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("expected leap.yaml to be updated with requirements files")
+	}
+	contract := readLeapYAMLContract(t, filepath.Join(repoRoot, "leap.yaml"))
+	assertContainsAll(t, contract.Include, []string{"requirements.txt", "pyproject.toml", "poetry.lock"})
+}
+
+func TestExecutorSkipsPoetryFilesWhenOnlyPyprojectExists(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
+
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), "def noop():\n    return None\n")
+	writeFile(t, filepath.Join(repoRoot, "pyproject.toml"), "[tool.poetry]\n")
+	writeFile(t, filepath.Join(repoRoot, "leap.yaml"), strings.Join([]string{
+		fmt.Sprintf("entryFile: %s", core.CanonicalIntegrationEntryFile),
+		"include:",
+		"  - leap.yaml",
+		"  - leap_integration.py",
+		"exclude:",
+		"  - .git/**",
+		"",
+	}, "\n"))
+
+	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Applied {
+		t.Fatal("expected no changes when only pyproject.toml exists without poetry.lock")
+	}
+}
+
+func TestExecutorUnblocksRequirementsFileFromLeapYAMLExclude(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
+
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), "def noop():\n    return None\n")
+	writeFile(t, filepath.Join(repoRoot, "requirements.txt"), "numpy>=1.0\n")
+	writeFile(t, filepath.Join(repoRoot, "leap.yaml"), strings.Join([]string{
+		fmt.Sprintf("entryFile: %s", core.CanonicalIntegrationEntryFile),
+		"include:",
+		"  - leap.yaml",
+		"  - leap_integration.py",
+		"exclude:",
+		"  - requirements.txt",
+		"  - .git/**",
+		"",
+	}, "\n"))
+
+	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("expected leap.yaml to be updated")
+	}
+	contract := readLeapYAMLContract(t, filepath.Join(repoRoot, "leap.yaml"))
+	assertContainsAll(t, contract.Include, []string{"requirements.txt"})
+	assertContainsNone(t, contract.Exclude, []string{"requirements.txt"})
+	if !contains(contract.Exclude, ".git/**") {
+		t.Fatalf("expected non-blocking exclude pattern to remain, got %v", contract.Exclude)
+	}
+}
+
+func TestExecutorSkipsRequirementsFileWhenNotOnDisk(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
+
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), "def noop():\n    return None\n")
+	initial := strings.Join([]string{
+		fmt.Sprintf("entryFile: %s", core.CanonicalIntegrationEntryFile),
+		"include:",
+		"  - leap.yaml",
+		"  - leap_integration.py",
+		"exclude:",
+		"  - .git/**",
+		"",
+	}, "\n")
+	writeFile(t, filepath.Join(repoRoot, "leap.yaml"), initial)
+
+	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Applied {
+		t.Fatal("expected no changes when no requirements file exists on disk")
+	}
+}
+
+func TestExecutorAddsTensorleapRequirementsFile(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
+
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), "def noop():\n    return None\n")
+	writeFile(t, filepath.Join(repoRoot, "tensorleap_requirements.txt"), "torch>=2.0\n")
+	writeFile(t, filepath.Join(repoRoot, "leap.yaml"), strings.Join([]string{
+		fmt.Sprintf("entryFile: %s", core.CanonicalIntegrationEntryFile),
+		"include:",
+		"  - leap.yaml",
+		"  - leap_integration.py",
+		"",
+	}, "\n"))
+
+	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("expected leap.yaml to be updated with tensorleap_requirements.txt")
+	}
+	contract := readLeapYAMLContract(t, filepath.Join(repoRoot, "leap.yaml"))
+	assertContainsAll(t, contract.Include, []string{"tensorleap_requirements.txt"})
+}
+
+func TestExecutorFirstRunIncludesRequirementsFiles(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
+
+	// requirements.txt exists before leap.yaml is created
+	writeFile(t, filepath.Join(repoRoot, "requirements.txt"), "numpy>=1.0\n")
+
+	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("expected applied=true when leap.yaml is missing")
+	}
+	contract := readLeapYAMLContract(t, filepath.Join(repoRoot, "leap.yaml"))
+	assertContainsAll(t, contract.Include, []string{"leap.yaml", "leap_integration.py", "requirements.txt"})
+}
+
+func TestExecutorPreservesBroadExcludeGlob(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
+
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), "def noop():\n    return None\n")
+	writeFile(t, filepath.Join(repoRoot, "requirements.txt"), "numpy>=1.0\n")
+	writeFile(t, filepath.Join(repoRoot, "leap.yaml"), strings.Join([]string{
+		fmt.Sprintf("entryFile: %s", core.CanonicalIntegrationEntryFile),
+		"include:",
+		"  - leap.yaml",
+		"  - leap_integration.py",
+		"exclude:",
+		"  - \"*.txt\"",
+		"  - .git/**",
+		"",
+	}, "\n"))
+
+	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("expected leap.yaml to be updated with requirements.txt in include")
+	}
+	contract := readLeapYAMLContract(t, filepath.Join(repoRoot, "leap.yaml"))
+	assertContainsAll(t, contract.Include, []string{"requirements.txt"})
+	// Broad glob *.txt must NOT be removed from exclude
+	if !contains(contract.Exclude, "*.txt") {
+		t.Fatalf("expected broad glob *.txt to remain in exclude, got %v", contract.Exclude)
+	}
+}
+
 func snapshotForRepo(root string) core.WorkspaceSnapshot {
 	return core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: root}}
 }

@@ -21,6 +21,7 @@ const (
 	EnsureStepInputEncoders           EnsureStepID = "ensure.input_encoders"
 	EnsureStepGroundTruthEncoders     EnsureStepID = "ensure.ground_truth_encoders"
 	EnsureStepIntegrationTestContract EnsureStepID = "ensure.integration_test_contract"
+	EnsureStepIntegrationTestWiring   EnsureStepID = "ensure.integration_test_wiring"
 	EnsureStepHarnessValidation       EnsureStepID = "ensure.harness_validation"
 	EnsureStepUploadReadiness         EnsureStepID = "ensure.upload_readiness"
 	EnsureStepUploadPush              EnsureStepID = "ensure.upload_push"
@@ -85,7 +86,11 @@ var ensureStepCatalog = map[EnsureStepID]EnsureStep{
 	},
 	EnsureStepIntegrationTestContract: {
 		ID:          EnsureStepIntegrationTestContract,
-		Description: "Ensure integration test wiring and decorator-call contract",
+		Description: "Ensure integration test scaffold and __main__ block are present",
+	},
+	EnsureStepIntegrationTestWiring: {
+		ID:          EnsureStepIntegrationTestWiring,
+		Description: "Ensure integration test decorator calls are correctly wired",
 	},
 	EnsureStepHarnessValidation: {
 		ID:          EnsureStepHarnessValidation,
@@ -114,6 +119,7 @@ var ensureStepPriority = []EnsureStepID{
 	EnsureStepGroundTruthEncoders,
 	EnsureStepModelAcquisition,
 	EnsureStepModelContract,
+	EnsureStepIntegrationTestWiring,
 	EnsureStepHarnessValidation,
 	EnsureStepServerConnectivity,
 	EnsureStepUploadReadiness,
@@ -170,6 +176,8 @@ func HumanEnsureStepLabel(stepID EnsureStepID) string {
 	case EnsureStepGroundTruthEncoders:
 		return "Ground-truth encoders run successfully"
 	case EnsureStepIntegrationTestContract:
+		return "Integration test scaffold is present"
+	case EnsureStepIntegrationTestWiring:
 		return "Integration test wiring is complete"
 	case EnsureStepHarnessValidation:
 		return "Runtime validation checks pass"
@@ -220,6 +228,8 @@ func HumanEnsureStepRequirementLabel(stepID EnsureStepID) string {
 	case EnsureStepGroundTruthEncoders:
 		return "Ground-truth encoders should run successfully"
 	case EnsureStepIntegrationTestContract:
+		return "Integration test scaffold should be present"
+	case EnsureStepIntegrationTestWiring:
 		return "Integration test wiring should be complete"
 	case EnsureStepHarnessValidation:
 		return "Runtime validation checks should pass"

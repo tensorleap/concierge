@@ -69,12 +69,12 @@ var preferredEnsureStepByIssueCode = map[IssueCode]EnsureStepID{
 	IssueCodeIntegrationTestMissing:                 EnsureStepIntegrationTestContract,
 	IssueCodeIntegrationTestDecoratorMissing:        EnsureStepIntegrationTestContract,
 	IssueCodeLoadModelDecoratorMissing:              EnsureStepModelContract,
-	IssueCodeIntegrationTestExecutionFailed:         EnsureStepIntegrationTestContract,
-	IssueCodeIntegrationTestMissingRequiredCalls:    EnsureStepIntegrationTestContract,
-	IssueCodeIntegrationTestCallsUnknownInterfaces:  EnsureStepIntegrationTestContract,
-	IssueCodeIntegrationTestDirectDatasetAccess:     EnsureStepIntegrationTestContract,
-	IssueCodeIntegrationTestIllegalBodyLogic:        EnsureStepIntegrationTestContract,
-	IssueCodeIntegrationTestManualBatchManipulation: EnsureStepIntegrationTestContract,
+	IssueCodeIntegrationTestExecutionFailed:         EnsureStepIntegrationTestWiring,
+	IssueCodeIntegrationTestMissingRequiredCalls:    EnsureStepIntegrationTestWiring,
+	IssueCodeIntegrationTestCallsUnknownInterfaces:  EnsureStepIntegrationTestWiring,
+	IssueCodeIntegrationTestDirectDatasetAccess:     EnsureStepIntegrationTestWiring,
+	IssueCodeIntegrationTestIllegalBodyLogic:        EnsureStepIntegrationTestWiring,
+	IssueCodeIntegrationTestManualBatchManipulation: EnsureStepIntegrationTestWiring,
 	IssueCodeIntegrationTestMainBlockMissing:        EnsureStepIntegrationTestContract,
 
 	// Preprocess contract.

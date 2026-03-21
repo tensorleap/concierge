@@ -79,6 +79,7 @@ func inspectorVerifiedSteps(snapshot WorkspaceSnapshot) []EnsureStepID {
 		EnsureStepLeapYAML,
 		EnsureStepIntegrationScript,
 		EnsureStepIntegrationTestContract,
+		EnsureStepIntegrationTestWiring,
 	}
 	if _, ok := snapshot.FileHashes["leap.yaml"]; ok {
 		steps = append(steps, EnsureStepModelAcquisition)

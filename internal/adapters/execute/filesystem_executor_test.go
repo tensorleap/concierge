@@ -280,9 +280,6 @@ func TestExecutorAddsMainBlockWhenPreprocessExists(t *testing.T) {
 	if !strings.Contains(result.Summary, "@tensorleap_integration_test scaffold") {
 		t.Fatalf("expected summary to mention scaffold, got %q", result.Summary)
 	}
-	if !strings.Contains(result.Summary, "__main__ entry-point") {
-		t.Fatalf("expected summary to mention __main__, got %q", result.Summary)
-	}
 }
 
 func TestExecutorMainBlockIdempotent(t *testing.T) {

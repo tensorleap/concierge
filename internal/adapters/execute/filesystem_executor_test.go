@@ -271,8 +271,17 @@ func TestExecutorAddsMainBlockWhenPreprocessExists(t *testing.T) {
 	if !strings.Contains(content, "preprocess_func()") {
 		t.Fatal("expected __main__ block to call preprocess_func()")
 	}
-	if !strings.Contains(content, "integration_test(i, subset)") {
+	if !strings.Contains(content, "integration_test(sample_id, subset)") {
 		t.Fatal("expected __main__ block to call integration_test()")
+	}
+	if !strings.Contains(content, "subset.sample_ids[:5]") {
+		t.Fatal("expected __main__ block to iterate subset.sample_ids")
+	}
+	if !strings.Contains(result.Summary, "@tensorleap_integration_test scaffold") {
+		t.Fatalf("expected summary to mention scaffold, got %q", result.Summary)
+	}
+	if !strings.Contains(result.Summary, "__main__ entry-point") {
+		t.Fatalf("expected summary to mention __main__, got %q", result.Summary)
 	}
 }
 
@@ -295,8 +304,8 @@ func TestExecutorMainBlockIdempotent(t *testing.T) {
 		`if __name__ == "__main__":`,
 		"    responses = preprocess_func()",
 		"    for subset in responses:",
-		"        for i in range(5):",
-		"            integration_test(i, subset)",
+		"        for sample_id in subset.sample_ids[:5]:",
+		"            integration_test(sample_id, subset)",
 		"",
 	}, "\n"))
 
@@ -369,7 +378,7 @@ func TestExecutorMainBlockUsesCorrectFunctionNames(t *testing.T) {
 	if !strings.Contains(content, "my_custom_preprocess()") {
 		t.Fatal("expected __main__ block to use discovered preprocess function name")
 	}
-	if !strings.Contains(content, "my_custom_test(i, subset)") {
+	if !strings.Contains(content, "my_custom_test(sample_id, subset)") {
 		t.Fatal("expected __main__ block to use discovered integration test function name")
 	}
 }

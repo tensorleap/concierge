@@ -383,7 +383,7 @@ func ensureIntegrationTestScaffold(repoRoot string, step core.EnsureStep) (core.
 	}
 
 	// Ensure __main__ entry-point exists when both preprocess and integration test are present.
-	if !strings.Contains(content, "if __name__") {
+	if !strings.Contains(content, "if __name__ ==") {
 		preprocessFunc := findDecoratedFunctionName(content, "tensorleap_preprocess")
 		integrationTestFunc := findDecoratedFunctionName(content, "tensorleap_integration_test")
 		if preprocessFunc != "" && integrationTestFunc != "" {
@@ -488,16 +488,22 @@ func findDecoratedFunctionName(source string, decorator string) string {
 	return ""
 }
 
+// mainBlockSampleBudget is the number of sample IDs exercised per subset in the
+// generated __main__ block. Matches the GUIDE.md hardening-stage recommendation.
+const mainBlockSampleBudget = 5
+
 // generateMainBlock produces a deterministic if __name__ == "__main__" block
 // that calls the preprocess function and iterates the integration test over subsets.
+// Uses subset.sample_ids (not integer indices) because sample IDs may be strings
+// or non-sequential integers depending on the dataset.
 func generateMainBlock(preprocessFunc, integrationTestFunc string) string {
 	return fmt.Sprintf(`
 if __name__ == "__main__":
     responses = %s()
     for subset in responses:
-        for i in range(5):
-            %s(i, subset)
-`, preprocessFunc, integrationTestFunc)
+        for sample_id in subset.sample_ids[:%d]:
+            %s(sample_id, subset)
+`, preprocessFunc, mainBlockSampleBudget, integrationTestFunc)
 }
 
 func findMappingValue(mapping *yaml.Node, key string) (*yaml.Node, bool) {

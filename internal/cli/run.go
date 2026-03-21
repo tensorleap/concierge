@@ -243,7 +243,7 @@ func newRunCommand() *cobra.Command {
 					getModelAcquisitionClarification,
 					setModelAcquisitionClarification,
 					repoRoot,
-					nonInteractive || yes,
+					nonInteractive,
 					promptInput,
 					cmd.OutOrStdout(),
 				); err != nil {

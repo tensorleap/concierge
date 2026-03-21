@@ -62,7 +62,7 @@
       "source_variant": "post",
       "family": "integration_test_wiring",
       "patch": "fixtures/cases/patches/mnist_integration_test_wiring.patch",
-      "expected_primary_step": "ensure.integration_test_contract",
+      "expected_primary_step": "ensure.integration_test_wiring",
       "expected_issue_codes": ["integration_test_missing_required_calls"],
       "confirmed_mapping": {
         "input_symbols": ["image", "meta"],

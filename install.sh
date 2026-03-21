@@ -3,17 +3,22 @@ set -eu
 
 # Concierge installer — downloads the latest release binary from GitHub.
 #
-# Usage (with gh CLI authenticated — recommended for private repos):
+# Usage (private repo — gh CLI authenticated, recommended):
+#   gh api repos/tensorleap/concierge/contents/install.sh -q '.content' | base64 -d | sh
+#
+# With a GitHub token (private repo, no gh CLI):
+#   curl -fsSL -H "Authorization: token ghp_xxx" \
+#     -H "Accept: application/vnd.github.v3.raw" \
+#     https://api.github.com/repos/tensorleap/concierge/contents/install.sh | sh
+#
+# Usage (public repo):
 #   curl -fsSL https://raw.githubusercontent.com/tensorleap/concierge/main/install.sh | sh
 #
 # With a specific version:
-#   VERSION=v0.0.3 curl -fsSL https://raw.githubusercontent.com/tensorleap/concierge/main/install.sh | sh
-#
-# With a GitHub token (for private repos without gh CLI):
-#   GITHUB_TOKEN=ghp_xxx curl -fsSL ... | sh
+#   VERSION=v0.0.3 gh api repos/tensorleap/concierge/contents/install.sh -q '.content' | base64 -d | sh
 #
 # Custom install directory:
-#   INSTALL_DIR=~/.local/bin curl -fsSL ... | sh
+#   INSTALL_DIR=~/.local/bin gh api repos/tensorleap/concierge/contents/install.sh -q '.content' | base64 -d | sh
 
 REPO="tensorleap/concierge"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"

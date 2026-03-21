@@ -122,24 +122,18 @@ func TestDispatcherUsesFilesystemForMissingIntegrationTestDecorator(t *testing.T
 	assertEvidence(t, result.Evidence, "executor.mode", "filesystem")
 }
 
-func TestDispatcherRequiresAgentForIntegrationTestRepair(t *testing.T) {
-	repoRoot := t.TempDir()
-	writeDispatcherFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), `@tensorleap_integration_test()
-def integration_test(sample_id, preprocess_response):
-    return None
-`)
-
+func TestDispatcherRequiresAgentForIntegrationTestWiring(t *testing.T) {
 	executor := NewDispatcherExecutor()
-	step, ok := core.EnsureStepByID(core.EnsureStepIntegrationTestContract)
+	step, ok := core.EnsureStepByID(core.EnsureStepIntegrationTestWiring)
 	if !ok {
-		t.Fatalf("expected step %q to be registered", core.EnsureStepIntegrationTestContract)
+		t.Fatalf("expected step %q to be registered", core.EnsureStepIntegrationTestWiring)
 	}
 
 	_, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
-		Repository: core.RepositoryState{Root: repoRoot},
+		Repository: core.RepositoryState{Root: t.TempDir()},
 	}, step)
 	if err == nil {
-		t.Fatal("expected missing dependency error for integration-test repair without agent")
+		t.Fatal("expected missing dependency error for integration-test wiring without agent")
 	}
 	if got := core.KindOf(err); got != core.KindMissingDependency {
 		t.Fatalf("expected error kind %q, got %q (err=%v)", core.KindMissingDependency, got, err)

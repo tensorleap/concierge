@@ -61,7 +61,7 @@ func TestFixtureCaseAgentContextQuality(t *testing.T) {
 		{
 			name:             "integration_test",
 			caseID:           "mnist_integration_test_wiring",
-			stepID:           core.EnsureStepIntegrationTestContract,
+			stepID:           core.EnsureStepIntegrationTestWiring,
 			expectedSections: []string{"integration_test_wiring_contract"},
 			absentSections:   []string{"input_encoder_contract", "ground_truth_encoder_contract", "load_model_contract"},
 			caseConstraint: func(entry fixtureCaseEntry) string {

@@ -582,6 +582,25 @@ func TestExecutorAddsTensorleapRequirementsFile(t *testing.T) {
 	assertContainsAll(t, contract.Include, []string{"tensorleap_requirements.txt"})
 }
 
+func TestExecutorFirstRunIncludesRequirementsFiles(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
+
+	// requirements.txt exists before leap.yaml is created
+	writeFile(t, filepath.Join(repoRoot, "requirements.txt"), "numpy>=1.0\n")
+
+	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("expected applied=true when leap.yaml is missing")
+	}
+	contract := readLeapYAMLContract(t, filepath.Join(repoRoot, "leap.yaml"))
+	assertContainsAll(t, contract.Include, []string{"leap.yaml", "leap_integration.py", "requirements.txt"})
+}
+
 func snapshotForRepo(root string) core.WorkspaceSnapshot {
 	return core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: root}}
 }

@@ -91,6 +91,18 @@ func ensureLeapYAML(repoRoot string, step core.EnsureStep) (core.ExecutionResult
 			return core.ExecutionResult{}, err
 		}
 
+		// Reconcile the freshly written template so that requirements files
+		// already present on disk are included in the first leap.yaml.
+		raw, err := os.ReadFile(targetPath)
+		if err != nil {
+			return core.ExecutionResult{}, core.WrapError(core.KindUnknown, "execute.filesystem.leap_yaml_read", err)
+		}
+		if reconciled, changed, _, recErr := reconcileLeapYAML(raw, repoRoot); recErr == nil && changed {
+			if writeErr := os.WriteFile(targetPath, reconciled, 0o644); writeErr != nil {
+				return core.ExecutionResult{}, core.WrapError(core.KindUnknown, "execute.filesystem.leap_yaml_write", writeErr)
+			}
+		}
+
 		entryApplied, entryBeforeChecksum, entryAfterChecksum, err := ensureLeapYAMLEntryFile(repoRoot, core.CanonicalIntegrationEntryFile)
 		if err != nil {
 			return core.ExecutionResult{}, core.WrapError(core.KindUnknown, "execute.filesystem.entry_file", err)

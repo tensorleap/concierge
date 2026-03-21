@@ -317,7 +317,7 @@ func (ss *SplitScreenRenderer) iconAndStyle(status StepDisplayStatus) (string, l
 	case StepInProgress:
 		return "▸", ss.inProgressStyle
 	case StepPass:
-		return "☑", ss.passStyle
+		return "✅", ss.passStyle
 	case StepWarning:
 		return "⚠", ss.warnStyle
 	case StepFail:

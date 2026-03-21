@@ -131,7 +131,7 @@ func PolicyForStep(step core.EnsureStepID, snapshot core.WorkspaceSnapshot, stat
 				"ground_truth_encoder_contract",
 			},
 		}, nil
-	case core.EnsureStepIntegrationTestContract:
+	case core.EnsureStepIntegrationTestWiring:
 		return agent.AgentScopePolicy{
 			AllowedFiles: allowedFiles,
 			ForbiddenAreas: []string{

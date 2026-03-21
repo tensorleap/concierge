@@ -965,7 +965,7 @@ func approvalGuidanceForStep(stepID core.EnsureStepID) stepApprovalGuidance {
 			Explanation: "Ground-truth encoders provide labels and are required for labeled-set validation and analysis.",
 			DocsURL:     stepGuideGroundTruthURL,
 		}
-	case core.EnsureStepIntegrationTestContract:
+	case core.EnsureStepIntegrationTestContract, core.EnsureStepIntegrationTestWiring:
 		return stepApprovalGuidance{
 			Explanation: "The integration test defines which interfaces Tensorleap actually executes during analysis, so it must stay thin and only wire decorated calls plus model inference.",
 			DocsURL:     stepGuideIntegrationTestURL,
@@ -1229,7 +1229,7 @@ func ensureEncoderMappingForStep(
 	out io.Writer,
 ) error {
 	switch step.ID {
-	case core.EnsureStepInputEncoders, core.EnsureStepGroundTruthEncoders, core.EnsureStepIntegrationTestContract:
+	case core.EnsureStepInputEncoders, core.EnsureStepGroundTruthEncoders, core.EnsureStepIntegrationTestContract, core.EnsureStepIntegrationTestWiring:
 	default:
 		return nil
 	}

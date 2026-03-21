@@ -298,7 +298,7 @@ func issueRelevantToStep(step core.EnsureStepID, issue core.Issue) bool {
 		return issue.Scope == core.IssueScopeInputEncoder
 	case core.EnsureStepGroundTruthEncoders:
 		return issue.Scope == core.IssueScopeGroundTruthEncoder
-	case core.EnsureStepIntegrationTestContract:
+	case core.EnsureStepIntegrationTestContract, core.EnsureStepIntegrationTestWiring:
 		return issue.Scope == core.IssueScopeIntegrationTest
 	case core.EnsureStepHarnessValidation:
 		return issue.Scope == core.IssueScopeValidation
@@ -434,7 +434,7 @@ func applyRepoContextStepSlice(step core.EnsureStepID, context *core.AgentRepoCo
 		} else {
 			context.RequiredInputSymbols = nil
 		}
-	case core.EnsureStepIntegrationTestContract:
+	case core.EnsureStepIntegrationTestContract, core.EnsureStepIntegrationTestWiring:
 		context.ModelCandidates = nil
 		context.SelectedModelPath = ""
 	default:

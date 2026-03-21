@@ -3,9 +3,6 @@ package execute
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/tensorleap/concierge/internal/core"
 	"github.com/tensorleap/concierge/internal/observe"
@@ -82,19 +79,6 @@ func (d *DispatcherExecutor) SetObserver(sink observe.Sink) {
 
 // Execute dispatches supported ensure-steps to filesystem mode and uses stub mode for the rest.
 func (d *DispatcherExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnapshot, step core.EnsureStep) (core.ExecutionResult, error) {
-	if step.ID == core.EnsureStepIntegrationTestContract {
-		if shouldScaffoldIntegrationTest(snapshot) {
-			return d.filesystem.Execute(ctx, snapshot, step)
-		}
-		if d.agent == nil {
-			return core.ExecutionResult{}, core.NewError(
-				core.KindMissingDependency,
-				"execute.dispatcher.agent_required",
-				"this integration-test repair step requires Claude CLI (`claude`) to be installed and available on PATH",
-			)
-		}
-		return d.agent.Execute(ctx, snapshot, step)
-	}
 	if isFilesystemStep(step.ID) {
 		return d.filesystem.Execute(ctx, snapshot, step)
 	}
@@ -103,7 +87,8 @@ func (d *DispatcherExecutor) Execute(ctx context.Context, snapshot core.Workspac
 	}
 	if (step.ID == core.EnsureStepPreprocessContract ||
 		step.ID == core.EnsureStepModelAcquisition ||
-		step.ID == core.EnsureStepModelContract) && d.agent == nil {
+		step.ID == core.EnsureStepModelContract ||
+		step.ID == core.EnsureStepIntegrationTestWiring) && d.agent == nil {
 		return core.ExecutionResult{}, core.NewError(
 			core.KindMissingDependency,
 			"execute.dispatcher.agent_required",
@@ -124,23 +109,9 @@ func (d *DispatcherExecutor) Execute(ctx context.Context, snapshot core.Workspac
 
 func isFilesystemStep(stepID core.EnsureStepID) bool {
 	switch stepID {
-	case core.EnsureStepLeapYAML, core.EnsureStepIntegrationScript:
+	case core.EnsureStepLeapYAML, core.EnsureStepIntegrationScript, core.EnsureStepIntegrationTestContract:
 		return true
 	default:
 		return false
 	}
-}
-
-func shouldScaffoldIntegrationTest(snapshot core.WorkspaceSnapshot) bool {
-	repoRoot := strings.TrimSpace(snapshot.Repository.Root)
-	if repoRoot == "" {
-		return true
-	}
-
-	targetPath := filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile)
-	raw, err := os.ReadFile(targetPath)
-	if err != nil {
-		return true
-	}
-	return !strings.Contains(string(raw), "@tensorleap_integration_test")
 }

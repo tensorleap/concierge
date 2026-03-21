@@ -67,7 +67,7 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		}
 		taskStatus = status
 	}
-	if canonicalStep.ID == core.EnsureStepIntegrationTestContract {
+	if canonicalStep.ID == core.EnsureStepIntegrationTestWiring {
 		recommendation, err := BuildIntegrationTestAuthoringRecommendation(taskSnapshot, taskStatus)
 		if err != nil {
 			return core.ExecutionResult{}, err
@@ -219,7 +219,7 @@ func stepRequiresInspectStatus(stepID core.EnsureStepID) bool {
 	case core.EnsureStepPreprocessContract,
 		core.EnsureStepInputEncoders,
 		core.EnsureStepGroundTruthEncoders,
-		core.EnsureStepIntegrationTestContract,
+		core.EnsureStepIntegrationTestWiring,
 		core.EnsureStepModelAcquisition,
 		core.EnsureStepModelContract:
 		return true
@@ -261,7 +261,7 @@ func recommendationEvidence(recommendations []core.AuthoringRecommendation) []co
 			recommendation.StepID != core.EnsureStepPreprocessContract &&
 			recommendation.StepID != core.EnsureStepInputEncoders &&
 			recommendation.StepID != core.EnsureStepGroundTruthEncoders &&
-			recommendation.StepID != core.EnsureStepIntegrationTestContract {
+			recommendation.StepID != core.EnsureStepIntegrationTestWiring {
 			continue
 		}
 		switch recommendation.StepID {
@@ -299,7 +299,7 @@ func recommendationEvidence(recommendations []core.AuthoringRecommendation) []co
 				core.EvidenceItem{Name: "authoring.recommendation.gt_encoder.target_symbols", Value: strings.Join(recommendation.Candidates, ",")},
 				core.EvidenceItem{Name: "authoring.recommendation.gt_encoder.constraints", Value: strings.Join(recommendation.Constraints, " | ")},
 			)
-		case core.EnsureStepIntegrationTestContract:
+		case core.EnsureStepIntegrationTestWiring:
 			evidence = append(evidence,
 				core.EvidenceItem{Name: "authoring.recommendation.integration_test.target", Value: strings.TrimSpace(recommendation.Target)},
 				core.EvidenceItem{Name: "authoring.recommendation.integration_test.rationale", Value: strings.TrimSpace(recommendation.Rationale)},
@@ -567,14 +567,14 @@ func objectiveForStep(
 			constraints = append(constraints, fmt.Sprintf("Use model path %q as output/label alignment contract unless repository code proves this path is invalid", selectedModelPath))
 		}
 		return "Implement and repair Tensorleap ground-truth encoders with labeled-subset constraints", constraints, true
-	case core.EnsureStepIntegrationTestContract:
+	case core.EnsureStepIntegrationTestWiring:
 		constraints := []string{
 			"Repair only @tensorleap_integration_test wiring and body shape.",
 			"Keep integration_test thin and declarative so mapping-mode re-execution succeeds.",
 			"Do not modify preprocess subset semantics, encoder implementations, or unrelated project logic.",
 		}
 		for _, recommendation := range recommendations {
-			if recommendation.StepID != core.EnsureStepIntegrationTestContract {
+			if recommendation.StepID != core.EnsureStepIntegrationTestWiring {
 				continue
 			}
 			if target := strings.TrimSpace(recommendation.Target); target != "" {

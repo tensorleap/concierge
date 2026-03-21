@@ -67,6 +67,9 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		}
 		taskStatus = status
 	}
+	if len(snapshot.CarriedValidationIssues) > 0 {
+		taskStatus.Issues = append(taskStatus.Issues, snapshot.CarriedValidationIssues...)
+	}
 	if canonicalStep.ID == core.EnsureStepIntegrationTestWiring {
 		recommendation, err := BuildIntegrationTestAuthoringRecommendation(taskSnapshot, taskStatus)
 		if err != nil {
@@ -131,7 +134,8 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		return core.ExecutionResult{}, err
 	}
 
-	repoContext, err := BuildAgentRepoContext(canonicalStep.ID, taskSnapshot, taskStatus, core.ValidationResult{})
+	carriedValidation := core.ValidationResult{Issues: snapshot.CarriedValidationIssues}
+	repoContext, err := BuildAgentRepoContext(canonicalStep.ID, taskSnapshot, taskStatus, carriedValidation)
 	if err != nil {
 		return core.ExecutionResult{}, err
 	}

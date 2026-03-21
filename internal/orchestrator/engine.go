@@ -122,6 +122,7 @@ func (e *Engine) runIteration(
 	e.emit(observe.Event{Kind: observe.EventStepSelected, Iteration: iteration, SnapshotID: snapshot.ID, StepID: plan.Primary.ID, Message: "Working on: " + core.HumanEnsureStepLabel(plan.Primary.ID)})
 
 	e.emit(observe.Event{Kind: observe.EventStageStarted, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageExecute, StepID: plan.Primary.ID, Message: "Working through the selected step"})
+	snapshot.CarriedValidationIssues = carriedIssues
 	result, err := e.executor.Execute(ctx, snapshot, plan.Primary)
 	if err != nil {
 		e.emit(observe.Event{Kind: observe.EventError, Iteration: iteration, SnapshotID: snapshot.ID, Stage: core.StageExecute, StepID: plan.Primary.ID, Message: err.Error()})

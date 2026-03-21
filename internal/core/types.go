@@ -56,7 +56,8 @@ type WorkspaceSnapshot struct {
 	FileHashes              map[string]string       `json:"fileHashes,omitempty"`
 	Runtime                 RuntimeState            `json:"runtime,omitempty"`
 	RuntimeProfile          *LocalRuntimeProfile    `json:"runtimeProfile,omitempty"`
-	LeapCLI                 LeapCLIState            `json:"leapCli,omitempty"`
+	LeapCLI                     LeapCLIState            `json:"leapCli,omitempty"`
+	CarriedValidationIssues     []Issue                 `json:"carriedValidationIssues,omitempty"`
 }
 
 // RuntimeState captures lightweight runtime/tooling fingerprints.

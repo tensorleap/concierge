@@ -451,6 +451,7 @@ func TestExecutorAddsMultipleRequirementsFilesToLeapYAML(t *testing.T) {
 	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), "def noop():\n    return None\n")
 	writeFile(t, filepath.Join(repoRoot, "requirements.txt"), "numpy>=1.0\n")
 	writeFile(t, filepath.Join(repoRoot, "pyproject.toml"), "[tool.poetry]\n")
+	writeFile(t, filepath.Join(repoRoot, "poetry.lock"), "# lock\n")
 	writeFile(t, filepath.Join(repoRoot, "leap.yaml"), strings.Join([]string{
 		fmt.Sprintf("entryFile: %s", core.CanonicalIntegrationEntryFile),
 		"include:",
@@ -467,7 +468,33 @@ func TestExecutorAddsMultipleRequirementsFilesToLeapYAML(t *testing.T) {
 		t.Fatal("expected leap.yaml to be updated with requirements files")
 	}
 	contract := readLeapYAMLContract(t, filepath.Join(repoRoot, "leap.yaml"))
-	assertContainsAll(t, contract.Include, []string{"requirements.txt", "pyproject.toml"})
+	assertContainsAll(t, contract.Include, []string{"requirements.txt", "pyproject.toml", "poetry.lock"})
+}
+
+func TestExecutorSkipsPoetryFilesWhenOnlyPyprojectExists(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
+
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), "def noop():\n    return None\n")
+	writeFile(t, filepath.Join(repoRoot, "pyproject.toml"), "[tool.poetry]\n")
+	writeFile(t, filepath.Join(repoRoot, "leap.yaml"), strings.Join([]string{
+		fmt.Sprintf("entryFile: %s", core.CanonicalIntegrationEntryFile),
+		"include:",
+		"  - leap.yaml",
+		"  - leap_integration.py",
+		"exclude:",
+		"  - .git/**",
+		"",
+	}, "\n"))
+
+	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Applied {
+		t.Fatal("expected no changes when only pyproject.toml exists without poetry.lock")
+	}
 }
 
 func TestExecutorUnblocksRequirementsFileFromLeapYAMLExclude(t *testing.T) {

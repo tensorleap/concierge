@@ -221,13 +221,7 @@ func sha256Hex(data []byte) string {
 }
 
 func captureFileHashes(repoRoot string) map[string]string {
-	files := []string{
-		"leap.yaml",
-		core.CanonicalIntegrationEntryFile,
-		"requirements.txt",
-		"pyproject.toml",
-		"poetry.lock",
-	}
+	files := append([]string{"leap.yaml", core.CanonicalIntegrationEntryFile}, core.AllRequirementsFileCandidates()...)
 
 	hashes := make(map[string]string, len(files))
 	for _, relativePath := range files {
@@ -260,15 +254,16 @@ func captureFileHashes(repoRoot string) map[string]string {
 	return ordered
 }
 func detectRequirementsFiles(repoRoot string) []string {
-	candidates := []string{"tensorleap_requirements.txt", "requirements.txt", "pyproject.toml", "poetry.lock"}
-	found := make([]string, 0, len(candidates))
-	for _, candidate := range candidates {
-		path := filepath.Join(repoRoot, candidate)
-		info, err := os.Stat(path)
-		if err != nil || info.IsDir() {
-			continue
+	found := make([]string, 0, len(core.RequirementsFileCandidates))
+	for _, candidate := range core.RequirementsFileCandidates {
+		if fileExistsSimple(filepath.Join(repoRoot, candidate)) {
+			found = append(found, candidate)
 		}
-		found = append(found, candidate)
+	}
+	for _, pair := range core.RequirementsFilePairs {
+		if fileExistsSimple(filepath.Join(repoRoot, pair[0])) && fileExistsSimple(filepath.Join(repoRoot, pair[1])) {
+			found = append(found, pair[0], pair[1])
+		}
 	}
 	if len(found) == 0 {
 		return nil

@@ -260,7 +260,7 @@ func captureFileHashes(repoRoot string) map[string]string {
 	return ordered
 }
 func detectRequirementsFiles(repoRoot string) []string {
-	candidates := []string{"requirements.txt", "pyproject.toml", "poetry.lock"}
+	candidates := []string{"tensorleap_requirements.txt", "requirements.txt", "pyproject.toml", "poetry.lock"}
 	found := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
 		path := filepath.Join(repoRoot, candidate)

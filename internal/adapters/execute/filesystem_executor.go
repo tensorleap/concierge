@@ -346,8 +346,25 @@ func reconcileLeapYAML(contents []byte, repoRoot string) ([]byte, bool, string, 
 	}
 }
 
+// requirementsFileCandidates lists requirements files in priority order.
+// Only files that exist on disk at the repo root are added to the required paths.
+var requirementsFileCandidates = []string{
+	"tensorleap_requirements.txt",
+	"requirements.txt",
+	"pyproject.toml",
+	"poetry.lock",
+}
+
 func requiredLeapYAMLPaths(repoRoot string, entryFile string) []string {
 	required := []string{"leap.yaml", normalizeUploadPath(entryFile)}
+	for _, candidate := range requirementsFileCandidates {
+		path := filepath.Join(repoRoot, candidate)
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		required = append(required, candidate)
+	}
 	return dedupeStrings(required)
 }
 

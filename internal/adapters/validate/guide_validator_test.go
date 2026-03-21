@@ -91,8 +91,11 @@ func TestGuideValidatorParsesStatusTableAndTreatsMissingParserAsBestEffort(t *te
 	if result.Summary.Parser.Available {
 		t.Fatalf("expected parser to be unavailable, got %+v", result.Summary.Parser)
 	}
-	if len(result.Issues) != 0 {
-		t.Fatalf("expected no blocking issues when parser is unavailable and local run did not crash, got %+v", result.Issues)
+	if !containsIssueCode(result.Issues, core.IssueCodeIntegrationTestDecoratorMissing) {
+		t.Fatalf("expected integration_test_decorator_missing issue from status row, got %+v", result.Issues)
+	}
+	if !containsIssueCode(result.Issues, core.IssueCodeGTEncoderMissing) {
+		t.Fatalf("expected gt_encoder_missing issue from status row, got %+v", result.Issues)
 	}
 	if !hasEvidenceName(result.Evidence, core.GuideEvidenceSummary) {
 		t.Fatalf("expected guide summary evidence, got %+v", result.Evidence)
@@ -465,4 +468,95 @@ func hasEvidenceName(evidence []core.EvidenceItem, name string) bool {
 		}
 	}
 	return false
+}
+
+func TestIssuesFromGuideStatusRowsMandatoryFail(t *testing.T) {
+	local := core.GuideLocalRunSummary{
+		StatusRows: []core.GuideStatusRow{
+			{Name: "tensorleap_preprocess", Status: "pass"},
+			{Name: "tensorleap_input_encoder", Status: "fail"},
+			{Name: "tensorleap_custom_loss", Status: "fail"},
+		},
+	}
+
+	issues := issuesFromGuideStatusRows(local)
+	if len(issues) != 2 {
+		t.Fatalf("expected 2 issues, got %d: %+v", len(issues), issues)
+	}
+	if issues[0].Code != core.IssueCodeInputEncoderMissing {
+		t.Fatalf("expected input encoder issue code, got %q", issues[0].Code)
+	}
+	if issues[0].Severity != core.SeverityError {
+		t.Fatalf("expected error severity, got %q", issues[0].Severity)
+	}
+	if issues[1].Code != core.IssueCodeIntegrationTestMissingRequiredCalls {
+		t.Fatalf("expected integration test missing calls issue code for custom_loss, got %q", issues[1].Code)
+	}
+}
+
+func TestIssuesFromGuideStatusRowsSkipsOptional(t *testing.T) {
+	local := core.GuideLocalRunSummary{
+		StatusRows: []core.GuideStatusRow{
+			{Name: "tensorleap_custom_metric (optional)", Status: "fail"},
+			{Name: "tensorleap_metadata (optional)", Status: "fail"},
+			{Name: "tensorleap_custom_visualizer (optional)", Status: "fail"},
+		},
+	}
+
+	issues := issuesFromGuideStatusRows(local)
+	if len(issues) != 0 {
+		t.Fatalf("expected no issues for optional decorators, got %d: %+v", len(issues), issues)
+	}
+}
+
+func TestIssuesFromGuideStatusRowsSkipsWhenMandatoryReady(t *testing.T) {
+	local := core.GuideLocalRunSummary{
+		MandatoryReady: true,
+		StatusRows: []core.GuideStatusRow{
+			{Name: "tensorleap_input_encoder", Status: "fail"},
+		},
+	}
+
+	issues := issuesFromGuideStatusRows(local)
+	if len(issues) != 0 {
+		t.Fatalf("expected no issues when MandatoryReady, got %d: %+v", len(issues), issues)
+	}
+}
+
+func TestIssuesFromGuideStatusRowsAllKnownDecorators(t *testing.T) {
+	local := core.GuideLocalRunSummary{
+		StatusRows: []core.GuideStatusRow{
+			{Name: "tensorleap_preprocess", Status: "fail"},
+			{Name: "tensorleap_input_encoder", Status: "fail"},
+			{Name: "tensorleap_gt_encoder", Status: "fail"},
+			{Name: "tensorleap_load_model", Status: "fail"},
+			{Name: "tensorleap_integration_test", Status: "fail"},
+			{Name: "tensorleap_custom_loss", Status: "fail"},
+		},
+	}
+
+	issues := issuesFromGuideStatusRows(local)
+	if len(issues) != 6 {
+		t.Fatalf("expected 6 issues, got %d: %+v", len(issues), issues)
+	}
+
+	expected := map[core.IssueCode]bool{
+		core.IssueCodePreprocessFunctionMissing:         false,
+		core.IssueCodeInputEncoderMissing:               false,
+		core.IssueCodeGTEncoderMissing:                  false,
+		core.IssueCodeLoadModelDecoratorMissing:         false,
+		core.IssueCodeIntegrationTestDecoratorMissing:   false,
+		core.IssueCodeIntegrationTestMissingRequiredCalls: false,
+	}
+	for _, issue := range issues {
+		if _, ok := expected[issue.Code]; !ok {
+			t.Fatalf("unexpected issue code %q", issue.Code)
+		}
+		expected[issue.Code] = true
+	}
+	for code, seen := range expected {
+		if !seen {
+			t.Fatalf("expected issue code %q not found", code)
+		}
+	}
 }

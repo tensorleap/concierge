@@ -3,6 +3,7 @@ package validate
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,33 +78,67 @@ func (r *HarnessRunner) Run(ctx context.Context, snapshot core.WorkspaceSnapshot
 		"--sample-budget",
 		"3",
 	)
+	runtimeEvidence := []core.EvidenceItem{
+		{Name: "runtime.command", Value: commandResult.Command},
+		{Name: "runtime.stdout", Value: commandResult.Stdout},
+		{Name: "runtime.stderr", Value: commandResult.Stderr},
+	}
 	if err != nil {
-		return HarnessRunResult{}, core.WrapError(core.KindUnknown, "validate.harness.run", err)
+		return HarnessRunResult{
+			Enabled: true,
+			Issues: []core.Issue{{
+				Code:     core.IssueCodeHarnessValidationFailed,
+				Message:  fmt.Sprintf("harness execution failed: %s", err.Error()),
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopeValidation,
+			}},
+			Evidence: append(runtimeEvidence, harnessRuntimeProvenanceEvidence(snapshot)...),
+		}, nil
 	}
 
-	events, err := ParseHarnessEvents([]byte(commandResult.Stdout))
+	parseResult, err := ParseHarnessEvents([]byte(commandResult.Stdout))
 	if err != nil {
-		return HarnessRunResult{}, err
+		evidence := append(runtimeEvidence, harnessRuntimeProvenanceEvidence(snapshot)...)
+		if len(parseResult.Noise) > 0 {
+			evidence = append(evidence, core.EvidenceItem{
+				Name:  "harness.stdout_noise",
+				Value: strings.Join(parseResult.Noise, "\n"),
+			})
+		}
+		return HarnessRunResult{
+			Enabled: true,
+			Issues: []core.Issue{{
+				Code:     core.IssueCodeHarnessValidationFailed,
+				Message:  fmt.Sprintf("harness output parse failed: %s", err.Error()),
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopeValidation,
+			}},
+			Evidence: evidence,
+		}, nil
 	}
+
+	events := parseResult.Events
 	issues := MapHarnessIssues(events)
+
+	evidence := append(runtimeEvidence, harnessRuntimeProvenanceEvidence(snapshot)...)
+	if len(parseResult.Noise) > 0 {
+		evidence = append(evidence, core.EvidenceItem{
+			Name:  "harness.stdout_noise",
+			Value: strings.Join(parseResult.Noise, "\n"),
+		})
+	}
 
 	summaryJSON, err := json.Marshal(harnessEventSummary(events))
 	if err != nil {
 		return HarnessRunResult{}, core.WrapError(core.KindUnknown, "validate.harness.summary", err)
 	}
+	evidence = append(evidence, core.EvidenceItem{Name: "harness.summary.json", Value: string(summaryJSON)})
 
 	return HarnessRunResult{
-		Enabled: true,
-		Events:  events,
-		Issues:  issues,
-		Evidence: append(
-			[]core.EvidenceItem{
-				{Name: "runtime.command", Value: commandResult.Command},
-				{Name: "runtime.stdout", Value: commandResult.Stdout},
-				{Name: "runtime.stderr", Value: commandResult.Stderr},
-			},
-			append(harnessRuntimeProvenanceEvidence(snapshot), core.EvidenceItem{Name: "harness.summary.json", Value: string(summaryJSON)})...,
-		),
+		Enabled:  true,
+		Events:   events,
+		Issues:   issues,
+		Evidence: evidence,
 	}, nil
 }
 

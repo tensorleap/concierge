@@ -19,11 +19,16 @@ QA_STEP ?=
 QA_ARGS ?=
 QA_IMAGE_MODE ?=
 
-.PHONY: build test test-qa-loop test-fixtures test-live-claude clean fixtures-prepare fixtures-mutate-cases fixtures-verify fixtures-reset fixtures-checks qa
+.PHONY: build install test test-qa-loop test-fixtures test-live-claude clean fixtures-prepare fixtures-mutate-cases fixtures-verify fixtures-reset fixtures-checks qa
 
 build:
 	@mkdir -p $(BIN_DIR)
 	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY_NAME) $(CMD_PATH)
+
+install: build
+	@cp $(BIN_DIR)/$(BINARY_NAME) $(GOPATH)/bin/$(BINARY_NAME) 2>/dev/null \
+		|| cp $(BIN_DIR)/$(BINARY_NAME) $(HOME)/go/bin/$(BINARY_NAME) 2>/dev/null \
+		|| (echo "Installing to /usr/local/bin (may require sudo)..." && sudo install -m 755 $(BIN_DIR)/$(BINARY_NAME) /usr/local/bin/$(BINARY_NAME))
 
 test:
 	go test $(UNIT_TEST_PACKAGES)

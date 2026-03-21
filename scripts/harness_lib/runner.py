@@ -221,10 +221,10 @@ class HarnessRuntime:
 
         try:
             from code_loader.contract.enums import DataStateEnum
-            from code_loader.inner_leap_binder.leapbinder import global_leap_binder
+            from code_loader.inner_leap_binder import global_leap_binder
             from code_loader.leaploader import LeapLoader
         except Exception as exc:
-            emit_event(event="runtime_failed", status="failed", message=f"code-loader import failed: {exc}")
+            emit_event(event="runtime_failed", status="failed", message=f"code-loader import failed: {exc}. Please upgrade code-loader to the latest version.")
             return
 
         try:

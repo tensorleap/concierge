@@ -404,6 +404,12 @@ func minimalIntegrationSource() string {
 		"def integration_test(sample_id, preprocess_response):",
 		"    return None",
 		"",
+		`if __name__ == "__main__":`,
+		"    responses = preprocess()",
+		"    for subset in responses:",
+		"        for i in range(5):",
+		"            integration_test(i, subset)",
+		"",
 	}, "\n")
 }
 
@@ -422,6 +428,12 @@ func minimalIntegrationSourceWithLoadModel() string {
 		"@tensorleap_integration_test()",
 		"def integration_test(sample_id, preprocess_response):",
 		"    return None",
+		"",
+		`if __name__ == "__main__":`,
+		"    responses = preprocess()",
+		"    for subset in responses:",
+		"        for i in range(5):",
+		"            integration_test(i, subset)",
 		"",
 	}, "\n")
 }

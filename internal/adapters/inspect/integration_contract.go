@@ -93,6 +93,7 @@ func inspectIntegrationContracts(repoRoot string, contract *leapYAMLContract, st
 			})
 		}
 		inspectPreprocessContract(entryFilePath, string(contents), contracts, status)
+		inspectMainBlock(entryFilePath, string(contents), contracts, status)
 		return nil
 	}
 
@@ -450,6 +451,27 @@ func appendUnique(values []string, value string) []string {
 		}
 	}
 	return append(values, value)
+}
+
+func inspectMainBlock(entryFilePath string, source string, contracts *core.IntegrationContracts, status *core.IntegrationStatus) {
+	if contracts == nil || status == nil {
+		return
+	}
+	if len(contracts.PreprocessFunctions) == 0 || len(contracts.IntegrationTestFunctions) == 0 {
+		return
+	}
+	if strings.Contains(source, "if __name__") {
+		return
+	}
+	status.Issues = append(status.Issues, core.Issue{
+		Code:     core.IssueCodeIntegrationTestMainBlockMissing,
+		Message:  fmt.Sprintf("%s has @tensorleap_preprocess and @tensorleap_integration_test but no if __name__ == \"__main__\" entry-point", entryFilePath),
+		Severity: core.SeverityError,
+		Scope:    core.IssueScopeIntegrationTest,
+		Location: &core.IssueLocation{
+			Path: entryFilePath,
+		},
+	})
 }
 
 func newContractDiscoveryIssue(path string, line int, column int, message string) core.Issue {

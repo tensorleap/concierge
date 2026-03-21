@@ -243,6 +243,80 @@ func TestContractDiscoveryEmitsMissingPreprocessIssueForBinderEntryFile(t *testi
 	}
 }
 
+func TestContractDiscoveryEmitsMainBlockMissingIssue(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
+		"@tensorleap_preprocess()",
+		"def preprocess_func():",
+		"    return []",
+		"",
+		"@tensorleap_integration_test()",
+		"def integration_test(sample_id, preprocess):",
+		"    return None",
+		"",
+	}, "\n"))
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if !hasIssueCode(status.Issues, core.IssueCodeIntegrationTestMainBlockMissing) {
+		t.Fatalf("expected %q issue when __main__ block is missing, got %+v", core.IssueCodeIntegrationTestMainBlockMissing, status.Issues)
+	}
+}
+
+func TestContractDiscoveryNoMainBlockIssueWhenPresent(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
+		"@tensorleap_preprocess()",
+		"def preprocess_func():",
+		"    return []",
+		"",
+		"@tensorleap_integration_test()",
+		"def integration_test(sample_id, preprocess):",
+		"    return None",
+		"",
+		`if __name__ == "__main__":`,
+		"    responses = preprocess_func()",
+		"    for subset in responses:",
+		"        for sample_id in subset.sample_ids[:5]:",
+		"            integration_test(sample_id, subset)",
+		"",
+	}, "\n"))
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if hasIssueCode(status.Issues, core.IssueCodeIntegrationTestMainBlockMissing) {
+		t.Fatalf("did not expect %q issue when __main__ block is present, got %+v", core.IssueCodeIntegrationTestMainBlockMissing, status.Issues)
+	}
+}
+
+func TestContractDiscoveryNoMainBlockIssueWithoutPreprocess(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
+		"@tensorleap_integration_test()",
+		"def integration_test(sample_id, preprocess):",
+		"    return None",
+		"",
+	}, "\n"))
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if hasIssueCode(status.Issues, core.IssueCodeIntegrationTestMainBlockMissing) {
+		t.Fatalf("did not expect %q issue when preprocess is missing, got %+v", core.IssueCodeIntegrationTestMainBlockMissing, status.Issues)
+	}
+}
+
 func firstIssueByCode(issues []core.Issue, code core.IssueCode) (core.Issue, bool) {
 	for _, issue := range issues {
 		if issue.Code == code {

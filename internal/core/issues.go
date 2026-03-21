@@ -79,6 +79,7 @@ const (
 	IssueCodeIntegrationTestDirectDatasetAccess     IssueCode = "integration_test_direct_dataset_access"
 	IssueCodeIntegrationTestIllegalBodyLogic        IssueCode = "integration_test_illegal_body_logic"
 	IssueCodeIntegrationTestManualBatchManipulation IssueCode = "integration_test_manual_batch_manipulation"
+	IssueCodeIntegrationTestMainBlockMissing        IssueCode = "integration_test_main_block_missing"
 
 	// Preprocess contract.
 	IssueCodePreprocessFunctionMissing         IssueCode = "preprocess_function_missing"
@@ -208,6 +209,7 @@ var knownIssueCodes = []IssueCode{
 	IssueCodeIntegrationTestDirectDatasetAccess,
 	IssueCodeIntegrationTestIllegalBodyLogic,
 	IssueCodeIntegrationTestManualBatchManipulation,
+	IssueCodeIntegrationTestMainBlockMissing,
 	IssueCodePreprocessFunctionMissing,
 	IssueCodePreprocessExecutionFailed,
 	IssueCodePreprocessResponseInvalid,

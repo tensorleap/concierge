@@ -364,30 +364,46 @@ func ensureIntegrationTestScaffold(repoRoot string, step core.EnsureStep) (core.
 	}
 
 	applied := entryApplied
-	summary := fmt.Sprintf("%s already includes @tensorleap_integration_test; no changes applied", core.CanonicalIntegrationEntryFile)
-	if !strings.Contains(string(raw), "@tensorleap_integration_test") {
+	content := string(raw)
+	scaffoldAdded := false
+	mainBlockAdded := false
+
+	// Ensure @tensorleap_integration_test scaffold exists.
+	if !strings.Contains(content, "@tensorleap_integration_test") {
 		scaffold, readErr := templateFS.ReadFile("templates/leap_integration_test_scaffold.py.tmpl")
 		if readErr != nil {
 			return core.ExecutionResult{}, core.WrapError(core.KindUnknown, "execute.filesystem.integration_test.template_read", readErr)
 		}
-
-		updated := string(raw)
-		if strings.TrimSpace(updated) != "" && !strings.HasSuffix(updated, "\n") {
-			updated += "\n"
+		if strings.TrimSpace(content) != "" && !strings.HasSuffix(content, "\n") {
+			content += "\n"
 		}
-		updated += string(scaffold)
-		if err := os.WriteFile(targetPath, []byte(updated), 0o644); err != nil {
+		content += string(scaffold)
+		scaffoldAdded = true
+		applied = true
+	}
+
+	// Ensure __main__ entry-point exists when both preprocess and integration test are present.
+	if !strings.Contains(content, "if __name__ ==") {
+		preprocessFunc := findDecoratedFunctionName(content, "tensorleap_preprocess")
+		integrationTestFunc := findDecoratedFunctionName(content, "tensorleap_integration_test")
+		if preprocessFunc != "" && integrationTestFunc != "" {
+			if !strings.HasSuffix(content, "\n") {
+				content += "\n"
+			}
+			content += generateMainBlock(preprocessFunc, integrationTestFunc)
+			mainBlockAdded = true
+			applied = true
+		}
+	}
+
+	// Write accumulated changes.
+	if content != string(raw) {
+		if err := os.WriteFile(targetPath, []byte(content), 0o644); err != nil {
 			return core.ExecutionResult{}, core.WrapError(core.KindUnknown, "execute.filesystem.integration_test.write", err)
 		}
-		applied = true
-		if entryApplied {
-			summary = fmt.Sprintf("created %s and added @tensorleap_integration_test scaffold", core.CanonicalIntegrationEntryFile)
-		} else {
-			summary = fmt.Sprintf("added @tensorleap_integration_test scaffold to %s", core.CanonicalIntegrationEntryFile)
-		}
-	} else if entryApplied {
-		summary = fmt.Sprintf("created %s", core.CanonicalIntegrationEntryFile)
 	}
+
+	summary := integrationTestScaffoldSummary(entryApplied, scaffoldAdded, mainBlockAdded)
 
 	afterChecksum, _, err := checksumForPath(targetPath)
 	if err != nil {
@@ -406,6 +422,88 @@ func ensureIntegrationTestScaffold(repoRoot string, step core.EnsureStep) (core.
 			{Name: "executor.entry_file", Value: core.CanonicalIntegrationEntryFile},
 		},
 	}, nil
+}
+
+func integrationTestScaffoldSummary(entryApplied, scaffoldAdded, mainBlockAdded bool) string {
+	if !entryApplied && !scaffoldAdded && !mainBlockAdded {
+		return fmt.Sprintf("%s already includes @tensorleap_integration_test; no changes applied", core.CanonicalIntegrationEntryFile)
+	}
+
+	added := make([]string, 0, 2)
+	if scaffoldAdded {
+		added = append(added, "@tensorleap_integration_test scaffold")
+	}
+	if mainBlockAdded {
+		added = append(added, "__main__ entry-point")
+	}
+
+	if entryApplied && len(added) > 0 {
+		return fmt.Sprintf("created %s and added %s", core.CanonicalIntegrationEntryFile, strings.Join(added, " and "))
+	}
+	if entryApplied {
+		return fmt.Sprintf("created %s", core.CanonicalIntegrationEntryFile)
+	}
+	return fmt.Sprintf("added %s to %s", strings.Join(added, " and "), core.CanonicalIntegrationEntryFile)
+}
+
+// findDecoratedFunctionName returns the name of the first function decorated with the
+// given decorator suffix (e.g. "tensorleap_preprocess"). Returns "" if not found.
+func findDecoratedFunctionName(source string, decorator string) string {
+	target := strings.ToLower(strings.TrimSpace(decorator))
+	lines := strings.Split(source, "\n")
+	found := false
+
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(rawLine)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		if strings.HasPrefix(line, "@") {
+			name := strings.TrimPrefix(line, "@")
+			if idx := strings.Index(name, "("); idx >= 0 {
+				name = name[:idx]
+			}
+			name = strings.TrimSpace(name)
+			if lastDot := strings.LastIndex(name, "."); lastDot >= 0 {
+				name = name[lastDot+1:]
+			}
+			if strings.ToLower(name) == target {
+				found = true
+			}
+			continue
+		}
+
+		if found && strings.HasPrefix(line, "def ") {
+			name := strings.TrimPrefix(line, "def ")
+			if idx := strings.Index(name, "("); idx >= 0 {
+				name = name[:idx]
+			}
+			return strings.TrimSpace(name)
+		}
+
+		found = false
+	}
+
+	return ""
+}
+
+// mainBlockSampleBudget is the number of sample IDs exercised per subset in the
+// generated __main__ block. Matches the GUIDE.md hardening-stage recommendation.
+const mainBlockSampleBudget = 5
+
+// generateMainBlock produces a deterministic if __name__ == "__main__" block
+// that calls the preprocess function and iterates the integration test over subsets.
+// Uses subset.sample_ids (not integer indices) because sample IDs may be strings
+// or non-sequential integers depending on the dataset.
+func generateMainBlock(preprocessFunc, integrationTestFunc string) string {
+	return fmt.Sprintf(`
+if __name__ == "__main__":
+    responses = %s()
+    for subset in responses:
+        for sample_id in subset.sample_ids[:%d]:
+            %s(sample_id, subset)
+`, preprocessFunc, mainBlockSampleBudget, integrationTestFunc)
 }
 
 func findMappingValue(mapping *yaml.Node, key string) (*yaml.Node, bool) {

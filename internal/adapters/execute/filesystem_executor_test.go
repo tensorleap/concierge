@@ -234,6 +234,189 @@ func TestExecutorDoesNotModifyCompliantLeapYAML(t *testing.T) {
 	}
 }
 
+func TestExecutorAddsMainBlockWhenPreprocessExists(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepIntegrationTestContract)
+
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), strings.Join([]string{
+		`"""Baseline Tensorleap integration entrypoint."""`,
+		"",
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_preprocess",
+		"",
+		"@tensorleap_preprocess()",
+		"def preprocess_func():",
+		"    return []",
+		"",
+	}, "\n"))
+
+	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("expected applied=true when __main__ block is missing")
+	}
+	raw, err := os.ReadFile(filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile))
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	content := string(raw)
+	if !strings.Contains(content, "@tensorleap_integration_test") {
+		t.Fatal("expected integration-test scaffold to be present")
+	}
+	if !strings.Contains(content, `if __name__ == "__main__":`) {
+		t.Fatal("expected __main__ block to be present")
+	}
+	if !strings.Contains(content, "preprocess_func()") {
+		t.Fatal("expected __main__ block to call preprocess_func()")
+	}
+	if !strings.Contains(content, "integration_test(sample_id, subset)") {
+		t.Fatal("expected __main__ block to call integration_test()")
+	}
+	if !strings.Contains(content, "subset.sample_ids[:5]") {
+		t.Fatal("expected __main__ block to iterate subset.sample_ids")
+	}
+	if !strings.Contains(result.Summary, "@tensorleap_integration_test scaffold") {
+		t.Fatalf("expected summary to mention scaffold, got %q", result.Summary)
+	}
+	if !strings.Contains(result.Summary, "__main__ entry-point") {
+		t.Fatalf("expected summary to mention __main__, got %q", result.Summary)
+	}
+}
+
+func TestExecutorMainBlockIdempotent(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepIntegrationTestContract)
+
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), strings.Join([]string{
+		`"""Baseline Tensorleap integration entrypoint."""`,
+		"",
+		"@tensorleap_preprocess()",
+		"def preprocess_func():",
+		"    return []",
+		"",
+		"@tensorleap_integration_test()",
+		"def integration_test(sample_id, preprocess):",
+		"    return None",
+		"",
+		`if __name__ == "__main__":`,
+		"    responses = preprocess_func()",
+		"    for subset in responses:",
+		"        for sample_id in subset.sample_ids[:5]:",
+		"            integration_test(sample_id, subset)",
+		"",
+	}, "\n"))
+
+	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Applied {
+		t.Fatal("expected applied=false when __main__ block already exists")
+	}
+}
+
+func TestExecutorSkipsMainBlockWithoutPreprocess(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepIntegrationTestContract)
+
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), strings.Join([]string{
+		`"""Baseline Tensorleap integration entrypoint."""`,
+		"",
+		"@tensorleap_integration_test()",
+		"def integration_test(sample_id, preprocess):",
+		"    return None",
+		"",
+	}, "\n"))
+
+	_, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile))
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	if strings.Contains(string(raw), "if __name__") {
+		t.Fatal("expected no __main__ block when preprocess function is missing")
+	}
+}
+
+func TestExecutorMainBlockUsesCorrectFunctionNames(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepIntegrationTestContract)
+
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), strings.Join([]string{
+		`"""Custom integration."""`,
+		"",
+		"@tensorleap_preprocess()",
+		"def my_custom_preprocess():",
+		"    return []",
+		"",
+		"@tensorleap_integration_test()",
+		"def my_custom_test(sample_id, preprocess):",
+		"    return None",
+		"",
+	}, "\n"))
+
+	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("expected applied=true when __main__ block is missing")
+	}
+	raw, err := os.ReadFile(filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile))
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	content := string(raw)
+	if !strings.Contains(content, "my_custom_preprocess()") {
+		t.Fatal("expected __main__ block to use discovered preprocess function name")
+	}
+	if !strings.Contains(content, "my_custom_test(sample_id, subset)") {
+		t.Fatal("expected __main__ block to use discovered integration test function name")
+	}
+}
+
+func TestFindDecoratedFunctionName(t *testing.T) {
+	source := strings.Join([]string{
+		"@tensorleap_preprocess()",
+		"def preprocess_func():",
+		"    return []",
+		"",
+		"@tensorleap_integration_test()",
+		"def integration_test(s, p):",
+		"    return None",
+	}, "\n")
+
+	if name := findDecoratedFunctionName(source, "tensorleap_preprocess"); name != "preprocess_func" {
+		t.Fatalf("expected preprocess_func, got %q", name)
+	}
+	if name := findDecoratedFunctionName(source, "tensorleap_integration_test"); name != "integration_test" {
+		t.Fatalf("expected integration_test, got %q", name)
+	}
+	if name := findDecoratedFunctionName(source, "tensorleap_gt_encoder"); name != "" {
+		t.Fatalf("expected empty for missing decorator, got %q", name)
+	}
+}
+
+func TestFindDecoratedFunctionNameWithModulePrefix(t *testing.T) {
+	source := strings.Join([]string{
+		"@leapbinder_decorators.tensorleap_preprocess()",
+		"def my_preprocess():",
+		"    return []",
+	}, "\n")
+
+	if name := findDecoratedFunctionName(source, "tensorleap_preprocess"); name != "my_preprocess" {
+		t.Fatalf("expected my_preprocess, got %q", name)
+	}
+}
+
 func snapshotForRepo(root string) core.WorkspaceSnapshot {
 	return core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: root}}
 }

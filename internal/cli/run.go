@@ -91,8 +91,17 @@ func newRunCommand() *cobra.Command {
 
 			var liveRenderer observe.Sink
 			var splitScreen *observe.SplitScreenRenderer
+			var tuiScreen *observe.TUIRenderer
 
-			if isSplitScreenCapable(writer, noColor) {
+			if isTUICapable(writer, noColor) {
+				tui := observe.NewTUIRenderer(
+					writer.(*os.File),
+					observe.RenderOptions{NoColor: noColor},
+				)
+				defer tui.Close()
+				liveRenderer = tui
+				tuiScreen = tui
+			} else if isSplitScreenCapable(writer, noColor) {
 				ss := observe.NewSplitScreenRenderer(
 					writer.(*os.File),
 					observe.RenderOptions{NoColor: noColor},
@@ -217,6 +226,10 @@ func newRunCommand() *cobra.Command {
 			reportWriter := writer
 			if splitScreen != nil {
 				reportWriter = splitScreen.LeftWriter()
+			} else if tuiScreen != nil {
+				// When the TUI is active, reporter output goes to /dev/null;
+				// the TUI renders report data directly from the IterationReport.
+				reportWriter = io.Discard
 			}
 			reportOpts := report.OutputOptions{
 				NoColor: noColor,
@@ -236,7 +249,10 @@ func newRunCommand() *cobra.Command {
 					return err
 				}
 			}
-			if splitScreen != nil {
+			if tuiScreen != nil {
+				tuiScreen.SetReporter(iterationReporter)
+				iterationReporter = tuiScreen
+			} else if splitScreen != nil {
 				splitScreen.SetReporter(iterationReporter)
 				iterationReporter = splitScreen
 			}
@@ -304,12 +320,17 @@ func newRunCommand() *cobra.Command {
 					StepID:  step.ID,
 					Message: "Waiting for your approval before making changes",
 				})
-				return promptApproval(
+				result, promptErr := promptApproval(
 					promptInput,
 					cmd.OutOrStdout(),
 					stepApprovalMessage(step, snapshotValue, hasSnapshot, status, hasStatus, renderOptions.EnableColor),
 					renderOptions.EnableColor,
 				)
+				liveEvents.Emit(observe.Event{
+					Kind:   observe.EventApprovalResolved,
+					StepID: step.ID,
+				})
+				return result, promptErr
 			}
 
 			gitApproval := func(step core.EnsureStep, review gitmanager.ChangeReview) (gitmanager.ReviewDecision, error) {
@@ -328,13 +349,18 @@ func newRunCommand() *cobra.Command {
 					StepID:  step.ID,
 					Message: "Waiting for your approval to review changes",
 				})
-				return promptChangeReviewApproval(
+				decision, promptErr := promptChangeReviewApproval(
 					promptInput,
 					cmd.OutOrStdout(),
 					step,
 					review,
 					changeReviewRenderOptions{EnableColor: renderOptions.EnableColor},
 				)
+				liveEvents.Emit(observe.Event{
+					Kind:   observe.EventGitReviewFinished,
+					StepID: step.ID,
+				})
+				return decision, promptErr
 			}
 
 			engine, err := orchestrator.NewEngine(orchestrator.Dependencies{

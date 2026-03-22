@@ -69,6 +69,42 @@ var ChecklistGroups = []StepGroup{
 	},
 }
 
+// ShortStepLabel returns a concise label for a step (used by panels and status bars).
+func ShortStepLabel(stepID core.EnsureStepID) string {
+	switch stepID {
+	case core.EnsureStepRepositoryContext:
+		return "Repository context"
+	case core.EnsureStepPythonRuntime:
+		return "Python / Poetry"
+	case core.EnsureStepLeapCLIAuth:
+		return "Leap CLI auth"
+	case core.EnsureStepSecretsContext:
+		return "Secrets"
+	case core.EnsureStepLeapYAML:
+		return "leap.yaml"
+	case core.EnsureStepIntegrationScript:
+		return "leap_integration.py"
+	case core.EnsureStepIntegrationTestContract:
+		return "Test scaffold"
+	case core.EnsureStepPreprocessContract:
+		return "Preprocess"
+	case core.EnsureStepInputEncoders:
+		return "Input encoders"
+	case core.EnsureStepGroundTruthEncoders:
+		return "GT encoders"
+	case core.EnsureStepModelAcquisition:
+		return "Model acquisition"
+	case core.EnsureStepModelContract:
+		return "Model contract"
+	case core.EnsureStepHarnessValidation:
+		return "Harness validation"
+	case core.EnsureStepServerConnectivity:
+		return "Server connectivity"
+	default:
+		return string(stepID)
+	}
+}
+
 // CheckStatusToDisplay maps a core.CheckStatus to a StepDisplayStatus.
 func CheckStatusToDisplay(status core.CheckStatus) StepDisplayStatus {
 	switch status {

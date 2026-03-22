@@ -303,7 +303,7 @@ func (ss *SplitScreenRenderer) buildPanelLines() []string {
 
 		for _, stepID := range g.Steps {
 			status := ss.stepStates[stepID]
-			label := shortStepLabel(stepID)
+			label := ShortStepLabel(stepID)
 			icon, style := ss.iconAndStyle(status)
 			entry := fmt.Sprintf("%s  %s %s", ss.panelBorderChar, icon, style.Render(label))
 			lines = append(lines, ss.padLine(entry))
@@ -356,42 +356,6 @@ func visibleLen(s string) int {
 		i++
 	}
 	return count
-}
-
-// shortStepLabel returns a concise label for the panel (avoids full sentences).
-func shortStepLabel(stepID core.EnsureStepID) string {
-	switch stepID {
-	case core.EnsureStepRepositoryContext:
-		return "Repository context"
-	case core.EnsureStepPythonRuntime:
-		return "Python / Poetry"
-	case core.EnsureStepLeapCLIAuth:
-		return "Leap CLI auth"
-	case core.EnsureStepSecretsContext:
-		return "Secrets"
-	case core.EnsureStepLeapYAML:
-		return "leap.yaml"
-	case core.EnsureStepIntegrationScript:
-		return "leap_integration.py"
-	case core.EnsureStepIntegrationTestContract:
-		return "Test scaffold"
-	case core.EnsureStepPreprocessContract:
-		return "Preprocess"
-	case core.EnsureStepInputEncoders:
-		return "Input encoders"
-	case core.EnsureStepGroundTruthEncoders:
-		return "GT encoders"
-	case core.EnsureStepModelAcquisition:
-		return "Model acquisition"
-	case core.EnsureStepModelContract:
-		return "Model contract"
-	case core.EnsureStepHarnessValidation:
-		return "Harness validation"
-	case core.EnsureStepServerConnectivity:
-		return "Server connectivity"
-	default:
-		return string(stepID)
-	}
 }
 
 func makeInitialStepStates() map[core.EnsureStepID]StepDisplayStatus {

@@ -822,8 +822,8 @@ func collectGuideIssues(
 
 var guideStatusRowIssueMap = map[string]core.IssueCode{
 	"tensorleap_preprocess":       core.IssueCodePreprocessFunctionMissing,
-	"tensorleap_input_encoder":    core.IssueCodeInputEncoderMissing,
-	"tensorleap_gt_encoder":       core.IssueCodeGTEncoderMissing,
+	"tensorleap_input_encoder":    core.IssueCodeIntegrationTestMissingRequiredCalls,
+	"tensorleap_gt_encoder":       core.IssueCodeIntegrationTestMissingRequiredCalls,
 	"tensorleap_load_model":       core.IssueCodeLoadModelDecoratorMissing,
 	"tensorleap_integration_test": core.IssueCodeIntegrationTestDecoratorMissing,
 	"tensorleap_custom_loss":      core.IssueCodeIntegrationTestMissingRequiredCalls,

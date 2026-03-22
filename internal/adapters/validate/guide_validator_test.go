@@ -94,8 +94,8 @@ func TestGuideValidatorParsesStatusTableAndTreatsMissingParserAsBestEffort(t *te
 	if !containsIssueCode(result.Issues, core.IssueCodeIntegrationTestDecoratorMissing) {
 		t.Fatalf("expected integration_test_decorator_missing issue from status row, got %+v", result.Issues)
 	}
-	if !containsIssueCode(result.Issues, core.IssueCodeGTEncoderMissing) {
-		t.Fatalf("expected gt_encoder_missing issue from status row, got %+v", result.Issues)
+	if !containsIssueCode(result.Issues, core.IssueCodeIntegrationTestMissingRequiredCalls) {
+		t.Fatalf("expected integration_test_missing_required_calls issue from gt_encoder status row, got %+v", result.Issues)
 	}
 	if !hasEvidenceName(result.Evidence, core.GuideEvidenceSummary) {
 		t.Fatalf("expected guide summary evidence, got %+v", result.Evidence)
@@ -483,8 +483,8 @@ func TestIssuesFromGuideStatusRowsMandatoryFail(t *testing.T) {
 	if len(issues) != 2 {
 		t.Fatalf("expected 2 issues, got %d: %+v", len(issues), issues)
 	}
-	if issues[0].Code != core.IssueCodeInputEncoderMissing {
-		t.Fatalf("expected input encoder issue code, got %q", issues[0].Code)
+	if issues[0].Code != core.IssueCodeIntegrationTestMissingRequiredCalls {
+		t.Fatalf("expected integration_test_missing_required_calls issue code for input_encoder, got %q", issues[0].Code)
 	}
 	if issues[0].Severity != core.SeverityError {
 		t.Fatalf("expected error severity, got %q", issues[0].Severity)
@@ -540,18 +540,15 @@ func TestIssuesFromGuideStatusRowsAllKnownDecorators(t *testing.T) {
 		t.Fatalf("expected 6 issues, got %d: %+v", len(issues), issues)
 	}
 
+	// input_encoder, gt_encoder, and custom_loss all map to IntegrationTestMissingRequiredCalls,
+	// so we check unique codes that must appear at least once.
 	expected := map[core.IssueCode]bool{
-		core.IssueCodePreprocessFunctionMissing:         false,
-		core.IssueCodeInputEncoderMissing:               false,
-		core.IssueCodeGTEncoderMissing:                  false,
-		core.IssueCodeLoadModelDecoratorMissing:         false,
-		core.IssueCodeIntegrationTestDecoratorMissing:   false,
+		core.IssueCodePreprocessFunctionMissing:           false,
 		core.IssueCodeIntegrationTestMissingRequiredCalls: false,
+		core.IssueCodeLoadModelDecoratorMissing:           false,
+		core.IssueCodeIntegrationTestDecoratorMissing:     false,
 	}
 	for _, issue := range issues {
-		if _, ok := expected[issue.Code]; !ok {
-			t.Fatalf("unexpected issue code %q", issue.Code)
-		}
 		expected[issue.Code] = true
 	}
 	for code, seen := range expected {

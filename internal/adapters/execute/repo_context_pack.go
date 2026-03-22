@@ -298,6 +298,8 @@ func issueRelevantToStep(step core.EnsureStepID, issue core.Issue) bool {
 		return issue.Scope == core.IssueScopeInputEncoder
 	case core.EnsureStepGroundTruthEncoders:
 		return issue.Scope == core.IssueScopeGroundTruthEncoder
+	// Both contract (scaffold) and wiring steps share integration-test scope
+	// because the original step was split in two; both need the same issues.
 	case core.EnsureStepIntegrationTestContract, core.EnsureStepIntegrationTestWiring:
 		return issue.Scope == core.IssueScopeIntegrationTest
 	case core.EnsureStepHarnessValidation:
@@ -434,6 +436,8 @@ func applyRepoContextStepSlice(step core.EnsureStepID, context *core.AgentRepoCo
 		} else {
 			context.RequiredInputSymbols = nil
 		}
+	// Both contract (scaffold) and wiring steps share the same context slice
+	// after the integration-test step was split in two.
 	case core.EnsureStepIntegrationTestContract, core.EnsureStepIntegrationTestWiring:
 		context.ModelCandidates = nil
 		context.SelectedModelPath = ""

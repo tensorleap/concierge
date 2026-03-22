@@ -71,6 +71,7 @@ var preferredEnsureStepByIssueCode = map[IssueCode]EnsureStepID{
 	IssueCodeLoadModelDecoratorMissing:              EnsureStepModelContract,
 	IssueCodeIntegrationTestExecutionFailed:         EnsureStepIntegrationTestWiring,
 	IssueCodeIntegrationTestMissingRequiredCalls:    EnsureStepIntegrationTestWiring,
+	IssueCodeMandatoryDecoratorFailing:              EnsureStepIntegrationTestWiring,
 	IssueCodeIntegrationTestCallsUnknownInterfaces:  EnsureStepIntegrationTestWiring,
 	IssueCodeIntegrationTestDirectDatasetAccess:     EnsureStepIntegrationTestWiring,
 	IssueCodeIntegrationTestIllegalBodyLogic:        EnsureStepIntegrationTestWiring,

@@ -75,6 +75,7 @@ const (
 	IssueCodeLoadModelDecoratorMissing              IssueCode = "load_model_decorator_missing"
 	IssueCodeIntegrationTestExecutionFailed         IssueCode = "integration_test_execution_failed"
 	IssueCodeIntegrationTestMissingRequiredCalls    IssueCode = "integration_test_missing_required_calls"
+	IssueCodeMandatoryDecoratorFailing              IssueCode = "mandatory_decorator_failing"
 	IssueCodeIntegrationTestCallsUnknownInterfaces  IssueCode = "integration_test_calls_unknown_interfaces"
 	IssueCodeIntegrationTestDirectDatasetAccess     IssueCode = "integration_test_direct_dataset_access"
 	IssueCodeIntegrationTestIllegalBodyLogic        IssueCode = "integration_test_illegal_body_logic"
@@ -205,6 +206,7 @@ var knownIssueCodes = []IssueCode{
 	IssueCodeLoadModelDecoratorMissing,
 	IssueCodeIntegrationTestExecutionFailed,
 	IssueCodeIntegrationTestMissingRequiredCalls,
+	IssueCodeMandatoryDecoratorFailing,
 	IssueCodeIntegrationTestCallsUnknownInterfaces,
 	IssueCodeIntegrationTestDirectDatasetAccess,
 	IssueCodeIntegrationTestIllegalBodyLogic,

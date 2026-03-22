@@ -84,6 +84,10 @@ func (r *HarnessRunner) Run(ctx context.Context, snapshot core.WorkspaceSnapshot
 		{Name: "runtime.stderr", Value: commandResult.Stderr},
 	}
 	if err != nil {
+		// Return (result, nil) with an issue rather than (zero, err) so the
+		// engine loop treats harness failures as issues-as-data. Callers must
+		// inspect result.Issues / issue codes rather than relying on a non-nil
+		// Go error to detect harness problems.
 		return HarnessRunResult{
 			Enabled: true,
 			Issues: []core.Issue{{

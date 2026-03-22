@@ -56,8 +56,8 @@ type WorkspaceSnapshot struct {
 	FileHashes              map[string]string       `json:"fileHashes,omitempty"`
 	Runtime                 RuntimeState            `json:"runtime,omitempty"`
 	RuntimeProfile          *LocalRuntimeProfile    `json:"runtimeProfile,omitempty"`
-	LeapCLI                     LeapCLIState            `json:"leapCli,omitempty"`
-	CarriedValidationIssues     []Issue                 `json:"carriedValidationIssues,omitempty"`
+	LeapCLI                 LeapCLIState            `json:"leapCli,omitempty"`
+	CarriedValidationIssues []Issue                 `json:"carriedValidationIssues,omitempty"`
 }
 
 // RuntimeState captures lightweight runtime/tooling fingerprints.
@@ -432,23 +432,23 @@ func (s IntegrationStatus) Ready() bool {
 
 // AgentRepoContext captures deterministic, step-scoped repository facts for agent tasks.
 type AgentRepoContext struct {
-	RepoRoot                   string   `json:"repoRoot"`
-	EntryFile                  string   `json:"entryFile,omitempty"`
-	LeapYAMLBoundary           string   `json:"leapYamlBoundary,omitempty"`
-	RuntimeKind                string   `json:"runtimeKind,omitempty"`
-	RuntimeInterpreter         string   `json:"runtimeInterpreter,omitempty"`
-	RuntimeStatus              string   `json:"runtimeStatus,omitempty"`
-	SelectedModelPath          string   `json:"selectedModelPath,omitempty"`
+	RepoRoot                   string                `json:"repoRoot"`
+	EntryFile                  string                `json:"entryFile,omitempty"`
+	LeapYAMLBoundary           string                `json:"leapYamlBoundary,omitempty"`
+	RuntimeKind                string                `json:"runtimeKind,omitempty"`
+	RuntimeInterpreter         string                `json:"runtimeInterpreter,omitempty"`
+	RuntimeStatus              string                `json:"runtimeStatus,omitempty"`
+	SelectedModelPath          string                `json:"selectedModelPath,omitempty"`
 	ModelAcquisitionPlan       *ModelAcquisitionPlan `json:"modelAcquisitionPlan,omitempty"`
-	RequiredInputSymbols       []string `json:"requiredInputSymbols,omitempty"`
-	RequiredGroundTruthSymbols []string `json:"requiredGroundTruthSymbols,omitempty"`
-	ModelCandidates            []string `json:"modelCandidates,omitempty"`
-	ReadyModelArtifacts        []string `json:"readyModelArtifacts,omitempty"`
-	ModelAcquisitionLeads      []string `json:"modelAcquisitionLeads,omitempty"`
-	DecoratorInventory         []string `json:"decoratorInventory,omitempty"`
-	IntegrationTestCalls       []string `json:"integrationTestCalls,omitempty"`
-	BlockingIssues             []string `json:"blockingIssues,omitempty"`
-	ValidationFindings         []string `json:"validationFindings,omitempty"`
+	RequiredInputSymbols       []string              `json:"requiredInputSymbols,omitempty"`
+	RequiredGroundTruthSymbols []string              `json:"requiredGroundTruthSymbols,omitempty"`
+	ModelCandidates            []string              `json:"modelCandidates,omitempty"`
+	ReadyModelArtifacts        []string              `json:"readyModelArtifacts,omitempty"`
+	ModelAcquisitionLeads      []string              `json:"modelAcquisitionLeads,omitempty"`
+	DecoratorInventory         []string              `json:"decoratorInventory,omitempty"`
+	IntegrationTestCalls       []string              `json:"integrationTestCalls,omitempty"`
+	BlockingIssues             []string              `json:"blockingIssues,omitempty"`
+	ValidationFindings         []string              `json:"validationFindings,omitempty"`
 }
 
 // AuthoringRecommendation captures deterministic, step-scoped remediation guidance.

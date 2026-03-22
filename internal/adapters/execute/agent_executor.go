@@ -134,8 +134,9 @@ func (e *AgentExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnap
 		return core.ExecutionResult{}, err
 	}
 
-	carriedValidation := core.ValidationResult{Issues: snapshot.CarriedValidationIssues}
-	repoContext, err := BuildAgentRepoContext(canonicalStep.ID, taskSnapshot, taskStatus, carriedValidation)
+	// Carried issues are already merged into taskStatus.Issues above, so pass
+	// an empty ValidationResult to avoid double-counting them in BlockingIssues.
+	repoContext, err := BuildAgentRepoContext(canonicalStep.ID, taskSnapshot, taskStatus, core.ValidationResult{})
 	if err != nil {
 		return core.ExecutionResult{}, err
 	}

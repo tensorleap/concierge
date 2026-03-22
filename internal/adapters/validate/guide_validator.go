@@ -821,12 +821,21 @@ func collectGuideIssues(
 }
 
 var guideStatusRowIssueMap = map[string]core.IssueCode{
-	"tensorleap_preprocess":        core.IssueCodePreprocessFunctionMissing,
-	"tensorleap_input_encoder":     core.IssueCodeInputEncoderMissing,
-	"tensorleap_gt_encoder":        core.IssueCodeGTEncoderMissing,
-	"tensorleap_load_model":        core.IssueCodeLoadModelDecoratorMissing,
-	"tensorleap_integration_test":  core.IssueCodeIntegrationTestDecoratorMissing,
-	"tensorleap_custom_loss":       core.IssueCodeIntegrationTestMissingRequiredCalls,
+	"tensorleap_preprocess":       core.IssueCodePreprocessFunctionMissing,
+	"tensorleap_input_encoder":    core.IssueCodeInputEncoderMissing,
+	"tensorleap_gt_encoder":       core.IssueCodeGTEncoderMissing,
+	"tensorleap_load_model":       core.IssueCodeLoadModelDecoratorMissing,
+	"tensorleap_integration_test": core.IssueCodeIntegrationTestDecoratorMissing,
+	"tensorleap_custom_loss":      core.IssueCodeIntegrationTestMissingRequiredCalls,
+}
+
+var guideStatusRowScopeMap = map[string]core.IssueScope{
+	"tensorleap_preprocess":       core.IssueScopePreprocess,
+	"tensorleap_input_encoder":    core.IssueScopeInputEncoder,
+	"tensorleap_gt_encoder":       core.IssueScopeGroundTruthEncoder,
+	"tensorleap_load_model":       core.IssueScopeModel,
+	"tensorleap_integration_test": core.IssueScopeIntegrationTest,
+	"tensorleap_custom_loss":      core.IssueScopeIntegrationTest,
 }
 
 func issuesFromGuideStatusRows(local core.GuideLocalRunSummary) []core.Issue {
@@ -846,13 +855,19 @@ func issuesFromGuideStatusRows(local core.GuideLocalRunSummary) []core.Issue {
 		normalizedName := strings.ToLower(name)
 		code, ok := guideStatusRowIssueMap[normalizedName]
 		if !ok {
-			code = core.IssueCodeIntegrationTestMissingRequiredCalls
+			// Unknown/unmapped decorator — use a generic fallback distinct from
+			// the "known required call is missing" code.
+			code = core.IssueCodeMandatoryDecoratorFailing
+		}
+		scope := guideStatusRowScopeMap[normalizedName]
+		if scope == "" {
+			scope = core.IssueScopeValidation
 		}
 		issues = append(issues, core.Issue{
 			Code:     code,
 			Message:  fmt.Sprintf("guide status table reports mandatory decorator @%s is not yet added to the integration", name),
 			Severity: core.SeverityError,
-			Scope:    core.IssueScopeValidation,
+			Scope:    scope,
 		})
 	}
 	return issues

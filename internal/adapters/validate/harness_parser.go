@@ -28,14 +28,21 @@ type HarnessEvent struct {
 	Finite        *bool  `json:"finite,omitempty"`
 }
 
-// ParseHarnessEvents parses NDJSON harness output.
-func ParseHarnessEvents(raw []byte) ([]HarnessEvent, error) {
-	events := make([]HarnessEvent, 0)
+// ParseHarnessResult captures both valid NDJSON events and skipped non-JSON lines.
+type ParseHarnessResult struct {
+	Events []HarnessEvent
+	Noise  []string // non-JSON lines that were skipped
+}
+
+// ParseHarnessEvents parses NDJSON harness output, skipping non-JSON lines.
+// Non-JSON lines are collected as Noise for diagnostics.
+// An error is returned only when the output contains noise but zero valid events.
+func ParseHarnessEvents(raw []byte) (ParseHarnessResult, error) {
+	var events []HarnessEvent
+	var noise []string
 
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
-	lineNo := 0
 	for scanner.Scan() {
-		lineNo++
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
@@ -43,16 +50,21 @@ func ParseHarnessEvents(raw []byte) ([]HarnessEvent, error) {
 
 		var event HarnessEvent
 		if err := json.Unmarshal([]byte(line), &event); err != nil {
-			return nil, fmt.Errorf("validate.harness.parse: line %d: %w", lineNo, err)
+			noise = append(noise, line)
+			continue
 		}
 
 		events = append(events, event)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("validate.harness.scan: %w", err)
+		return ParseHarnessResult{}, fmt.Errorf("validate.harness.scan: %w", err)
 	}
 
-	return events, nil
+	if len(events) == 0 && len(noise) > 0 {
+		return ParseHarnessResult{Noise: noise}, fmt.Errorf("validate.harness.parse: no valid NDJSON events found; %d non-JSON lines skipped", len(noise))
+	}
+
+	return ParseHarnessResult{Events: events, Noise: noise}, nil
 }
 
 func messageOrDefault(message, fallback string) string {

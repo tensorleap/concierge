@@ -23,8 +23,8 @@ func TestFixtureCaseMissingIntegrationTestCalls_SelectsIntegrationTestStep(t *te
 	if err != nil {
 		t.Fatalf("BuildIntegrationTestAuthoringRecommendation failed: %v", err)
 	}
-	if recommendation.StepID != core.EnsureStepIntegrationTestContract {
-		t.Fatalf("expected recommendation step %q, got %q", core.EnsureStepIntegrationTestContract, recommendation.StepID)
+	if recommendation.StepID != core.EnsureStepIntegrationTestWiring {
+		t.Fatalf("expected recommendation step %q, got %q", core.EnsureStepIntegrationTestWiring, recommendation.StepID)
 	}
 	if recommendation.Target != entry.ExpectedMissingIntegrationCall {
 		t.Fatalf("expected recommendation target %q, got %+v", entry.ExpectedMissingIntegrationCall, recommendation)

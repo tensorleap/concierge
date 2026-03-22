@@ -49,7 +49,8 @@ func BuildInputEncoderAuthoringRecommendation(
 		"Register each encoder with the exact required Tensorleap symbol name; do not substitute raw model tensor aliases such as \"images\" for required symbols such as \"image\".",
 		"The first encoder argument is the Tensorleap sample_id matching PreprocessResponse.sample_id_type; do not treat it as a positional index into preprocess.sample_ids.",
 		"Keep encoder output shapes and dtypes compatible with model inference inputs.",
-		"Do not modify @tensorleap_gt_encoder definitions or integration-test wiring in this step.",
+		"Do not modify @tensorleap_gt_encoder definitions in this step.",
+		"After adding each encoder, wire it into the @tensorleap_integration_test function body so the code_loader status table sees it exercised.",
 	}
 	if selectedModelPath := strings.TrimSpace(snapshot.SelectedModelPath); selectedModelPath != "" {
 		constraints = append(constraints, fmt.Sprintf("Use model path %q as the shape-contract reference unless repository evidence proves it invalid.", selectedModelPath))

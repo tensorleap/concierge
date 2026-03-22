@@ -100,7 +100,7 @@ func TestPlannerDefersIntegrationTestUntilEncoderMappingConfirmed(t *testing.T) 
 	adapter := NewDeterministicPlanner()
 	status := core.IntegrationStatus{
 		Issues: []core.Issue{
-			{Code: core.IssueCodeIntegrationTestMissing, Severity: core.SeverityError},
+			{Code: core.IssueCodeIntegrationTestMissingRequiredCalls, Severity: core.SeverityError},
 		},
 		Contracts: &core.IntegrationContracts{
 			InputGTDiscovery: &core.InputGTDiscoveryArtifacts{
@@ -119,8 +119,8 @@ func TestPlannerDefersIntegrationTestUntilEncoderMappingConfirmed(t *testing.T) 
 	if plan.Primary.ID != core.EnsureStepInputEncoders {
 		t.Fatalf("expected primary step %q, got %q", core.EnsureStepInputEncoders, plan.Primary.ID)
 	}
-	if len(plan.Additional) == 0 || plan.Additional[0].ID != core.EnsureStepIntegrationTestContract {
-		t.Fatalf("expected integration-test step to remain queued after input-encoder gating, got %+v", plan.Additional)
+	if len(plan.Additional) == 0 || plan.Additional[0].ID != core.EnsureStepIntegrationTestWiring {
+		t.Fatalf("expected integration-test wiring step to remain queued after input-encoder gating, got %+v", plan.Additional)
 	}
 }
 
@@ -210,7 +210,7 @@ func TestPlannerDefersModelAcquisitionBehindIntegrationTestWhenArtifactAlreadyEx
 	if err != nil {
 		t.Fatalf("Plan returned error: %v", err)
 	}
-	if plan.Primary.ID != core.EnsureStepIntegrationTestContract {
-		t.Fatalf("expected primary step %q, got %q", core.EnsureStepIntegrationTestContract, plan.Primary.ID)
+	if plan.Primary.ID != core.EnsureStepIntegrationTestWiring {
+		t.Fatalf("expected primary step %q, got %q", core.EnsureStepIntegrationTestWiring, plan.Primary.ID)
 	}
 }

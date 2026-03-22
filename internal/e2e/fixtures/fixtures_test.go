@@ -189,6 +189,7 @@ func TestFixturePlannerPrimaryStepPreVariant(t *testing.T) {
 		core.EnsureStepInputEncoders:           {},
 		core.EnsureStepGroundTruthEncoders:     {},
 		core.EnsureStepIntegrationTestContract: {},
+		core.EnsureStepIntegrationTestWiring:   {},
 	}
 
 	planAdapter := planner.NewDeterministicPlanner()

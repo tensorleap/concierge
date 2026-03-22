@@ -163,18 +163,18 @@ func TestEngineRunStopsAtMaxIterations(t *testing.T) {
 	harness := newRunHarness([]core.EnsureStepID{core.EnsureStepLeapYAML})
 	engine := newRunTestEngine(t, harness)
 
-	result, err := engine.Run(context.Background(), core.SnapshotRequest{}, RunOptions{MaxIterations: 3})
+	result, err := engine.Run(context.Background(), core.SnapshotRequest{}, RunOptions{MaxIterations: 2})
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
 	if result.StopReason != RunStopReasonMaxIterations {
 		t.Fatalf("expected stop reason %q, got %q", RunStopReasonMaxIterations, result.StopReason)
 	}
-	if len(result.Reports) != 3 {
-		t.Fatalf("expected three reports, got %d", len(result.Reports))
+	if len(result.Reports) != 2 {
+		t.Fatalf("expected two reports, got %d", len(result.Reports))
 	}
-	if harness.iteration != 3 {
-		t.Fatalf("expected three iterations, got %d", harness.iteration)
+	if harness.iteration != 2 {
+		t.Fatalf("expected two iterations, got %d", harness.iteration)
 	}
 }
 
@@ -468,6 +468,47 @@ func TestEngineRunSeedsFirstPlanningRoundWithInitialBlockingIssues(t *testing.T)
 	}
 	if got := result.Reports[0].Step.ID; got != core.EnsureStepPreprocessContract {
 		t.Fatalf("expected first step %q after seeding initial blockers, got %q", core.EnsureStepPreprocessContract, got)
+	}
+}
+
+func TestEngineRunStopsOnNoProgress(t *testing.T) {
+	// Simulate a step that is always selected but never applies changes.
+	harness := newRunHarness([]core.EnsureStepID{core.EnsureStepIntegrationTestContract})
+	engine := newRunTestEngine(t, harness)
+
+	result, err := engine.Run(context.Background(), core.SnapshotRequest{}, RunOptions{MaxIterations: 10})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if result.StopReason != RunStopReasonNoProgress {
+		t.Fatalf("expected stop reason %q, got %q", RunStopReasonNoProgress, result.StopReason)
+	}
+	// First iteration sets lastStepID; 2 more consecutive no-progress → 3 total.
+	if len(result.Reports) != 3 {
+		t.Fatalf("expected 3 reports (1 initial + 2 consecutive no-progress), got %d", len(result.Reports))
+	}
+}
+
+func TestEngineRunResetsNoProgressOnDifferentStep(t *testing.T) {
+	// Alternating steps should not trigger no-progress detection.
+	harness := newRunHarness([]core.EnsureStepID{
+		core.EnsureStepLeapYAML,
+		core.EnsureStepIntegrationScript,
+		core.EnsureStepLeapYAML,
+		core.EnsureStepIntegrationScript,
+		core.EnsureStepComplete,
+	})
+	engine := newRunTestEngine(t, harness)
+
+	result, err := engine.Run(context.Background(), core.SnapshotRequest{}, RunOptions{MaxIterations: 10})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if result.StopReason != RunStopReasonSuccess {
+		t.Fatalf("expected stop reason %q, got %q", RunStopReasonSuccess, result.StopReason)
+	}
+	if len(result.Reports) != 5 {
+		t.Fatalf("expected 5 reports, got %d", len(result.Reports))
 	}
 }
 

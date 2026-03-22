@@ -14,7 +14,7 @@ func BuildIntegrationTestAuthoringRecommendation(
 	status core.IntegrationStatus,
 ) (core.AuthoringRecommendation, error) {
 	recommendation := core.AuthoringRecommendation{
-		StepID: core.EnsureStepIntegrationTestContract,
+		StepID: core.EnsureStepIntegrationTestWiring,
 		Constraints: []string{
 			"Repair only @tensorleap_integration_test wiring and keep the body thin and declarative.",
 			"Do not modify preprocess subset semantics, encoder implementations, or unrelated training/business logic in this step.",

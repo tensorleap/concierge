@@ -443,7 +443,7 @@ func stepGuidanceLines(stepID core.EnsureStepID, issues []core.Issue) []string {
 		return []string{
 			"Next step: verify `poetry env info --executable`, `poetry check`, and `poetry run python --version`, then rerun `concierge run`.",
 		}
-	case core.EnsureStepIntegrationTestContract:
+	case core.EnsureStepIntegrationTestContract, core.EnsureStepIntegrationTestWiring:
 		if hasIssueCode(issues, core.IssueCodeIntegrationTestMissingRequiredCalls) {
 			return []string{
 				"Next step: wire the missing decorated input/load-model/ground-truth calls into `@tensorleap_integration_test`, then rerun `concierge run`.",

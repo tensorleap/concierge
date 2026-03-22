@@ -96,7 +96,7 @@ func TestResolveAgentAllowedFilesTruncatesModelCandidates(t *testing.T) {
 }
 
 func TestScopePolicyForIntegrationTestUsesNarrowWiringSection(t *testing.T) {
-	policy, err := PolicyForStep(core.EnsureStepIntegrationTestContract, core.WorkspaceSnapshot{}, core.IntegrationStatus{})
+	policy, err := PolicyForStep(core.EnsureStepIntegrationTestWiring, core.WorkspaceSnapshot{}, core.IntegrationStatus{})
 	if err != nil {
 		t.Fatalf("PolicyForStep returned error: %v", err)
 	}

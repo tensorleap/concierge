@@ -166,7 +166,7 @@ func enforceEncoderBeforeIntegrationOrder(status core.IntegrationStatus, steps [
 	if len(steps) == 0 {
 		return steps
 	}
-	if steps[0].ID != core.EnsureStepIntegrationTestContract {
+	if steps[0].ID != core.EnsureStepIntegrationTestWiring {
 		return steps
 	}
 	if status.Contracts == nil || status.Contracts.ConfirmedMapping != nil {
@@ -204,7 +204,7 @@ func deferModelStepWhileAuthoring(status core.IntegrationStatus, steps []core.En
 	for _, preferred := range []core.EnsureStepID{
 		core.EnsureStepInputEncoders,
 		core.EnsureStepGroundTruthEncoders,
-		core.EnsureStepIntegrationTestContract,
+		core.EnsureStepIntegrationTestWiring,
 	} {
 		index := indexOfStep(steps, preferred)
 		if index <= 0 {

@@ -800,23 +800,76 @@ func collectGuideIssues(
 			issues = append(issues, issue)
 		}
 		issues = append(issues, payloadIssues...)
-		return issues
-	}
-
-	if summary.Local.MappingFailure && !hasSpecificIntegrationTestIssue(astIssues) {
-		issues = append(issues, core.Issue{
-			Code:     core.IssueCodeIntegrationTestExecutionFailed,
-			Message:  "the local validator reported that @tensorleap_integration_test failed in mapping mode",
-			Severity: core.SeverityError,
-			Scope:    core.IssueScopeIntegrationTest,
-		})
-	}
-	if strings.TrimSpace(summary.Local.CrashFunction) != "" {
-		if issue, ok := issueFromGuideCrashFunction(summary.Local.CrashFunction, localResult, parserResult); ok {
-			issues = append(issues, issue)
+	} else {
+		if summary.Local.MappingFailure && !hasSpecificIntegrationTestIssue(astIssues) {
+			issues = append(issues, core.Issue{
+				Code:     core.IssueCodeIntegrationTestExecutionFailed,
+				Message:  "the local validator reported that @tensorleap_integration_test failed in mapping mode",
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopeIntegrationTest,
+			})
+		}
+		if strings.TrimSpace(summary.Local.CrashFunction) != "" {
+			if issue, ok := issueFromGuideCrashFunction(summary.Local.CrashFunction, localResult, parserResult); ok {
+				issues = append(issues, issue)
+			}
 		}
 	}
 
+	issues = append(issues, issuesFromGuideStatusRows(summary.Local)...)
+	return issues
+}
+
+var guideStatusRowIssueMap = map[string]core.IssueCode{
+	"tensorleap_preprocess":       core.IssueCodePreprocessFunctionMissing,
+	"tensorleap_input_encoder":    core.IssueCodeIntegrationTestMissingRequiredCalls,
+	"tensorleap_gt_encoder":       core.IssueCodeIntegrationTestMissingRequiredCalls,
+	"tensorleap_load_model":       core.IssueCodeLoadModelDecoratorMissing,
+	"tensorleap_integration_test": core.IssueCodeIntegrationTestDecoratorMissing,
+	"tensorleap_custom_loss":      core.IssueCodeIntegrationTestMissingRequiredCalls,
+}
+
+var guideStatusRowScopeMap = map[string]core.IssueScope{
+	"tensorleap_preprocess":       core.IssueScopePreprocess,
+	"tensorleap_input_encoder":    core.IssueScopeInputEncoder,
+	"tensorleap_gt_encoder":       core.IssueScopeGroundTruthEncoder,
+	"tensorleap_load_model":       core.IssueScopeModel,
+	"tensorleap_integration_test": core.IssueScopeIntegrationTest,
+	"tensorleap_custom_loss":      core.IssueScopeIntegrationTest,
+}
+
+func issuesFromGuideStatusRows(local core.GuideLocalRunSummary) []core.Issue {
+	if local.MandatoryReady || len(local.StatusRows) == 0 {
+		return nil
+	}
+
+	var issues []core.Issue
+	for _, row := range local.StatusRows {
+		if row.Status != "fail" {
+			continue
+		}
+		name := strings.TrimSpace(row.Name)
+		if strings.Contains(strings.ToLower(name), "(optional)") {
+			continue
+		}
+		normalizedName := strings.ToLower(name)
+		code, ok := guideStatusRowIssueMap[normalizedName]
+		if !ok {
+			// Unknown/unmapped decorator — use a generic fallback distinct from
+			// the "known required call is missing" code.
+			code = core.IssueCodeMandatoryDecoratorFailing
+		}
+		scope := guideStatusRowScopeMap[normalizedName]
+		if scope == "" {
+			scope = core.IssueScopeValidation
+		}
+		issues = append(issues, core.Issue{
+			Code:     code,
+			Message:  fmt.Sprintf("guide status table reports mandatory decorator @%s is not passing", name),
+			Severity: core.SeverityError,
+			Scope:    scope,
+		})
+	}
 	return issues
 }
 

@@ -12,6 +12,94 @@ import (
 	"github.com/tensorleap/concierge/internal/core"
 )
 
+func TestHarnessRunnerCommandFailureBecomesIssue(t *testing.T) {
+	t.Setenv(HarnessEnableEnvVar, "1")
+	runner := NewHarnessRunner()
+	runner.scriptPath = writeHarnessStubScript(t)
+	runner.runtimeRunner = &PythonRuntimeRunner{
+		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
+			return []byte("some stdout"), []byte("ImportError: No module named code_loader"), errors.New("exit status 1")
+		},
+	}
+
+	result, err := runner.Run(context.Background(), core.WorkspaceSnapshot{
+		Repository:     core.RepositoryState{Root: t.TempDir()},
+		RuntimeProfile: &core.LocalRuntimeProfile{InterpreterPath: "/tmp/venv/bin/python"},
+	})
+	if err != nil {
+		t.Fatalf("expected no Go error, got %v", err)
+	}
+	if !result.Enabled {
+		t.Fatal("expected harness to be enabled")
+	}
+	if !hasIssueCode(result.Issues, core.IssueCodeHarnessValidationFailed) {
+		t.Fatalf("expected harness failure issue, got %+v", result.Issues)
+	}
+	if !strings.Contains(result.Issues[0].Message, "harness execution failed") {
+		t.Fatalf("expected execution failure message, got %q", result.Issues[0].Message)
+	}
+	if got := evidenceValue(result.Evidence, "runtime.stderr"); got == "" {
+		t.Fatal("expected runtime.stderr evidence")
+	}
+}
+
+func TestHarnessRunnerParseFailureBecomesIssue(t *testing.T) {
+	t.Setenv(HarnessEnableEnvVar, "1")
+	runner := NewHarnessRunner()
+	runner.scriptPath = writeHarnessStubScript(t)
+	runner.runtimeRunner = &PythonRuntimeRunner{
+		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
+			return []byte("Traceback (most recent call last):\nModuleNotFoundError: boom\n"), nil, nil
+		},
+	}
+
+	result, err := runner.Run(context.Background(), core.WorkspaceSnapshot{
+		Repository:     core.RepositoryState{Root: t.TempDir()},
+		RuntimeProfile: &core.LocalRuntimeProfile{InterpreterPath: "/tmp/venv/bin/python"},
+	})
+	if err != nil {
+		t.Fatalf("expected no Go error, got %v", err)
+	}
+	if !result.Enabled {
+		t.Fatal("expected harness to be enabled")
+	}
+	if !hasIssueCode(result.Issues, core.IssueCodeHarnessValidationFailed) {
+		t.Fatalf("expected harness parse failure issue, got %+v", result.Issues)
+	}
+	if !strings.Contains(result.Issues[0].Message, "harness output parse failed") {
+		t.Fatalf("expected parse failure message, got %q", result.Issues[0].Message)
+	}
+	if got := evidenceValue(result.Evidence, "harness.stdout_noise"); got == "" {
+		t.Fatal("expected harness.stdout_noise evidence")
+	}
+}
+
+func TestHarnessRunnerStdoutNoiseIsRecordedAsEvidence(t *testing.T) {
+	t.Setenv(HarnessEnableEnvVar, "1")
+	runner := NewHarnessRunner()
+	runner.scriptPath = writeHarnessStubScript(t)
+	runner.runtimeRunner = &PythonRuntimeRunner{
+		runCommand: func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
+			stdout := "WARNING: numpy deprecation\n{\"event\":\"summary\",\"status\":\"ok\",\"message\":\"done\"}\n"
+			return []byte(stdout), nil, nil
+		},
+	}
+
+	result, err := runner.Run(context.Background(), core.WorkspaceSnapshot{
+		Repository:     core.RepositoryState{Root: t.TempDir()},
+		RuntimeProfile: &core.LocalRuntimeProfile{InterpreterPath: "/tmp/venv/bin/python"},
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(result.Events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(result.Events))
+	}
+	if got := evidenceValue(result.Evidence, "harness.stdout_noise"); got != "WARNING: numpy deprecation" {
+		t.Fatalf("expected noise evidence, got %q", got)
+	}
+}
+
 func TestHarnessRunnerTimeout(t *testing.T) {
 	t.Setenv(HarnessEnableEnvVar, "1")
 	runner := NewHarnessRunner()
@@ -24,15 +112,21 @@ func TestHarnessRunnerTimeout(t *testing.T) {
 		},
 	}
 
-	_, err := runner.Run(context.Background(), core.WorkspaceSnapshot{
+	result, err := runner.Run(context.Background(), core.WorkspaceSnapshot{
 		Repository:     core.RepositoryState{Root: t.TempDir()},
 		RuntimeProfile: &core.LocalRuntimeProfile{InterpreterPath: "/tmp/venv/bin/python"},
 	})
-	if err == nil {
-		t.Fatal("expected timeout error")
+	if err != nil {
+		t.Fatalf("expected no Go error after timeout, got %v", err)
 	}
-	if !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
-		t.Fatalf("expected deadline exceeded, got %v", err)
+	if !result.Enabled {
+		t.Fatal("expected harness to be enabled")
+	}
+	if !hasIssueCode(result.Issues, core.IssueCodeHarnessValidationFailed) {
+		t.Fatalf("expected harness failure issue, got %+v", result.Issues)
+	}
+	if !strings.Contains(result.Issues[0].Message, "harness execution failed") {
+		t.Fatalf("expected execution failure message, got %q", result.Issues[0].Message)
 	}
 }
 

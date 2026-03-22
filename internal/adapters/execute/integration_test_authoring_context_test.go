@@ -30,8 +30,8 @@ func TestBuildIntegrationTestAuthoringRecommendationSeparatesMissingCallsFromBod
 		t.Fatalf("BuildIntegrationTestAuthoringRecommendation returned error: %v", err)
 	}
 
-	if recommendation.StepID != core.EnsureStepIntegrationTestContract {
-		t.Fatalf("expected step %q, got %q", core.EnsureStepIntegrationTestContract, recommendation.StepID)
+	if recommendation.StepID != core.EnsureStepIntegrationTestWiring {
+		t.Fatalf("expected step %q, got %q", core.EnsureStepIntegrationTestWiring, recommendation.StepID)
 	}
 	if recommendation.Target != "image" {
 		t.Fatalf("expected primary target %q, got %q", "image", recommendation.Target)

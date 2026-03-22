@@ -205,9 +205,9 @@ func TestAgentExecutorSupportsIntegrationTestContractStep(t *testing.T) {
 		result: agent.AgentResult{Applied: true, Summary: "integration-test repaired"},
 	}
 	executor := NewAgentExecutor(runner)
-	step, ok := core.EnsureStepByID(core.EnsureStepIntegrationTestContract)
+	step, ok := core.EnsureStepByID(core.EnsureStepIntegrationTestWiring)
 	if !ok {
-		t.Fatalf("expected step %q to exist", core.EnsureStepIntegrationTestContract)
+		t.Fatalf("expected step %q to exist", core.EnsureStepIntegrationTestWiring)
 	}
 
 	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{

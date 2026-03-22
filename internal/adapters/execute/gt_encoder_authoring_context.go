@@ -25,7 +25,8 @@ func BuildGTEncoderAuthoringRecommendation(
 	constraints := []string{
 		"Implement @tensorleap_gt_encoder functions for each missing target symbol.",
 		"Ground-truth encoders must run on labeled subsets only (never unlabeled subsets).",
-		"Do not modify @tensorleap_input_encoder definitions or integration-test wiring in this step.",
+		"Do not modify @tensorleap_input_encoder definitions in this step.",
+		"After adding each encoder, wire it into the @tensorleap_integration_test function body so the code_loader status table sees it exercised.",
 	}
 	if selectedModelPath := strings.TrimSpace(snapshot.SelectedModelPath); selectedModelPath != "" {
 		constraints = append(constraints, fmt.Sprintf("Use model path %q as the output/label alignment reference unless repository evidence proves it invalid.", selectedModelPath))

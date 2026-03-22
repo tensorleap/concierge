@@ -325,8 +325,8 @@ func TestReporterShowsIntegrationTestRepairGuidance(t *testing.T) {
 		Step:       core.EnsureStep{ID: core.EnsureStepComplete},
 		Checks: []core.VerifiedCheck{
 			{
-				StepID:   core.EnsureStepIntegrationTestContract,
-				Label:    core.HumanEnsureStepRequirementLabel(core.EnsureStepIntegrationTestContract),
+				StepID:   core.EnsureStepIntegrationTestWiring,
+				Label:    core.HumanEnsureStepRequirementLabel(core.EnsureStepIntegrationTestWiring),
 				Status:   core.CheckStatusFail,
 				Blocking: true,
 				Issues: []core.Issue{

@@ -498,9 +498,9 @@ func TestStepApprovalPromptUsesThinIntegrationTestLanguage(t *testing.T) {
 		"    return None",
 	}, "\n"))
 
-	step, ok := core.EnsureStepByID(core.EnsureStepIntegrationTestContract)
+	step, ok := core.EnsureStepByID(core.EnsureStepIntegrationTestWiring)
 	if !ok {
-		t.Fatal("expected integration-test ensure-step in catalog")
+		t.Fatal("expected integration-test-wiring ensure-step in catalog")
 	}
 
 	snapshot := core.WorkspaceSnapshot{

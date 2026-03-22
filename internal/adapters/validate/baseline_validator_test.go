@@ -174,7 +174,7 @@ func TestValidatorIngestsGuideIssuesAndEvidence(t *testing.T) {
 	}, nil)
 
 	validation, err := validator.Validate(context.Background(), core.WorkspaceSnapshot{}, core.ExecutionResult{
-		Step: core.EnsureStep{ID: core.EnsureStepIntegrationTestContract},
+		Step: core.EnsureStep{ID: core.EnsureStepIntegrationTestWiring},
 	})
 	if err != nil {
 		t.Fatalf("Validate returned error: %v", err)

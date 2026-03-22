@@ -25,6 +25,7 @@ const (
 	RunStopReasonCancelled       RunStopReason = "cancelled"
 	RunStopReasonInterrupted     RunStopReason = "interrupted_step"
 	RunStopReasonNeedsUserAction RunStopReason = "needs_user_action"
+	RunStopReasonNoProgress     RunStopReason = "no_progress"
 )
 
 // RunResult aggregates per-iteration reports for one run invocation.
@@ -42,6 +43,8 @@ func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOpti
 		reports = make([]core.IterationReport, 0, maxIterations)
 	}
 	carriedValidationIssues := []core.Issue(nil)
+	var lastStepID core.EnsureStepID
+	consecutiveNoProgress := 0
 	for i := 0; maxIterations <= 0 || i < maxIterations; i++ {
 		if err := ctx.Err(); err != nil {
 			return RunResult{
@@ -70,6 +73,12 @@ func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOpti
 
 		reports = append(reports, report)
 		carriedValidationIssues = blockingIssues(report.Validation.Issues)
+		if !report.Applied && report.Step.ID == lastStepID {
+			consecutiveNoProgress++
+		} else {
+			consecutiveNoProgress = 0
+		}
+		lastStepID = report.Step.ID
 		if opts.AfterReport != nil {
 			if err := opts.AfterReport(snapshot, report); err != nil {
 				return RunResult{Reports: reports}, err
@@ -91,6 +100,12 @@ func (e *Engine) Run(ctx context.Context, req core.SnapshotRequest, opts RunOpti
 			return RunResult{
 				Reports:    reports,
 				StopReason: RunStopReasonSuccess,
+			}, nil
+		}
+		if consecutiveNoProgress >= 2 {
+			return RunResult{
+				Reports:    reports,
+				StopReason: RunStopReasonNoProgress,
 			}, nil
 		}
 	}

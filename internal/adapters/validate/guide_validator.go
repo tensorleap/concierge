@@ -865,7 +865,7 @@ func issuesFromGuideStatusRows(local core.GuideLocalRunSummary) []core.Issue {
 		}
 		issues = append(issues, core.Issue{
 			Code:     code,
-			Message:  fmt.Sprintf("guide status table reports mandatory decorator @%s is not yet added to the integration", name),
+			Message:  fmt.Sprintf("guide status table reports mandatory decorator @%s is not passing", name),
 			Severity: core.SeverityError,
 			Scope:    scope,
 		})

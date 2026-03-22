@@ -67,7 +67,7 @@ var preferredEnsureStepByIssueCode = map[IssueCode]EnsureStepID{
 	IssueCodeIntegrationScriptNonCanonical:          EnsureStepIntegrationScript,
 	IssueCodeIntegrationScriptImportFailed:          EnsureStepIntegrationScript,
 	IssueCodeIntegrationTestMissing:                 EnsureStepIntegrationTestContract,
-	IssueCodeIntegrationTestDecoratorMissing:        EnsureStepIntegrationTestContract,
+	IssueCodeIntegrationTestDecoratorMissing:        EnsureStepIntegrationTestWiring,
 	IssueCodeLoadModelDecoratorMissing:              EnsureStepModelContract,
 	IssueCodeIntegrationTestExecutionFailed:         EnsureStepIntegrationTestWiring,
 	IssueCodeIntegrationTestMissingRequiredCalls:    EnsureStepIntegrationTestWiring,

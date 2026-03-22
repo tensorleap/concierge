@@ -75,6 +75,26 @@ func TestKnownEnsureStepsAreInPriorityOrder(t *testing.T) {
 	}
 }
 
+func TestIntegrationTestDecoratorMissingRoutesToWiringStep(t *testing.T) {
+	step, ok := PreferredEnsureStepForIssueCode(IssueCodeIntegrationTestDecoratorMissing)
+	if !ok {
+		t.Fatal("expected mapping for IssueCodeIntegrationTestDecoratorMissing")
+	}
+	if step.ID != EnsureStepIntegrationTestWiring {
+		t.Fatalf("expected step %q, got %q", EnsureStepIntegrationTestWiring, step.ID)
+	}
+}
+
+func TestIntegrationTestMissingRoutesToContractStep(t *testing.T) {
+	step, ok := PreferredEnsureStepForIssueCode(IssueCodeIntegrationTestMissing)
+	if !ok {
+		t.Fatal("expected mapping for IssueCodeIntegrationTestMissing")
+	}
+	if step.ID != EnsureStepIntegrationTestContract {
+		t.Fatalf("expected step %q, got %q", EnsureStepIntegrationTestContract, step.ID)
+	}
+}
+
 func TestOptionalIssueCodesFallbackToInvestigateInV1(t *testing.T) {
 	removedCodes := []IssueCode{
 		IssueCode("metadata_function_execution_failed"),

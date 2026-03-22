@@ -425,6 +425,12 @@ func newRunCommand() *cobra.Command {
 					return err
 				}
 				return nil
+			case orchestrator.RunStopReasonNoProgress:
+				stepLabel := "unknown"
+				if n := len(runResult.Reports); n > 0 {
+					stepLabel = string(runResult.Reports[n-1].Step.ID)
+				}
+				return fmt.Errorf("the orchestrator could not make progress on step %q after consecutive attempts. inspect the integration state and rerun `concierge run`", stepLabel)
 			case orchestrator.RunStopReasonMaxIterations:
 				return fmt.Errorf("integration still has pending requirements. run `concierge run` again to continue guided checks.\ntip: use `--max-iterations 3` to run multiple guided rounds in one command")
 			case orchestrator.RunStopReasonCancelled:

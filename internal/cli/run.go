@@ -474,10 +474,18 @@ func newRunCommand() *cobra.Command {
 				return nil
 			case orchestrator.RunStopReasonNoProgress:
 				stepLabel := "unknown"
+				lastError := ""
 				if n := len(runResult.Reports); n > 0 {
-					stepLabel = string(runResult.Reports[n-1].Step.ID)
+					last := runResult.Reports[n-1]
+					stepLabel = string(last.Step.ID)
+					lastError = extractLastError(last)
 				}
-				return fmt.Errorf("the orchestrator could not make progress on step %q after consecutive attempts. inspect the integration state and rerun `concierge run`", stepLabel)
+				msg := fmt.Sprintf("the orchestrator could not make progress on step %q after consecutive attempts.", stepLabel)
+				if lastError != "" {
+					msg += "\n\nLast error:\n  " + lastError
+				}
+				msg += "\n\ninspect the integration state and rerun `concierge run`"
+				return errors.New(msg)
 			case orchestrator.RunStopReasonMaxIterations:
 				return fmt.Errorf("integration still has pending requirements. run `concierge run` again to continue guided checks.\ntip: use `--max-iterations 3` to run multiple guided rounds in one command")
 			case orchestrator.RunStopReasonCancelled:
@@ -950,6 +958,33 @@ func promptCheckLabelColor(status core.CheckStatus) string {
 	default:
 		return ansiDim
 	}
+}
+
+// extractLastError returns the most relevant error message from a report.
+// It checks validation issues, failing checks, and notes in priority order.
+func extractLastError(r core.IterationReport) string {
+	// Validation issues are the most specific.
+	for _, issue := range r.Validation.Issues {
+		if issue.Severity == core.SeverityError || issue.Severity == core.SeverityWarning {
+			return issue.Message
+		}
+	}
+	// Failing check issues.
+	for _, check := range r.Checks {
+		if check.Status == core.CheckStatusFail {
+			for _, issue := range check.Issues {
+				return issue.Message
+			}
+			if check.Label != "" {
+				return check.Label + " — failed"
+			}
+		}
+	}
+	// Fall back to the last note.
+	if n := len(r.Notes); n > 0 {
+		return r.Notes[n-1]
+	}
+	return ""
 }
 
 type stepApprovalGuidance struct {

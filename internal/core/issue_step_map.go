@@ -76,7 +76,7 @@ var preferredEnsureStepByIssueCode = map[IssueCode]EnsureStepID{
 	IssueCodeIntegrationTestDirectDatasetAccess:     EnsureStepIntegrationTestWiring,
 	IssueCodeIntegrationTestIllegalBodyLogic:        EnsureStepIntegrationTestWiring,
 	IssueCodeIntegrationTestManualBatchManipulation: EnsureStepIntegrationTestWiring,
-	IssueCodeIntegrationTestMainBlockMissing:        EnsureStepIntegrationTestContract,
+	IssueCodeIntegrationTestMainBlockMissing:        EnsureStepIntegrationTestWiring,
 
 	// Preprocess contract.
 	IssueCodePreprocessFunctionMissing:         EnsureStepPreprocessContract,

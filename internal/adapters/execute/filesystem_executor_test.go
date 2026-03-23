@@ -66,6 +66,12 @@ func TestExecutorCreatesIntegrationTestTemplate(t *testing.T) {
 	if !strings.Contains(string(raw), "@tensorleap_integration_test") {
 		t.Fatalf("expected integration-test scaffold in %s, got:\n%s", core.CanonicalIntegrationEntryFile, string(raw))
 	}
+	if strings.Contains(string(raw), "@tensorleap_preprocess") {
+		t.Fatalf("did not expect contract scaffold to add preprocess placeholder, got:\n%s", string(raw))
+	}
+	if strings.Contains(string(raw), `if __name__ == "__main__":`) {
+		t.Fatalf("did not expect contract scaffold to add __main__ wiring, got:\n%s", string(raw))
+	}
 }
 
 func TestExecutorIdempotentOnSecondRun(t *testing.T) {
@@ -234,7 +240,7 @@ func TestExecutorDoesNotModifyCompliantLeapYAML(t *testing.T) {
 	}
 }
 
-func TestExecutorAddsMainBlockWhenPreprocessExists(t *testing.T) {
+func TestExecutorAddsOnlyIntegrationTestScaffoldWhenPreprocessExists(t *testing.T) {
 	executor := NewFilesystemExecutor()
 	repoRoot := t.TempDir()
 	step, _ := core.EnsureStepByID(core.EnsureStepIntegrationTestContract)
@@ -265,24 +271,21 @@ func TestExecutorAddsMainBlockWhenPreprocessExists(t *testing.T) {
 	if !strings.Contains(content, "@tensorleap_integration_test") {
 		t.Fatal("expected integration-test scaffold to be present")
 	}
-	if !strings.Contains(content, `if __name__ == "__main__":`) {
-		t.Fatal("expected __main__ block to be present")
+	if strings.Contains(content, `if __name__ == "__main__":`) {
+		t.Fatal("did not expect contract step to add __main__ block")
 	}
-	if !strings.Contains(content, "preprocess_func()") {
-		t.Fatal("expected __main__ block to call preprocess_func()")
+	if strings.Contains(content, "integration_test(sample_id, subset)") {
+		t.Fatal("did not expect contract step to wire integration_test() into __main__")
 	}
-	if !strings.Contains(content, "integration_test(sample_id, subset)") {
-		t.Fatal("expected __main__ block to call integration_test()")
-	}
-	if !strings.Contains(content, "subset.sample_ids[:5]") {
-		t.Fatal("expected __main__ block to iterate subset.sample_ids")
+	if strings.Contains(content, "responses = preprocess_func()") {
+		t.Fatal("did not expect contract step to wire preprocess_func() into __main__")
 	}
 	if !strings.Contains(result.Summary, "@tensorleap_integration_test scaffold") {
 		t.Fatalf("expected summary to mention scaffold, got %q", result.Summary)
 	}
 }
 
-func TestExecutorMainBlockIdempotent(t *testing.T) {
+func TestExecutorContractStepIgnoresMissingMainBlock(t *testing.T) {
 	executor := NewFilesystemExecutor()
 	repoRoot := t.TempDir()
 	step, _ := core.EnsureStepByID(core.EnsureStepIntegrationTestContract)
@@ -298,12 +301,6 @@ func TestExecutorMainBlockIdempotent(t *testing.T) {
 		"def integration_test(sample_id, preprocess):",
 		"    return None",
 		"",
-		`if __name__ == "__main__":`,
-		"    responses = preprocess_func()",
-		"    for subset in responses:",
-		"        for sample_id in subset.sample_ids[:5]:",
-		"            integration_test(sample_id, subset)",
-		"",
 	}, "\n"))
 
 	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
@@ -311,7 +308,7 @@ func TestExecutorMainBlockIdempotent(t *testing.T) {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	if result.Applied {
-		t.Fatal("expected applied=false when __main__ block already exists")
+		t.Fatal("expected applied=false when only __main__ wiring is missing")
 	}
 }
 
@@ -342,7 +339,7 @@ func TestExecutorSkipsMainBlockWithoutPreprocess(t *testing.T) {
 	}
 }
 
-func TestExecutorMainBlockUsesCorrectFunctionNames(t *testing.T) {
+func TestExecutorContractStepDoesNotAddMainBlockUsingDiscoveredFunctionNames(t *testing.T) {
 	executor := NewFilesystemExecutor()
 	repoRoot := t.TempDir()
 	step, _ := core.EnsureStepByID(core.EnsureStepIntegrationTestContract)
@@ -364,19 +361,19 @@ func TestExecutorMainBlockUsesCorrectFunctionNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-	if !result.Applied {
-		t.Fatal("expected applied=true when __main__ block is missing")
+	if result.Applied {
+		t.Fatal("expected applied=false when only __main__ wiring is missing")
 	}
 	raw, err := os.ReadFile(filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile))
 	if err != nil {
 		t.Fatalf("ReadFile failed: %v", err)
 	}
 	content := string(raw)
-	if !strings.Contains(content, "my_custom_preprocess()") {
-		t.Fatal("expected __main__ block to use discovered preprocess function name")
+	if strings.Contains(content, "responses = my_custom_preprocess()") {
+		t.Fatal("did not expect contract step to emit __main__ preprocess call")
 	}
-	if !strings.Contains(content, "my_custom_test(sample_id, subset)") {
-		t.Fatal("expected __main__ block to use discovered integration test function name")
+	if strings.Contains(content, "my_custom_test(sample_id, subset)") {
+		t.Fatal("did not expect contract step to emit __main__ integration-test call")
 	}
 }
 

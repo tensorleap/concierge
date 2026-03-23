@@ -95,6 +95,16 @@ func TestIntegrationTestMissingRoutesToContractStep(t *testing.T) {
 	}
 }
 
+func TestIntegrationTestMainBlockMissingRoutesToWiringStep(t *testing.T) {
+	step, ok := PreferredEnsureStepForIssueCode(IssueCodeIntegrationTestMainBlockMissing)
+	if !ok {
+		t.Fatal("expected mapping for IssueCodeIntegrationTestMainBlockMissing")
+	}
+	if step.ID != EnsureStepIntegrationTestWiring {
+		t.Fatalf("expected step %q, got %q", EnsureStepIntegrationTestWiring, step.ID)
+	}
+}
+
 func TestOptionalIssueCodesFallbackToInvestigateInV1(t *testing.T) {
 	removedCodes := []IssueCode{
 		IssueCode("metadata_function_execution_failed"),

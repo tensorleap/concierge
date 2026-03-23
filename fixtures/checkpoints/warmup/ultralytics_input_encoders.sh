@@ -33,6 +33,8 @@ copyfile(exported_onnx_path, final_onnx_path)
 PY
 
 poetry run python - <<'PY'
+from pathlib import Path
+
 import leap_integration as li
 
 responses = li.preprocess()
@@ -44,4 +46,22 @@ if not any("validation" in state for state in states):
     raise SystemExit(f"warmup missing validation preprocess subset: {states}")
 
 li.load_model()
+
+source = Path("leap_integration.py").read_text(encoding="utf-8")
+required_markers = (
+    "@tensorleap_integration_test()",
+    "return None",
+    "subset.sample_ids[:5]",
+)
+for marker in required_markers:
+    if marker not in source:
+        raise SystemExit(f"warmup missing integration-test scaffold marker: {marker}")
+
+forbidden_markers = (
+    "model.run(",
+    "binder_input_encoder(",
+)
+for marker in forbidden_markers:
+    if marker in source:
+        raise SystemExit(f"warmup found legacy integration-test wiring marker: {marker}")
 PY

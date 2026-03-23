@@ -7,12 +7,20 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/tensorleap/concierge/internal/core"
 )
 
 const conciergePathExclude = ":(exclude).concierge/**"
+
+var (
+	diffStatFilesPattern      = regexp.MustCompile(`(\d+)\s+files?\s+changed`)
+	diffStatInsertionsPattern = regexp.MustCompile(`(\d+)\s+insertions?\(\+\)`)
+	diffStatDeletionsPattern  = regexp.MustCompile(`(\d+)\s+deletions?\(-\)`)
+)
 
 // ApprovalFunc decides whether to approve committing the current diff.
 type ApprovalFunc func(step core.EnsureStep, review ChangeReview) (ReviewDecision, error)
@@ -217,16 +225,8 @@ func (m *Manager) buildChangeReview(
 		Focus: ReviewFocus(step),
 	}
 
-	stat, err := m.runGit(ctx, repoRoot, "diff", "--stat", "--", ".", conciergePathExclude)
-	if err != nil {
-		stat = statusPorcelain
-	}
-	if strings.TrimSpace(stat) == "" {
-		stat = statusPorcelain
-	}
-	review.Stat = strings.TrimSpace(stat)
-
 	review.Files = m.collectChangedFiles(ctx, repoRoot, statusPorcelain)
+	review.Stat = m.collectDiffStat(ctx, repoRoot, statusPorcelain)
 
 	patch, err := m.collectPatch(ctx, repoRoot)
 	if err != nil {
@@ -279,6 +279,35 @@ func (m *Manager) collectChangedFiles(ctx context.Context, repoRoot string, fall
 	return merged
 }
 
+func (m *Manager) collectDiffStat(ctx context.Context, repoRoot string, fallback string) string {
+	summary := diffStatSummary{}
+
+	trackedStat, err := m.runGit(ctx, repoRoot, "diff", "--stat", "--", ".", conciergePathExclude)
+	if err == nil {
+		summary = mergeDiffStatSummary(summary, parseDiffStatSummary(trackedStat))
+	}
+
+	untracked, err := m.runGit(ctx, repoRoot, "ls-files", "--others", "--exclude-standard")
+	if err == nil {
+		for _, relativePath := range splitNonEmptyLines(untracked) {
+			if isConciergeInternalPath(relativePath) {
+				continue
+			}
+			stat, statErr := diffUntrackedStat(ctx, repoRoot, relativePath)
+			if statErr != nil {
+				continue
+			}
+			summary = mergeDiffStatSummary(summary, parseDiffStatSummary(stat))
+		}
+	}
+
+	rendered := strings.TrimSpace(renderDiffStatSummary(summary))
+	if rendered != "" {
+		return rendered
+	}
+	return strings.TrimSpace(fallback)
+}
+
 func (m *Manager) collectPatch(ctx context.Context, repoRoot string) (string, error) {
 	args := []string{"diff", "--patch", "--minimal", "--", ".", conciergePathExclude}
 	if m.options.ColorDiff {
@@ -313,6 +342,44 @@ func (m *Manager) collectPatch(ctx context.Context, repoRoot string) (string, er
 	}
 
 	return strings.Join(sections, "\n\n"), nil
+}
+
+func diffUntrackedStat(ctx context.Context, repoRoot string, relativePath string) (string, error) {
+	rel := filepath.Clean(strings.TrimSpace(relativePath))
+	if rel == "" || rel == "." || strings.HasPrefix(rel, "..") {
+		return "", nil
+	}
+	if isConciergeInternalPath(rel) {
+		return "", nil
+	}
+	target := filepath.Join(repoRoot, rel)
+	info, err := os.Stat(target)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", core.WrapError(core.KindUnknown, "gitmanager.diff_untracked_stat.stat", err)
+	}
+	if info.IsDir() {
+		return "", nil
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "diff", "--stat", "--no-index", "--", "/dev/null", rel)
+	cmd.Dir = repoRoot
+	output, err := cmd.CombinedOutput()
+	trimmed := strings.TrimSpace(string(output))
+	if err == nil {
+		return trimmed, nil
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return trimmed, nil
+	}
+	if trimmed == "" {
+		return "", core.WrapError(core.KindUnknown, "gitmanager.diff_untracked_stat.run", err)
+	}
+	return "", core.NewError(core.KindUnknown, "gitmanager.diff_untracked_stat.run", fmt.Sprintf("git diff --stat --no-index failed: %s", trimmed))
 }
 
 func diffUntrackedPath(ctx context.Context, repoRoot string, relativePath string, colorDiff bool) (string, error) {
@@ -380,6 +447,83 @@ func isConciergeInternalPath(relativePath string) bool {
 		return false
 	}
 	return cleaned == ".concierge" || strings.HasPrefix(cleaned, ".concierge/")
+}
+
+type diffStatSummary struct {
+	fileLines  []string
+	files      int
+	insertions int
+	deletions  int
+}
+
+func parseDiffStatSummary(raw string) diffStatSummary {
+	summary := diffStatSummary{}
+	for _, line := range splitNonEmptyLines(raw) {
+		switch {
+		case strings.Contains(line, "file changed"), strings.Contains(line, "files changed"):
+			summary.files += parseFirstDiffStatCount(diffStatFilesPattern, line)
+			summary.insertions += parseFirstDiffStatCount(diffStatInsertionsPattern, line)
+			summary.deletions += parseFirstDiffStatCount(diffStatDeletionsPattern, line)
+		default:
+			summary.fileLines = append(summary.fileLines, line)
+		}
+	}
+	return summary
+}
+
+func mergeDiffStatSummary(left, right diffStatSummary) diffStatSummary {
+	merged := diffStatSummary{
+		fileLines:  append(append([]string{}, left.fileLines...), right.fileLines...),
+		files:      left.files + right.files,
+		insertions: left.insertions + right.insertions,
+		deletions:  left.deletions + right.deletions,
+	}
+	if merged.files == 0 {
+		merged.files = len(merged.fileLines)
+	}
+	return merged
+}
+
+func renderDiffStatSummary(summary diffStatSummary) string {
+	if len(summary.fileLines) == 0 {
+		return ""
+	}
+
+	files := summary.files
+	if files == 0 {
+		files = len(summary.fileLines)
+	}
+
+	parts := []string{fmt.Sprintf("%d file%s changed", files, pluralizeCount(files))}
+	if summary.insertions > 0 {
+		parts = append(parts, fmt.Sprintf("%d insertion%s(+)", summary.insertions, pluralizeCount(summary.insertions)))
+	}
+	if summary.deletions > 0 {
+		parts = append(parts, fmt.Sprintf("%d deletion%s(-)", summary.deletions, pluralizeCount(summary.deletions)))
+	}
+
+	lines := append([]string{}, summary.fileLines...)
+	lines = append(lines, strings.Join(parts, ", "))
+	return strings.Join(lines, "\n")
+}
+
+func parseFirstDiffStatCount(pattern *regexp.Regexp, line string) int {
+	matches := pattern.FindStringSubmatch(line)
+	if len(matches) != 2 {
+		return 0
+	}
+	value, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
+func pluralizeCount(value int) string {
+	if value == 1 {
+		return ""
+	}
+	return "s"
 }
 
 func runGitCombined(ctx context.Context, dir string, args ...string) (string, error) {

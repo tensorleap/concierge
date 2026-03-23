@@ -669,7 +669,7 @@ func integrationTestASTIssues(summary IntegrationTestASTSummary, snapshot core.W
 		}
 		issues = append(issues, core.Issue{
 			Code:     core.IssueCodeIntegrationTestMissingRequiredCalls,
-			Message:  fmt.Sprintf("integration_test does not call the decorated input encoder for required input %q", target),
+			Message:  fmt.Sprintf("integration_test does not call the decorated input encoder for required input name %q", target),
 			Severity: core.SeverityError,
 			Scope:    core.IssueScopeIntegrationTest,
 			Location: locationFor(target, integrationLine),
@@ -700,7 +700,7 @@ func integrationTestASTIssues(summary IntegrationTestASTSummary, snapshot core.W
 		}
 		issues = append(issues, core.Issue{
 			Code:     core.IssueCodeIntegrationTestMissingRequiredCalls,
-			Message:  fmt.Sprintf("integration_test does not call the decorated ground-truth encoder for required target %q", target),
+			Message:  fmt.Sprintf("integration_test does not call the decorated ground-truth encoder for required ground-truth name %q", target),
 			Severity: core.SeverityError,
 			Scope:    core.IssueScopeIntegrationTest,
 			Location: locationFor(target, integrationLine),

@@ -34,6 +34,7 @@ mkdir -p "${output_dir}"
 git -C "${source_repo}" archive --format=tar HEAD | tar -xf - -C "${output_dir}"
 
 git -C "${output_dir}" init --quiet
+printf '.checkpoint_warmup.sh\n' >>"${output_dir}/.git/info/exclude"
 git -C "${output_dir}" add -A
 
 GIT_AUTHOR_NAME="Concierge QA" \

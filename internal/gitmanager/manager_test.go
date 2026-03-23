@@ -72,6 +72,32 @@ func TestGitManagerApproveCreatesCommit(t *testing.T) {
 	}
 }
 
+func TestGitManagerReviewSummaryIncludesUntrackedFiles(t *testing.T) {
+	repo := initGitRepo(t)
+	runGit(t, repo, "checkout", "-B", "feature/test")
+	writeFile(t, filepath.Join(repo, "tracked.txt"), "changed\n")
+	writeFile(t, filepath.Join(repo, "new.txt"), "new\n")
+
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (ReviewDecision, error) {
+		_ = step
+		if !strings.Contains(review.Stat, "tracked.txt") {
+			t.Fatalf("expected tracked file in diff summary, got %q", review.Stat)
+		}
+		if !strings.Contains(review.Stat, "new.txt") {
+			t.Fatalf("expected untracked file in diff summary, got %q", review.Stat)
+		}
+		if !strings.Contains(review.Stat, "2 files changed") {
+			t.Fatalf("expected combined changed-file count in diff summary, got %q", review.Stat)
+		}
+		return ReviewDecision{KeepChanges: true, Commit: false}, nil
+	})
+
+	_, err := manager.Handle(context.Background(), core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: repo}}, executionResult(core.EnsureStepLeapYAML))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+}
+
 func TestGitManagerRejectRestoresTree(t *testing.T) {
 	repo := initGitRepo(t)
 	runGit(t, repo, "checkout", "-B", "feature/test")

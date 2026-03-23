@@ -44,6 +44,9 @@ func TestInputEncoderDetectorEmitsMissingEncoderIssue(t *testing.T) {
 	if !strings.Contains(strings.ToLower(issue.Message), "image") {
 		t.Fatalf("expected symbol detail in issue message, got %q", issue.Message)
 	}
+	if strings.Contains(strings.ToLower(issue.Message), "symbol") {
+		t.Fatalf("expected user-facing name wording, got %q", issue.Message)
+	}
 	if issue.Location == nil || issue.Location.Symbol != "image" {
 		t.Fatalf("expected symbol location %q, got %+v", "image", issue.Location)
 	}
@@ -92,6 +95,9 @@ func TestInputEncoderDetectorEmitsCoverageIncompleteIssue(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(issue.Message), "meta") {
 		t.Fatalf("expected missing symbol detail in message, got %q", issue.Message)
+	}
+	if strings.Contains(strings.ToLower(issue.Message), "symbol") {
+		t.Fatalf("expected user-facing name wording, got %q", issue.Message)
 	}
 	if issue.Location == nil || issue.Location.Symbol != "meta" {
 		t.Fatalf("expected location symbol %q, got %+v", "meta", issue.Location)

@@ -239,6 +239,32 @@ func TestDeriveGuideRecommendationDoesNotMislabelGenericParserFailureAsPreproces
 	}
 }
 
+func TestDeriveGuideRecommendationPrefersGroundTruthStatusOverStaleInputPayloadFailure(t *testing.T) {
+	summary := core.GuideValidationSummary{
+		LocalStatusTableSupported: true,
+		Local: core.GuideLocalRunSummary{
+			StatusRows: []core.GuideStatusRow{
+				{Name: "tensorleap_preprocess", Status: "pass"},
+				{Name: "tensorleap_input_encoder", Status: "pass"},
+				{Name: "tensorleap_load_model", Status: "pass"},
+				{Name: "tensorleap_integration_test", Status: "pass"},
+				{Name: "tensorleap_gt_encoder", Status: "fail"},
+			},
+		},
+		Parser: core.GuideParserRunSummary{
+			Available: true,
+			Payloads: []core.GuidePayloadSummary{
+				{Name: "image", Passed: false, HandlerType: string(guideHandlerInput)},
+			},
+		},
+	}
+
+	recommendation := deriveGuideRecommendation(summary)
+	if recommendation.Stage != "ground_truth" {
+		t.Fatalf("expected ground-truth recommendation, got %+v", recommendation)
+	}
+}
+
 func TestGuideValidatorPrefersASTIntegrationTestIssuesOverGenericMappingFailure(t *testing.T) {
 	repoRoot := buildGuideValidationRepo(t)
 	validator := &GuideValidator{

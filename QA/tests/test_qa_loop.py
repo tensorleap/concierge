@@ -369,6 +369,72 @@ class QALoopTest(unittest.TestCase):
         self.assertIn("    first line", rendered)
         self.assertIn("    second line", rendered)
 
+    def test_codex_client_keeps_shell_snapshot_stderr_in_log_but_hides_it_from_live_transcript(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            workspace_root = tmp / "workspace"
+            artifacts_root = tmp / "artifacts"
+            workspace_root.mkdir()
+            artifacts_root.mkdir()
+
+            codex_script = tmp / "fake_codex_stderr.py"
+            codex_script.write_text(
+                textwrap.dedent(
+                    """
+                    import json
+                    import sys
+                    from pathlib import Path
+
+                    output_path = None
+                    for index, value in enumerate(sys.argv):
+                        if value == "-o":
+                            output_path = Path(sys.argv[index + 1])
+                            break
+                    if output_path is None:
+                        raise SystemExit("missing -o")
+
+                    sys.stderr.write("ERROR codex_core::shell_snapshot: Shell snapshot validation failed\\n")
+                    sys.stderr.write("/bin/bash: line 1: syntax error in conditional expression: unexpected token '('\\n")
+                    output_path.write_text(json.dumps({"action": "WAIT"}), encoding="utf-8")
+                    print(json.dumps({"type": "thread.started", "thread_id": "fake-thread"}))
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            codex_script.chmod(0o755)
+
+            client = qa_loop.CodexClient(
+                workspace_root=workspace_root,
+                artifacts_root=artifacts_root,
+                command=f"{sys.executable} {codex_script}",
+            )
+            transcript_path = tmp / "transcript.txt"
+            output_path = tmp / "output.json"
+            event_log_path = tmp / "events.jsonl"
+            stderr_log_path = tmp / "stderr.log"
+            schema_path = tmp / "schema.json"
+            schema_path.write_text("{}", encoding="utf-8")
+
+            payload = client.run_structured(
+                prompt="probe",
+                schema_path=schema_path,
+                output_path=output_path,
+                event_log_path=event_log_path,
+                stderr_log_path=stderr_log_path,
+                live_io=qa_loop.LiveIO(transcript_path=transcript_path),
+                session_label="codex-control-001",
+            )
+
+            self.assertEqual(payload["action"], "WAIT")
+            stderr_log = stderr_log_path.read_text(encoding="utf-8")
+            self.assertIn("codex_core::shell_snapshot", stderr_log)
+            self.assertIn("unexpected token '('", stderr_log)
+
+            transcript = transcript_path.read_text(encoding="utf-8")
+            self.assertNotIn("codex_core::shell_snapshot", transcript)
+            self.assertNotIn("unexpected token '('", transcript)
+
     def test_supervisor_loop_stops_cleanly_when_target_exits_before_followup_input(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)

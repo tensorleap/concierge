@@ -70,6 +70,36 @@ func TestGitManagerApproveCreatesCommit(t *testing.T) {
 	if strings.TrimSpace(status) != "" {
 		t.Fatalf("expected clean worktree after commit, got %q", status)
 	}
+	if !containsNote(decision.Notes, "changes committed on branch feature/test") {
+		t.Fatalf("expected branch note for feature/test, got %v", decision.Notes)
+	}
+}
+
+func TestGitManagerApproveDetachedHeadUsesDetachedMessaging(t *testing.T) {
+	repo := initGitRepo(t)
+	runGit(t, repo, "checkout", "-B", "feature/test")
+	runGit(t, repo, "checkout", "--detach", "HEAD")
+	writeFile(t, filepath.Join(repo, "tracked.txt"), "changed\n")
+
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (ReviewDecision, error) {
+		_ = step
+		_ = review
+		return ReviewDecision{KeepChanges: true, Commit: true}, nil
+	})
+
+	decision, err := manager.Handle(context.Background(), core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: repo}}, executionResult(core.EnsureStepLeapYAML))
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if decision.Commit == nil {
+		t.Fatal("expected commit metadata when approved")
+	}
+	if containsNote(decision.Notes, "changes committed on branch HEAD") {
+		t.Fatalf("expected detached-head note instead of branch HEAD, got %v", decision.Notes)
+	}
+	if !containsNote(decision.Notes, "changes committed in detached HEAD state") {
+		t.Fatalf("expected detached-head note, got %v", decision.Notes)
+	}
 }
 
 func TestGitManagerReviewSummaryIncludesUntrackedFiles(t *testing.T) {
@@ -333,6 +363,15 @@ func writeFile(t *testing.T, path string, contents string) {
 func hasEvidence(items []core.EvidenceItem, name, value string) bool {
 	for _, item := range items {
 		if item.Name == name && item.Value == value {
+			return true
+		}
+	}
+	return false
+}
+
+func containsNote(notes []string, want string) bool {
+	for _, note := range notes {
+		if note == want {
 			return true
 		}
 	}

@@ -175,7 +175,7 @@ func (m *Manager) Handle(ctx context.Context, snapshot core.WorkspaceSnapshot, r
 	hash = strings.TrimSpace(hash)
 
 	decision.Commit = &core.CommitMetadata{Hash: hash, Message: message}
-	decision.Notes = append(decision.Notes, fmt.Sprintf("changes committed on branch %s", branch))
+	decision.Notes = append(decision.Notes, commitBranchNote(branch))
 	decision.Evidence = append(decision.Evidence,
 		core.EvidenceItem{Name: "git.approval", Value: "approved"},
 		core.EvidenceItem{Name: "git.review_action", Value: "committed"},
@@ -213,6 +213,13 @@ func (m *Manager) restoreWorkingTree(ctx context.Context, repoRoot string) error
 	}
 
 	return nil
+}
+
+func commitBranchNote(branch string) string {
+	if strings.TrimSpace(branch) == "" || strings.TrimSpace(branch) == "HEAD" {
+		return "changes committed in detached HEAD state"
+	}
+	return fmt.Sprintf("changes committed on branch %s", strings.TrimSpace(branch))
 }
 
 func (m *Manager) buildChangeReview(

@@ -1,5 +1,5 @@
 diff --git a/leap_binder.py b/leap_binder.py
-index 0adf068..b853bc0 100644
+index 0adf068c..b853bc08 100644
 --- a/leap_binder.py
 +++ b/leap_binder.py
 @@ -45,13 +45,11 @@ def preprocess_func_leap() -> List[PreprocessResponse]:
@@ -17,32 +17,40 @@ index 0adf068..b853bc0 100644
      if preprocessing.state == DataStateType.unlabeled:
          return np.full((1, 5), np.nan,dtype=np.float32)
 diff --git a/leap_integration.py b/leap_integration.py
-index 96070d7..de150f4 100644
+index 96070d75..73fc4c6b 100644
 --- a/leap_integration.py
 +++ b/leap_integration.py
-@@ -1,42 +1,47 @@
+@@ -1,59 +1,50 @@
 -import os
-+from pathlib import Path
- from code_loader.contract.datasetclasses import SamplePreprocessResponse
+-from code_loader.contract.datasetclasses import SamplePreprocessResponse
 -from leap_binder import (input_encoder, preprocess_func_leap, gt_encoder,
-+from leap_binder import (input_encoder as binder_input_encoder, preprocess_func_leap, gt_encoder as binder_gt_encoder,
-                          loss, gt_bb_decoder, image_visualizer, bb_decoder,
-                          cost, metadata_per_img, ious, confusion_matrix_metric)
+-                         loss, gt_bb_decoder, image_visualizer, bb_decoder,
+-                         cost, metadata_per_img, ious, confusion_matrix_metric)
++from pathlib import Path
++
  import onnxruntime as ort
- import numpy as np
+-import numpy as np
 -from ultralytics.tensorleap_folder.utils import validate_supported_models, set_leap_yaml2root
-+from ultralytics.tensorleap_folder.utils import set_leap_yaml2root
- from ultralytics.tensorleap_folder.global_params import cfg, all_clss
- from code_loader.plot_functions.visualize import visualize
+-from ultralytics.tensorleap_folder.global_params import cfg, all_clss
+-from code_loader.plot_functions.visualize import visualize
  from code_loader.contract.datasetclasses import PredictionTypeHandler
 -from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_load_model, tensorleap_integration_test
-+from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_gt_encoder, tensorleap_load_model, tensorleap_integration_test, tensorleap_preprocess
++from code_loader.inner_leap_binder.leapbinder_decorators import (
++    tensorleap_gt_encoder,
++    tensorleap_integration_test,
++    tensorleap_load_model,
++    tensorleap_preprocess,
++)
++from leap_binder import gt_encoder as binder_gt_encoder, preprocess_func_leap
++from ultralytics.tensorleap_folder.global_params import all_clss, cfg
++from ultralytics.tensorleap_folder.utils import set_leap_yaml2root
  
  prediction_type1 = PredictionTypeHandler(name='object detection', labels=["x", "y", "w", "h"] + [cl for cl in all_clss.values()], channel_dim=1)
  prediction_type2 = PredictionTypeHandler(name='concatenate_20', labels=[str(i) for i in range(20)], channel_dim=-1)
  prediction_type3 = PredictionTypeHandler(name='concatenate_40', labels=[str(i) for i in range(40)], channel_dim=-1)
  prediction_type4 = PredictionTypeHandler(name='concatenate_80', labels=[str(i) for i in range(80)], channel_dim=-1)
  
++
 +@tensorleap_preprocess()
 +def preprocess():
 +    return preprocess_func_leap()
@@ -72,28 +80,42 @@ index 96070d7..de150f4 100644
  
  @tensorleap_integration_test()
  def check_custom_test_mapping(idx, subset):
-     s_prepro = SamplePreprocessResponse(np.array(idx), subset)
+-    s_prepro = SamplePreprocessResponse(np.array(idx), subset)
 -    image = input_encoder(idx, subset)
-+    image = binder_input_encoder(idx, subset)
-     model = load_model()
-     y_pred = model.run(None, {'images': image})
-     # get gt
+-    model = load_model()
+-    y_pred = model.run(None, {'images': image})
+-    # get gt
 -    gt = gt_encoder(idx, subset)
-+    gt = classes_encoder(idx, subset)
-     # custom metrics
-     total_loss=loss(y_pred[1],y_pred[2],y_pred[3],gt ,y_pred[0])
-     cost_dic=cost(y_pred[1],y_pred[2],y_pred[3],gt)
-@@ -56,4 +61,4 @@ def check_custom_test_mapping(idx, subset):
+-    # custom metrics
+-    total_loss=loss(y_pred[1],y_pred[2],y_pred[3],gt ,y_pred[0])
+-    cost_dic=cost(y_pred[1],y_pred[2],y_pred[3],gt)
+-    iou=ious(y_pred[0], s_prepro)
+-    conf_mat = confusion_matrix_metric(y_pred[0], s_prepro)
+-    # metadata
+-    meta_data=metadata_per_img(idx, subset)
+-    # vis
+-    img_vis=image_visualizer(image)
+-    pred_img=bb_decoder(image,y_pred[0])
+-    gt_img = gt_bb_decoder(image, gt)
+-    visualize(img_vis)
+-    visualize(pred_img)
+-    visualize(gt_img)
++    return None
+ 
+ 
  
  if __name__ == '__main__':
      set_leap_yaml2root(cfg)
 -    check_custom_test_mapping(0, preprocess_func_leap()[1])
-+    check_custom_test_mapping(0, preprocess()[1])
++    responses = preprocess()
++    for subset in responses:
++        for sample_id in subset.sample_ids[:5]:
++            check_custom_test_mapping(sample_id, subset)
 diff --git a/export_model_to_tf.py b/export_model_to_tf.py
-index 7628f9b..247f454 100644
+index 1dd1ad87..1c91c556 100644
 --- a/export_model_to_tf.py
 +++ b/export_model_to_tf.py
-@@ -32,9 +32,11 @@ def onnx_exporter(h5=False):
+@@ -34,10 +34,12 @@ def onnx_exporter(h5=False):
  
  
      model_path=Path(cfg.model)
@@ -110,7 +132,7 @@ index 7628f9b..247f454 100644
      export_to_onnx(cfg)
      exported_model_path=yolo_version_check(model_path)
 diff --git a/ultralytics/cfg/default.yaml b/ultralytics/cfg/default.yaml
-index 22c4dcb..67f9254 100644
+index 22c4dcbc..67f92541 100644
 --- a/ultralytics/cfg/default.yaml
 +++ b/ultralytics/cfg/default.yaml
 @@ -5,12 +5,12 @@
@@ -129,7 +151,7 @@ index 22c4dcb..67f9254 100644
    - False
    - dataset_split_bad_init_pool.npz
 diff --git a/ultralytics/tensorleap_folder/global_params.py b/ultralytics/tensorleap_folder/global_params.py
-index 75ca9bd..c2014f3 100644
+index 75ca9bd7..722d7872 100644
 --- a/ultralytics/tensorleap_folder/global_params.py
 +++ b/ultralytics/tensorleap_folder/global_params.py
 @@ -67,7 +67,10 @@ def set_cfg_dict():

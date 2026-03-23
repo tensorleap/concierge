@@ -3,6 +3,7 @@ package fixtures
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tensorleap/concierge/internal/core"
@@ -36,4 +37,44 @@ func TestFixtureCaseUltralyticsInputEncoders_SelectsInputStep(t *testing.T) {
 	) {
 		t.Fatalf("expected warmed ultralytics case to avoid model-acquisition blockers, got %+v", status.Issues)
 	}
+}
+
+func TestFixtureCaseUltralyticsInputEncoders_UsesThinIntegrationTestScaffold(t *testing.T) {
+	patchPath := filepath.Join(repoRootFromRuntime(t), "fixtures", "cases", "patches", "ultralytics_input_encoders.patch")
+	raw, err := os.ReadFile(patchPath)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	rawContent := string(raw)
+	addedContent := patchAddedContent(rawContent)
+
+	if !strings.Contains(rawContent, "@tensorleap_integration_test()") {
+		t.Fatalf("expected ultralytics input-encoders patch to keep @tensorleap_integration_test, got:\n%s", rawContent)
+	}
+	if !strings.Contains(rawContent, "return None") {
+		t.Fatalf("expected ultralytics input-encoders patch to use a thin integration_test scaffold, got:\n%s", rawContent)
+	}
+	if !strings.Contains(rawContent, "subset.sample_ids[:5]") {
+		t.Fatalf("expected ultralytics input-encoders patch to use the deterministic __main__ scaffold loop, got:\n%s", rawContent)
+	}
+	if strings.Contains(addedContent, "model.run(") {
+		t.Fatalf("expected ultralytics input-encoders patch to avoid legacy model.run wiring before encoder repair, got:\n%s", addedContent)
+	}
+	if strings.Contains(addedContent, "binder_input_encoder(") {
+		t.Fatalf("expected ultralytics input-encoders patch to avoid legacy binder_input_encoder wiring before encoder repair, got:\n%s", addedContent)
+	}
+}
+
+func patchAddedContent(raw string) string {
+	var builder strings.Builder
+	for _, line := range strings.Split(raw, "\n") {
+		if strings.HasPrefix(line, "+++") {
+			continue
+		}
+		if strings.HasPrefix(line, "+") {
+			builder.WriteString(strings.TrimPrefix(line, "+"))
+			builder.WriteByte('\n')
+		}
+	}
+	return builder.String()
 }

@@ -580,14 +580,28 @@ func deriveGuideRecommendation(summary core.GuideValidationSummary) core.GuideRe
 		}
 	}
 
-	if payloadFailedByKinds(summary.Parser, guideHandlerInput) || (hasLocalStatusTable && inputStatus != "pass") {
+	if hasLocalStatusTable && inputStatus != "pass" {
 		return core.GuideRecommendation{
 			Stage:   "remaining_inputs",
 			Message: "Next recommended interface: add the remaining required input encoders and rerun the thin integration test.",
 		}
 	}
 
-	if payloadFailedByKinds(summary.Parser, guideHandlerGT) || (hasLocalStatusTable && gtStatus != "pass") {
+	if hasLocalStatusTable && gtStatus != "pass" {
+		return core.GuideRecommendation{
+			Stage:   "ground_truth",
+			Message: "Next recommended interface: add the required GT encoders and rerun the integration test.",
+		}
+	}
+
+	if payloadFailedByKinds(summary.Parser, guideHandlerInput) {
+		return core.GuideRecommendation{
+			Stage:   "remaining_inputs",
+			Message: "Next recommended interface: add the remaining required input encoders and rerun the thin integration test.",
+		}
+	}
+
+	if payloadFailedByKinds(summary.Parser, guideHandlerGT) {
 		return core.GuideRecommendation{
 			Stage:   "ground_truth",
 			Message: "Next recommended interface: add the required GT encoders and rerun the integration test.",

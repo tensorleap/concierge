@@ -220,6 +220,7 @@ class CodexClient:
                 stdout_prefix=f"[qa-loop][{session_label} stdout] ",
                 stderr_prefix=f"[qa-loop][{session_label} stderr] ",
                 stdout_formatter=lambda line, session_label=session_label: format_codex_stream_event(session_label, line),
+                stderr_formatter=lambda line, session_label=session_label: format_codex_stderr_event(session_label, line),
             )
             stdout = completed["stdout"]
             stderr = completed["stderr"]
@@ -1355,6 +1356,24 @@ def format_codex_stream_event(session_label: str, line: str) -> str:
     return f"[qa-loop][{session_label} stdout] {line}"
 
 
+def format_codex_stderr_event(session_label: str, line: str) -> str:
+    stripped = line.strip()
+    if not stripped:
+        return line
+    if should_hide_codex_stderr_line(stripped):
+        return ""
+    return f"[qa-loop][{session_label} stderr] {line}"
+
+
+def should_hide_codex_stderr_line(line: str) -> bool:
+    lowered = line.lower()
+    return (
+        "codex_core::shell_snapshot" in lowered
+        or "shell snapshot validation failed" in lowered
+        or "syntax error in conditional expression: unexpected token" in lowered
+    )
+
+
 def run_streaming_subprocess(
     *,
     cmd: list[str],
@@ -1366,6 +1385,7 @@ def run_streaming_subprocess(
     stdout_prefix: str = "",
     stderr_prefix: str = "",
     stdout_formatter: Callable[[str], str] | None = None,
+    stderr_formatter: Callable[[str], str] | None = None,
 ) -> dict[str, Any]:
     process = subprocess.Popen(
         cmd,
@@ -1416,7 +1436,11 @@ def run_streaming_subprocess(
     stderr_thread = threading.Thread(
         target=stream_pipe,
         args=(process.stderr, stderr_chunks),
-        kwargs={"prefix": stderr_prefix, "emit": live_io.stderr if live_io is not None else None},
+        kwargs={
+            "prefix": stderr_prefix,
+            "emit": live_io.stderr if live_io is not None else None,
+            "formatter": stderr_formatter,
+        },
         daemon=True,
     )
     stdout_thread.start()

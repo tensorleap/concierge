@@ -28,10 +28,10 @@ func inspectGTEncoderContract(repoRoot string, status *core.IntegrationStatus) {
 
 	if len(missing) > 0 {
 		issueCode := core.IssueCodeGTEncoderCoverageIncomplete
-		template := "ground-truth encoder contract mismatch: missing required symbol %q"
+		template := "ground-truth encoder coverage is incomplete: missing required ground-truth name %q"
 		if len(actual) == 0 {
 			issueCode = core.IssueCodeGTEncoderMissing
-			template = "missing @tensorleap_gt_encoder for required target symbol %q"
+			template = "missing @tensorleap_gt_encoder for required ground-truth name %q"
 		}
 
 		for _, symbol := range missing {
@@ -52,7 +52,7 @@ func inspectGTEncoderContract(repoRoot string, status *core.IntegrationStatus) {
 		if !registration.HasExplicitSymbol {
 			status.Issues = append(status.Issues, core.Issue{
 				Code:     core.IssueCodeGTEncoderCoverageIncomplete,
-				Message:  fmt.Sprintf("@tensorleap_gt_encoder function %q does not declare a target symbol; contract mapping is ambiguous", registration.Function),
+				Message:  fmt.Sprintf("@tensorleap_gt_encoder function %q does not declare a ground-truth name; contract mapping is ambiguous", registration.Function),
 				Severity: core.SeverityError,
 				Scope:    core.IssueScopeGroundTruthEncoder,
 				Location: &core.IssueLocation{

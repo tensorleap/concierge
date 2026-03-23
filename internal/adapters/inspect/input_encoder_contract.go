@@ -54,10 +54,10 @@ func inspectInputEncoderContract(repoRoot string, status *core.IntegrationStatus
 
 	if len(missing) > 0 {
 		issueCode := core.IssueCodeInputEncoderCoverageIncomplete
-		template := "input encoder coverage is incomplete: missing required symbol %q"
+		template := "input encoder coverage is incomplete: missing required input name %q"
 		if len(actual) == 0 {
 			issueCode = core.IssueCodeInputEncoderMissing
-			template = "missing @tensorleap_input_encoder for required input symbol %q"
+			template = "missing @tensorleap_input_encoder for required input name %q"
 		}
 
 		for _, symbol := range missing {
@@ -77,7 +77,7 @@ func inspectInputEncoderContract(repoRoot string, status *core.IntegrationStatus
 	if len(expected) == 0 && len(registrations) > 0 && hasUnresolvedModelContractIssue(status.Issues) {
 		status.Issues = append(status.Issues, core.Issue{
 			Code:     core.IssueCodeInputEncoderCoverageIncomplete,
-			Message:  "cannot derive required input-encoder symbol mapping because model contract is unresolved",
+			Message:  "cannot derive required input-encoder name mapping because the model contract is unresolved",
 			Severity: core.SeverityError,
 			Scope:    core.IssueScopeInputEncoder,
 			Location: &core.IssueLocation{

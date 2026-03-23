@@ -74,6 +74,39 @@ class QAWorkspaceSanitizerTest(unittest.TestCase):
             )
             self.assertNotEqual(leak_show.returncode, 0)
 
+    def test_sanitizer_ignores_checkpoint_warmup_helper(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            source = tmp_path / "source"
+            output = tmp_path / "output"
+
+            source.mkdir()
+            self._git(source, "init")
+            self._git(source, "config", "user.name", "Fixture Source")
+            self._git(source, "config", "user.email", "fixture-source@example.com")
+
+            (source / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+            self._git(source, "add", "tracked.txt")
+            self._git(source, "commit", "-m", "seed sanitized repo")
+
+            completed = subprocess.run(
+                ["bash", str(SANITIZER), str(source), str(output)],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(
+                completed.returncode,
+                0,
+                msg=f"stdout={completed.stdout}\nstderr={completed.stderr}",
+            )
+
+            (output / ".checkpoint_warmup.sh").write_text("#!/usr/bin/env bash\necho warm\n", encoding="utf-8")
+            status = self._git(output, "status", "--porcelain")
+            self.assertEqual(status.strip(), "", msg=f"expected helper to be ignored, got git status {status!r}")
+
     def _git(self, repo: Path, *args: str) -> str:
         completed = subprocess.run(
             ["git", "-C", str(repo), *args],

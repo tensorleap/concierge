@@ -41,6 +41,9 @@ func TestGTEncoderDetectorEmitsMissingIssue(t *testing.T) {
 	if !strings.Contains(strings.ToLower(issue.Message), "label") {
 		t.Fatalf("expected symbol detail in issue message, got %q", issue.Message)
 	}
+	if strings.Contains(strings.ToLower(issue.Message), "symbol") || strings.Contains(strings.ToLower(issue.Message), "target") {
+		t.Fatalf("expected user-facing ground-truth name wording, got %q", issue.Message)
+	}
 	if issue.Location == nil || issue.Location.Symbol != "label" {
 		t.Fatalf("expected symbol location %q, got %+v", "label", issue.Location)
 	}

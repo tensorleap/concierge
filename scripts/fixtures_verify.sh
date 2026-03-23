@@ -298,11 +298,17 @@ assert_case_family_shape() {
       ;;
     gt_encoders)
       expected_symbol="$(jq -r '.confirmed_mapping.ground_truth_symbols[1] // empty' <<<"${case_json}")"
-      [[ -n "${expected_symbol}" ]] || fail "case '${case_id}' requires a second confirmed GT symbol"
-      ! rg -q "@tensorleap_gt_encoder\\(\"${expected_symbol}\"\\)" "${repo_dir}/leap_integration.py" \
-        || fail "case '${case_id}' should remove the ${expected_symbol} GT-encoder decorator from leap_integration.py"
-      ! rg -q "def encode_label\\(" "${repo_dir}/leap_integration.py" \
-        || fail "case '${case_id}' should remove the ${expected_symbol} GT-encoder definition from leap_integration.py"
+      if [[ -n "${expected_symbol}" ]]; then
+        ! rg -q "@tensorleap_gt_encoder\\(\"${expected_symbol}\"\\)" "${repo_dir}/leap_integration.py" \
+          || fail "case '${case_id}' should remove the ${expected_symbol} GT-encoder decorator from leap_integration.py"
+        ! rg -q "def encode_label\\(" "${repo_dir}/leap_integration.py" \
+          || fail "case '${case_id}' should remove the ${expected_symbol} GT-encoder definition from leap_integration.py"
+      else
+        expected_symbol="$(jq -r '.confirmed_mapping.ground_truth_symbols[0] // empty' <<<"${case_json}")"
+        [[ -n "${expected_symbol}" ]] || fail "case '${case_id}' requires a confirmed GT symbol"
+        ! rg -q "@tensorleap_gt_encoder\\(['\"]${expected_symbol}['\"]" "${repo_dir}/leap_integration.py" "${repo_dir}/leap_binder.py" \
+          || fail "case '${case_id}' should remove the ${expected_symbol} GT-encoder decorator from the checkpoint source"
+      fi
       ;;
     composite_recovery)
       entry_file="$(fixture_extract_leap_yaml_entry_file "${repo_dir}/leap.yaml")"

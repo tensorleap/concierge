@@ -63,6 +63,12 @@ func TestFixtureCaseUltralyticsInputEncoders_UsesThinIntegrationTestScaffold(t *
 	if strings.Contains(addedContent, "binder_input_encoder(") {
 		t.Fatalf("expected ultralytics input-encoders patch to avoid legacy binder_input_encoder wiring before encoder repair, got:\n%s", addedContent)
 	}
+	if strings.Contains(addedContent, "@tensorleap_gt_encoder") {
+		t.Fatalf("expected ultralytics input-encoders patch to avoid GT encoder registrations before the GT step, got:\n%s", addedContent)
+	}
+	if strings.Contains(addedContent, "binder_gt_encoder") {
+		t.Fatalf("expected ultralytics input-encoders patch to avoid GT encoder wiring before the GT step, got:\n%s", addedContent)
+	}
 }
 
 func patchAddedContent(raw string) string {

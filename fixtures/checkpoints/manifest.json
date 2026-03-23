@@ -11,6 +11,16 @@
       "notes": "Ultralytics encoder-start QA uses a prewarmed case that validates preprocess and load_model before Concierge starts."
     },
     {
+      "fixture_id": "ultralytics",
+      "step": "ground_truth_encoders",
+      "source_kind": "case",
+      "source_id": "ultralytics_gt_encoders",
+      "build_mode": "prewarmed",
+      "expected_primary_step": "ensure.ground_truth_encoders",
+      "warmup_script": "fixtures/checkpoints/warmup/ultralytics_input_encoders.sh",
+      "notes": "Ultralytics GT-authoring QA reuses the prewarmed preprocess/model scaffold while preserving the input encoder and stripping GT registration."
+    },
+    {
       "fixture_id": "mnist",
       "step": "integration_script",
       "source_kind": "case",

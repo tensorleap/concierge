@@ -393,7 +393,6 @@ func ensureIntegrationTestScaffold(repoRoot string, step core.EnsureStep) (core.
 	applied := entryApplied
 	content := string(raw)
 	scaffoldAdded := false
-	mainBlockAdded := false
 
 	// Ensure @tensorleap_integration_test scaffold exists.
 	if !strings.Contains(content, "@tensorleap_integration_test") {
@@ -409,20 +408,6 @@ func ensureIntegrationTestScaffold(repoRoot string, step core.EnsureStep) (core.
 		applied = true
 	}
 
-	// Ensure __main__ entry-point exists when both preprocess and integration test are present.
-	if !strings.Contains(content, "if __name__ ==") {
-		preprocessFunc := findDecoratedFunctionName(content, "tensorleap_preprocess")
-		integrationTestFunc := findDecoratedFunctionName(content, "tensorleap_integration_test")
-		if preprocessFunc != "" && integrationTestFunc != "" {
-			if !strings.HasSuffix(content, "\n") {
-				content += "\n"
-			}
-			content += generateMainBlock(preprocessFunc, integrationTestFunc)
-			mainBlockAdded = true
-			applied = true
-		}
-	}
-
 	// Write accumulated changes.
 	if content != string(raw) {
 		if err := os.WriteFile(targetPath, []byte(content), 0o644); err != nil {
@@ -430,7 +415,7 @@ func ensureIntegrationTestScaffold(repoRoot string, step core.EnsureStep) (core.
 		}
 	}
 
-	summary := integrationTestScaffoldSummary(entryApplied, scaffoldAdded, mainBlockAdded)
+	summary := integrationTestScaffoldSummary(entryApplied, scaffoldAdded)
 
 	afterChecksum, _, err := checksumForPath(targetPath)
 	if err != nil {
@@ -451,17 +436,14 @@ func ensureIntegrationTestScaffold(repoRoot string, step core.EnsureStep) (core.
 	}, nil
 }
 
-func integrationTestScaffoldSummary(entryApplied, scaffoldAdded, mainBlockAdded bool) string {
-	if !entryApplied && !scaffoldAdded && !mainBlockAdded {
+func integrationTestScaffoldSummary(entryApplied, scaffoldAdded bool) string {
+	if !entryApplied && !scaffoldAdded {
 		return fmt.Sprintf("%s already includes @tensorleap_integration_test; no changes applied", core.CanonicalIntegrationEntryFile)
 	}
 
-	added := make([]string, 0, 2)
+	added := make([]string, 0, 1)
 	if scaffoldAdded {
 		added = append(added, "@tensorleap_integration_test scaffold")
-	}
-	if mainBlockAdded {
-		added = append(added, "__main__ entry-point")
 	}
 
 	if entryApplied && len(added) > 0 {

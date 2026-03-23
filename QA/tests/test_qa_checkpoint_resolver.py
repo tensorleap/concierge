@@ -407,6 +407,24 @@ class QACheckpointResolverTest(unittest.TestCase):
         self.assertEqual(entry["expected_primary_step"], "ensure.input_encoders")
         self.assertEqual(entry["warmup_script"], "fixtures/checkpoints/warmup/ultralytics_input_encoders.sh")
 
+    def test_repo_checkpoint_manifest_contains_ultralytics_gt_encoders_checkpoint(self) -> None:
+        manifest_path = REPO_ROOT / "fixtures" / "checkpoints" / "manifest.json"
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+        matching = [
+            entry
+            for entry in payload["checkpoints"]
+            if entry["fixture_id"] == "ultralytics" and entry["step"] == "ground_truth_encoders"
+        ]
+
+        self.assertEqual(len(matching), 1, matching)
+        entry = matching[0]
+        self.assertEqual(entry["source_kind"], "case")
+        self.assertEqual(entry["source_id"], "ultralytics_gt_encoders")
+        self.assertEqual(entry["build_mode"], "prewarmed")
+        self.assertEqual(entry["expected_primary_step"], "ensure.ground_truth_encoders")
+        self.assertEqual(entry["warmup_script"], "fixtures/checkpoints/warmup/ultralytics_input_encoders.sh")
+
     def _write_fixture_manifest(self, repo_root: Path) -> None:
         fixtures_dir = repo_root / "fixtures"
         fixtures_dir.mkdir(parents=True, exist_ok=True)

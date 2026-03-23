@@ -12,7 +12,21 @@
         "input_symbols": ["image"],
         "ground_truth_symbols": ["classes"]
       },
-      "notes": "Keeps preprocess and model loading intact while removing the input encoder registration for the warmed QA checkpoint."
+      "notes": "Keeps preprocess and model loading intact while removing both encoder registrations so the warmed QA checkpoint stops strictly before input authoring."
+    },
+    {
+      "id": "ultralytics_gt_encoders",
+      "source_fixture_id": "ultralytics",
+      "source_variant": "post",
+      "family": "gt_encoders",
+      "patch": "fixtures/cases/patches/ultralytics_gt_encoders.patch",
+      "expected_primary_step": "ensure.ground_truth_encoders",
+      "expected_issue_codes": ["gt_encoder_missing"],
+      "confirmed_mapping": {
+        "input_symbols": ["image"],
+        "ground_truth_symbols": ["classes"]
+      },
+      "notes": "Preserves the warmed input encoder and thin integration-test scaffold while removing GT registration for the GT-authoring checkpoint."
     },
     {
       "id": "mnist_canonical_layout",

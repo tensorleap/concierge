@@ -19,16 +19,10 @@ index 1dd1ad87..1c91c556 100644
      export_to_onnx(cfg)
      exported_model_path=yolo_version_check(model_path)
 diff --git a/leap_binder.py b/leap_binder.py
-index 0adf068c..dca4c5ec 100644
+index 0adf068c..e72b71c0 100644
 --- a/leap_binder.py
 +++ b/leap_binder.py
-@@ -45,13 +45,11 @@ def preprocess_func_leap() -> List[PreprocessResponse]:
-
- # ------------------------------------------input and gt----------------------------------------------------------------
-
--@tensorleap_input_encoder('image', channel_dim=1)
- def input_encoder(idx: int, preprocess: PreprocessResponse) -> np.ndarray:
-     imgs, _, _,_=pre_process_dataloader(preprocess, idx, predictor)
+@@ -51,7 +51,6 @@ def input_encoder(idx: int, preprocess: PreprocessResponse) -> np.ndarray:
      return imgs.astype('float32')
 
 
@@ -37,10 +31,10 @@ index 0adf068c..dca4c5ec 100644
      if preprocessing.state == DataStateType.unlabeled:
          return np.full((1, 5), np.nan,dtype=np.float32)
 diff --git a/leap_integration.py b/leap_integration.py
-index 96070d75..87fa5ac8 100644
+index 96070d75..4f01bc90 100644
 --- a/leap_integration.py
 +++ b/leap_integration.py
-@@ -1,59 +1,43 @@
+@@ -1,59 +1,44 @@
 -import os
 -from code_loader.contract.datasetclasses import SamplePreprocessResponse
 -from leap_binder import (input_encoder, preprocess_func_leap, gt_encoder,
@@ -73,6 +67,7 @@ index 96070d75..87fa5ac8 100644
 +@tensorleap_preprocess()
 +def preprocess():
 +    return preprocess_func_leap()
++
 +
  @tensorleap_load_model([prediction_type1,prediction_type2,prediction_type3,prediction_type4])
  def load_model():

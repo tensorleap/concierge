@@ -7,6 +7,28 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class QARunnerSurfaceTest(unittest.TestCase):
+    def test_qa_workflow_supports_manual_dispatch_inputs(self) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "qa-loop.yml").read_text(encoding="utf-8")
+
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("ref:", workflow)
+        self.assertIn("fixture:", workflow)
+        self.assertIn("step:", workflow)
+        self.assertIn("run_id:", workflow)
+        self.assertIn("issue_number:", workflow)
+        self.assertIn("pr_number:", workflow)
+
+    def test_qa_workflow_uploads_artifacts_and_supports_linked_comments(self) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "qa-loop.yml").read_text(encoding="utf-8")
+
+        self.assertIn("actions/upload-artifact@v4", workflow)
+        self.assertIn("GITHUB_STEP_SUMMARY", workflow)
+        self.assertIn("Artifact:", workflow)
+        self.assertIn("issues: write", workflow)
+        self.assertIn("pull-requests: write", workflow)
+        self.assertIn("gh issue comment", workflow)
+        self.assertIn("gh pr comment", workflow)
+
     def test_makefile_does_not_force_default_repo(self) -> None:
         makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
 

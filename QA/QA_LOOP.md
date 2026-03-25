@@ -1,17 +1,17 @@
 # QA Loop Guide
 
-`QA/qa_loop.py` is a local harness that runs Concierge inside a Docker container PTY, lets `codex exec` act as the user, and saves a transcript plus a qualitative QA report.
+`QA/qa_loop.py` runs Concierge inside a Docker container PTY, lets Claude act as the user, and saves a transcript plus a qualitative QA report.
 
 ## Prerequisites
 
 - `python3`
-- a working local `codex` CLI login
+- a working local `claude` CLI login, or `CLAUDE_BIN` pointing at the desired Claude CLI binary
 - this Concierge repo available locally
 - Docker
 - Go
 - `ANTHROPIC_API_KEY`
 
-You do not need to manually check out a separate fixture repo if you want to use the built-in fixture corpus. Prepare the fixtures once, then use `scripts/qa_fixture_run.sh` or `make qa`; they build a fixture-scoped container image from the clean `pre` repo and run the harness against that container.
+You do not need to manually check out a separate fixture repo if you want to use the built-in fixture corpus. Prepare the fixtures once, then use `scripts/qa_fixture_run.sh` or `make qa`; they build a fixture-scoped container image from the clean `pre` repo and run the same Claude-driven harness used in CI.
 
 ## Using A Built-In Fixture
 
@@ -47,12 +47,12 @@ What this does:
 
 - runs Concierge against `.fixtures/<fixture-id>/pre`
 - copies only the clean `pre` repo into a fixture-specific Docker image
-- keeps Codex in blind-first mode at the start
+- keeps Claude in blind-first mode at the start
 - only exposes the `post` repo path if progress stalls
 - when using `make qa`, resets the chosen built-in fixture back to a clean pinned `pre`/`post` state first
 - starts a long-lived fixture container and runs Concierge inside it with `docker exec`
 - keeps per-turn transcripts, turn logs, and `docker diff` / exported `.concierge` artifacts
-- renders live Codex control/report events as readable terminal text while keeping the raw JSON event logs under `QA/runs/<run-id>/codex/`
+- renders live Claude control/report events as readable terminal text while keeping the raw JSON event logs under `QA/runs/<run-id>/claude/`
 
 ## Using A Running Container
 
@@ -99,19 +99,21 @@ Everything after `--` is treated as the container-internal PTY command.
 - `--docker-bin PATH`
   Docker CLI to use. Default: `docker`.
 - `--fixture-post-path PATH`
-  Optional known-good repo path that Codex may inspect only after the blind-first phase stalls.
+  Optional known-good repo path that Claude may inspect only after the blind-first phase stalls.
 - `--docker-snapshots`
   Optional debug mode. Captures a `docker commit` plus per-turn `diff`/`inspect` metadata after each supervisor turn.
 - `--artifacts-root PATH`
   Where `runs/`, `transcripts/`, and `reports/` are written. Defaults to `QA/`.
-- `--codex-command STRING`
-  Command used to launch Codex. Default: `codex`.
+- `--claude-command STRING`
+  Command used to launch Claude. Default: `claude`, or `CLAUDE_BIN` if set.
+- `--claude-timeout-seconds FLOAT`
+  Timeout for each Claude control or report step. Default: `300`.
 - `--model MODEL`
-  Optional Codex model override.
+  Optional Claude model override.
 - `--run-id ID`
   Set a stable run ID instead of the generated timestamp-based one.
 - `--max-iterations N`
-  Hard cap on Codex control turns. Default: `30`.
+  Hard cap on Claude control turns. Default: `30`.
 - `--max-idle-turns N`
   Stop after this many no-progress turns. Default: `5`.
 - `--max-runtime-seconds N`
@@ -121,9 +123,9 @@ Everything after `--` is treated as the container-internal PTY command.
 - `--read-timeout-seconds FLOAT`
   Maximum wait per PTY read cycle.
 - `--transcript-tail-chars N`
-  How much of the full transcript tail is sent to Codex on each control turn.
+  How much of the full transcript tail is sent to Claude on each control turn.
 - `--latest-output-chars N`
-  How much of the most recent terminal output is sent to Codex on each control turn.
+  How much of the most recent terminal output is sent to Claude on each control turn.
 
 ## Outputs
 
@@ -131,7 +133,8 @@ By default the harness writes:
 
 - `QA/runs/<run-id>/summary.json`
 - `QA/runs/<run-id>/turns.jsonl`
-- `QA/runs/<run-id>/codex/*`
+- `QA/runs/<run-id>/claude/*`
+- `QA/runs/<run-id>/docker/*`
 - `QA/transcripts/<run-id>.full.txt`
 - `QA/transcripts/<run-id>.terminal.raw.txt`
 - `QA/transcripts/<run-id>.terminal.txt`
@@ -142,6 +145,19 @@ By default the harness writes:
 The harness prints the absolute path to the full-session transcript at the end of the run. The markdown report is still the easiest artifact to read first.
 
 For fixture runs, each `QA/runs/<run-id>/docker/` directory contains exported container artifacts such as `/workspace/.concierge`. If `--docker-snapshots` is enabled, it also includes per-turn `docker commit` metadata plus `docker diff` / `docker inspect` outputs.
+
+## GitHub Actions
+
+The shared manual workflow lives at `.github/workflows/qa-loop.yml`.
+
+Dispatch it with:
+
+- `ref`: same-repo branch, tag, or SHA to test
+- `fixture`: fixture id from `fixtures/manifest.json`
+- `step`: guide-native checkpoint step
+- optional `run_id`, `issue_number`, and `pr_number`
+
+The workflow installs Claude CLI, runs `scripts/qa_fixture_run.sh`, uploads the saved QA artifacts, writes a concise `GITHUB_STEP_SUMMARY`, and can post the same result summary back to the linked issue or PR.
 
 ## Exit Codes
 

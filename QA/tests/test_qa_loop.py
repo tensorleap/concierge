@@ -146,7 +146,7 @@ def qa_loop_command(
     artifacts_root: Path,
     fake_docker: Path,
     container_name: str,
-    codex_command: str,
+    claude_command: str,
     target_command: list[str],
     extra_args: list[str] | None = None,
 ) -> list[str]:
@@ -161,8 +161,8 @@ def qa_loop_command(
         container_name,
         "--container-workdir",
         "/workspace",
-        "--codex-command",
-        codex_command,
+        "--claude-command",
+        claude_command,
     ]
     if extra_args:
         command.extend(extra_args)
@@ -175,6 +175,31 @@ class QALoopTest(unittest.TestCase):
     def test_parse_args_disables_docker_snapshots_by_default(self) -> None:
         args = qa_loop.parse_args(["--container-name", "fixture"])
         self.assertFalse(args.docker_snapshots)
+        self.assertEqual(args.claude_command, "claude")
+        self.assertEqual(args.claude_timeout_seconds, qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS)
+
+    def test_parse_args_accepts_claude_runner_surface(self) -> None:
+        args = qa_loop.parse_args(
+            [
+                "--container-name",
+                "fixture",
+                "--claude-command",
+                "claude",
+                "--claude-timeout-seconds",
+                "45",
+            ]
+        )
+
+        self.assertEqual(args.claude_command, "claude")
+        self.assertEqual(args.claude_timeout_seconds, 45.0)
+
+    def test_prepare_run_paths_uses_claude_artifact_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = qa_loop.prepare_run_paths(Path(tmpdir), "run-123")
+
+            self.assertEqual(paths.claude_dir, Path(tmpdir) / "runs" / "run-123" / "claude")
+            self.assertTrue(paths.claude_dir.is_dir())
+            self.assertFalse((Path(tmpdir) / "runs" / "run-123" / "codex").exists())
 
     def test_supervisor_loop_writes_transcript_and_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -206,25 +231,17 @@ class QALoopTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            codex_script = tmp / "fake_codex.py"
-            codex_script.write_text(
+            claude_script = tmp / "fake_claude.py"
+            claude_script.write_text(
                 textwrap.dedent(
                     """
+                    #!/usr/bin/env python3
                     import json
                     import os
                     import sys
                     from pathlib import Path
 
-                    args = sys.argv[1:]
-                    output_path = None
-                    for index, value in enumerate(args):
-                        if value == "-o":
-                            output_path = Path(args[index + 1])
-                            break
-                    if output_path is None:
-                        raise SystemExit("missing -o")
-
-                    prompt = sys.stdin.read()
+                    prompt = sys.argv[-1]
                     state_path = Path(os.environ["FAKE_CODEX_STATE"])
                     if state_path.exists():
                         state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -241,7 +258,7 @@ class QALoopTest(unittest.TestCase):
                             "product_issues": [],
                             "agent_interaction_issues": [],
                             "suggestions": ["Keep the completion message concise."],
-                            "notable_moments": ["Codex answered YES and Concierge completed immediately."]
+                            "notable_moments": ["Claude answered YES and Concierge completed immediately."]
                         }
                     else:
                         state["turn"] += 1
@@ -265,16 +282,13 @@ class QALoopTest(unittest.TestCase):
                             }
                         state_path.write_text(json.dumps(state), encoding="utf-8")
 
-                    output_path.parent.mkdir(parents=True, exist_ok=True)
-                    output_path.write_text(json.dumps(payload), encoding="utf-8")
-                    print(json.dumps({"type": "thread.started", "thread_id": "fake-thread"}))
-                    print(json.dumps({"type": "item.completed", "item": {"id": "item-1", "type": "agent_message", "text": json.dumps(payload)}}))
+                    print(json.dumps({"type": "result", "subtype": "success", "structured_output": payload}))
                     """
                 ).strip()
                 + "\n",
                 encoding="utf-8",
             )
-            codex_script.chmod(0o755)
+            claude_script.chmod(0o755)
 
             env = os.environ.copy()
             env["FAKE_CODEX_STATE"] = str(tmp / "fake_codex_state.json")
@@ -285,7 +299,7 @@ class QALoopTest(unittest.TestCase):
                     artifacts_root=artifacts_root,
                     fake_docker=fake_docker,
                     container_name=container_name,
-                    codex_command=f"{sys.executable} {codex_script}",
+                    claude_command=str(claude_script),
                     target_command=[sys.executable, str(concierge_script)],
                     extra_args=["--docker-snapshots"],
                 ),
@@ -301,8 +315,7 @@ class QALoopTest(unittest.TestCase):
                 msg=f"stdout:\n{completed.stdout}\n\nstderr:\n{completed.stderr}",
             )
             self.assertIn("Welcome to Concierge", completed.stdout)
-            self.assertIn("[qa-loop][codex-control-001] thread started: fake-thread", completed.stdout)
-            self.assertIn("[qa-loop][codex-control-001] action: SEND_INPUT -> YES (CONTINUE)", completed.stdout)
+            self.assertIn("[qa-loop][claude-control-001] action: SEND_INPUT -> YES (CONTINUE)", completed.stdout)
 
             run_dirs = sorted((artifacts_root / "runs").iterdir())
             self.assertEqual(len(run_dirs), 1)
@@ -335,15 +348,14 @@ class QALoopTest(unittest.TestCase):
             full_transcript = full_transcript_path.read_text(encoding="utf-8")
             self.assertIn("Welcome to Concierge", full_transcript)
             self.assertIn("[qa-loop] input -> YES", full_transcript)
-            self.assertIn("[qa-loop] --- codex-control-001 stdin begin ---", full_transcript)
-            self.assertIn("[qa-loop][codex-control-001] action: SEND_INPUT -> YES (CONTINUE)", full_transcript)
+            self.assertIn("[qa-loop] --- claude-control-001 prompt begin ---", full_transcript)
+            self.assertIn("[qa-loop][claude-control-001] action: SEND_INPUT -> YES (CONTINUE)", full_transcript)
             self.assertIn(f"[qa-loop] transcript: {full_transcript_path.resolve()}", completed.stdout)
 
-            event_log_path = run_dir / "codex" / "turn-001.jsonl"
+            event_log_path = run_dir / "claude" / "turn-001.jsonl"
             self.assertTrue(event_log_path.is_file())
             event_log = event_log_path.read_text(encoding="utf-8")
-            self.assertIn('"type": "thread.started"', event_log)
-            self.assertIn('"type": "item.completed"', event_log)
+            self.assertIn('"structured_output"', event_log)
 
     def test_format_codex_stream_event_renders_command_execution_as_text(self) -> None:
         rendered = qa_loop.format_codex_stream_event(
@@ -368,6 +380,100 @@ class QALoopTest(unittest.TestCase):
         self.assertIn("[qa-loop][codex-final-report] command output:", rendered)
         self.assertIn("    first line", rendered)
         self.assertIn("    second line", rendered)
+
+    def test_format_claude_stream_event_renders_structured_output_as_text(self) -> None:
+        rendered = qa_loop.format_claude_stream_event(
+            "claude-final-report",
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "structured_output": {
+                        "title": "Synthetic QA Report",
+                        "overall_outcome": "Reached the completion path.",
+                        "loop_state": "STOP_REPORT",
+                        "integration_progress": "The flow completed after one response.",
+                        "ux_clarity": ["The primary prompt was clear."],
+                        "product_issues": [],
+                        "agent_interaction_issues": [],
+                        "suggestions": ["Keep the summary short."],
+                        "notable_moments": ["Claude answered YES and Concierge completed immediately."],
+                    },
+                }
+            )
+            + "\n",
+        )
+
+        self.assertIn("[qa-loop][claude-final-report] report: Synthetic QA Report", rendered)
+        self.assertIn("[qa-loop][claude-final-report] outcome: Reached the completion path.", rendered)
+        self.assertIn("[qa-loop][claude-final-report] notable: Claude answered YES and Concierge completed immediately.", rendered)
+
+    def test_claude_client_extracts_structured_output_from_result_envelope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            workspace_root = tmp / "workspace"
+            artifacts_root = tmp / "artifacts"
+            workspace_root.mkdir()
+            artifacts_root.mkdir()
+
+            claude_script = tmp / "fake_claude_stderr.py"
+            claude_script.write_text(
+                textwrap.dedent(
+                    """
+                    import json
+                    import sys
+
+                    sys.stderr.write("Shell snapshot validation failed\\n")
+                    payload = {
+                        "type": "result",
+                        "subtype": "success",
+                        "structured_output": {
+                            "action": "WAIT",
+                            "summary": "Keep waiting for the next prompt.",
+                        },
+                    }
+                    print(json.dumps(payload))
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            claude_script.chmod(0o755)
+
+            client = qa_loop.ClaudeClient(
+                workspace_root=workspace_root,
+                artifacts_root=artifacts_root,
+                command=f"{sys.executable} {claude_script}",
+            )
+            transcript_path = tmp / "transcript.txt"
+            output_path = tmp / "output.json"
+            event_log_path = tmp / "events.jsonl"
+            stderr_log_path = tmp / "stderr.log"
+            schema_path = tmp / "schema.json"
+            schema_path.write_text("{}", encoding="utf-8")
+
+            payload = client.run_structured(
+                prompt="probe",
+                schema_path=schema_path,
+                output_path=output_path,
+                event_log_path=event_log_path,
+                stderr_log_path=stderr_log_path,
+                live_io=qa_loop.LiveIO(transcript_path=transcript_path),
+                session_label="claude-control-001",
+            )
+
+            self.assertEqual(payload["action"], "WAIT")
+            self.assertEqual(payload["summary"], "Keep waiting for the next prompt.")
+            self.assertEqual(json.loads(output_path.read_text(encoding="utf-8"))["action"], "WAIT")
+
+            event_log = event_log_path.read_text(encoding="utf-8")
+            self.assertIn('"structured_output"', event_log)
+
+            stderr_log = stderr_log_path.read_text(encoding="utf-8")
+            self.assertIn("Shell snapshot validation failed", stderr_log)
+
+            transcript = transcript_path.read_text(encoding="utf-8")
+            self.assertNotIn("Shell snapshot validation failed", transcript)
 
     def test_codex_client_keeps_shell_snapshot_stderr_in_log_but_hides_it_from_live_transcript(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -526,7 +632,7 @@ class QALoopTest(unittest.TestCase):
                     artifacts_root=artifacts_root,
                     fake_docker=fake_docker,
                     container_name=container_name,
-                    codex_command=f"{sys.executable} {codex_script}",
+                    claude_command=f"{sys.executable} {codex_script}",
                     target_command=[sys.executable, str(concierge_script)],
                 ),
                 cwd=str(ROOT),
@@ -671,7 +777,7 @@ class QALoopTest(unittest.TestCase):
                     artifacts_root=artifacts_root,
                     fake_docker=fake_docker,
                     container_name=container_name,
-                    codex_command=f"{sys.executable} {codex_script}",
+                    claude_command=f"{sys.executable} {codex_script}",
                     target_command=[sys.executable, str(concierge_script)],
                 ),
                 cwd=str(ROOT),
@@ -837,7 +943,7 @@ class QALoopTest(unittest.TestCase):
                     artifacts_root=artifacts_root,
                     fake_docker=fake_docker,
                     container_name=container_name,
-                    codex_command=f"{sys.executable} {codex_script}",
+                    claude_command=f"{sys.executable} {codex_script}",
                     target_command=target_command,
                     extra_args=["--max-runtime-seconds", "10"],
                 ),
@@ -997,7 +1103,7 @@ class QALoopTest(unittest.TestCase):
                     artifacts_root=artifacts_root,
                     fake_docker=fake_docker,
                     container_name=container_name,
-                    codex_command=f"{sys.executable} {codex_script}",
+                    claude_command=f"{sys.executable} {codex_script}",
                     target_command=[sys.executable, str(concierge_script)],
                     extra_args=[
                         "--read-timeout-seconds",
@@ -1171,7 +1277,7 @@ class QALoopTest(unittest.TestCase):
                     artifacts_root=artifacts_root,
                     fake_docker=fake_docker,
                     container_name=container_name,
-                    codex_command=f"{sys.executable} {codex_script}",
+                    claude_command=f"{sys.executable} {codex_script}",
                     target_command=[sys.executable, str(concierge_script)],
                     extra_args=[
                         "--fixture-post-path",
@@ -1298,12 +1404,12 @@ class QALoopTest(unittest.TestCase):
                     artifacts_root=artifacts_root,
                     fake_docker=fake_docker,
                     container_name=container_name,
-                    codex_command=f"{sys.executable} {codex_script}",
+                    claude_command=f"{sys.executable} {codex_script}",
                     target_command=[sys.executable, str(concierge_script)],
                     extra_args=[
                         "--run-id",
                         "provisional-report",
-                        "--codex-timeout-seconds",
+                        "--claude-timeout-seconds",
                         "1.5",
                     ],
                 ),
@@ -1434,10 +1540,10 @@ class QALoopTest(unittest.TestCase):
                     artifacts_root=artifacts_root,
                     fake_docker=fake_docker,
                     container_name=container_name,
-                    codex_command=f"{sys.executable} {codex_script}",
+                    claude_command=f"{sys.executable} {codex_script}",
                     target_command=[sys.executable, str(concierge_script)],
                     extra_args=[
-                        "--codex-timeout-seconds",
+                        "--claude-timeout-seconds",
                         "0.5",
                     ],
                 ),
@@ -1540,10 +1646,10 @@ class QALoopTest(unittest.TestCase):
                     artifacts_root=artifacts_root,
                     fake_docker=fake_docker,
                     container_name=container_name,
-                    codex_command=f"{sys.executable} {codex_script}",
+                    claude_command=f"{sys.executable} {codex_script}",
                     target_command=[sys.executable, str(concierge_script)],
                     extra_args=[
-                        "--codex-timeout-seconds",
+                        "--claude-timeout-seconds",
                         "0.5",
                     ],
                 ),
@@ -1561,7 +1667,7 @@ class QALoopTest(unittest.TestCase):
 
             run_dir = next((artifacts_root / "runs").iterdir())
             summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
-            self.assertEqual(summary["stop_reason"], "codex_control_error")
+            self.assertEqual(summary["stop_reason"], "claude_control_error")
 
             report_path = artifacts_root / "reports" / f"{run_dir.name}.md"
             self.assertTrue(report_path.is_file())
@@ -1699,10 +1805,10 @@ class QALoopTest(unittest.TestCase):
                     artifacts_root=artifacts_root,
                     fake_docker=fake_docker,
                     container_name=container_name,
-                    codex_command=f"{sys.executable} {codex_script}",
+                    claude_command=f"{sys.executable} {codex_script}",
                     target_command=[sys.executable, str(concierge_script)],
                     extra_args=[
-                        "--codex-timeout-seconds",
+                        "--claude-timeout-seconds",
                         "0.5",
                         "--read-timeout-seconds",
                         "0.2",

@@ -143,7 +143,10 @@ while IFS= read -r case_json; do
 
   log "Generating case '${current_case_id}' from fixture '${source_fixture_id}'"
   reset_case_dir "${case_dir}"
-  cp -R "${source_dir}" "${case_dir}"
+  mkdir -p "${case_dir}"
+  git -C "${case_dir}" init --quiet
+  git -C "${case_dir}" remote add origin "${source_dir}"
+  git -C "${case_dir}" fetch --quiet origin "${source_ref}"
   git -C "${case_dir}" checkout --quiet "${source_ref}"
   fixture_apply_case_patch "${case_dir}" "${patch_path}" "${commit_message}"
   write_case_reset_script "${case_dir}" "${source_ref}" "${patch_path}" "${commit_message}"

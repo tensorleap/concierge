@@ -339,13 +339,22 @@ class ClaudeClient:
             stdout = completed["stdout"]
             stderr = completed["stderr"]
             returncode = completed["returncode"]
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
+            persist_stream_artifacts(
+                event_log_path=event_log_path,
+                stderr_log_path=stderr_log_path,
+                stdout=exc.output,
+                stderr=exc.stderr,
+            )
             raise ClaudeInvocationError(
                 f"claude --print timed out after {effective_timeout:.1f}s; see {stderr_log_path}"
-            )
-        event_log_path.parent.mkdir(parents=True, exist_ok=True)
-        event_log_path.write_text(stdout, encoding="utf-8")
-        stderr_log_path.write_text(stderr, encoding="utf-8")
+            ) from exc
+        persist_stream_artifacts(
+            event_log_path=event_log_path,
+            stderr_log_path=stderr_log_path,
+            stdout=stdout,
+            stderr=stderr,
+        )
 
         if returncode != 0:
             raise ClaudeInvocationError(
@@ -421,13 +430,22 @@ class ClaudeClient:
             stdout = completed["stdout"]
             stderr = completed["stderr"]
             returncode = completed["returncode"]
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
+            persist_stream_artifacts(
+                event_log_path=event_log_path,
+                stderr_log_path=stderr_log_path,
+                stdout=exc.output,
+                stderr=exc.stderr,
+            )
             raise ClaudeInvocationError(
                 f"claude compat exec timed out after {effective_timeout:.1f}s; see {stderr_log_path}"
-            )
-        event_log_path.parent.mkdir(parents=True, exist_ok=True)
-        event_log_path.write_text(stdout, encoding="utf-8")
-        stderr_log_path.write_text(stderr, encoding="utf-8")
+            ) from exc
+        persist_stream_artifacts(
+            event_log_path=event_log_path,
+            stderr_log_path=stderr_log_path,
+            stdout=stdout,
+            stderr=stderr,
+        )
 
         if returncode != 0:
             raise ClaudeInvocationError(
@@ -1442,6 +1460,18 @@ def indent_lines(text: str, *, prefix: str = "    ") -> list[str]:
     if not body:
         return []
     return [f"{prefix}{line}" for line in body.splitlines()]
+
+
+def persist_stream_artifacts(
+    *,
+    event_log_path: Path,
+    stderr_log_path: Path,
+    stdout: str | bytes | None,
+    stderr: str | bytes | None,
+) -> None:
+    event_log_path.parent.mkdir(parents=True, exist_ok=True)
+    event_log_path.write_text(coerce_text(stdout), encoding="utf-8")
+    stderr_log_path.write_text(coerce_text(stderr), encoding="utf-8")
 
 
 def extract_claude_structured_output(stdout: str) -> dict[str, Any]:

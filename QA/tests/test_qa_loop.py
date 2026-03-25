@@ -689,6 +689,65 @@ class QALoopTest(unittest.TestCase):
             self.assertEqual(payload["action"], "WAIT")
             self.assertEqual(payload["summary"], "Keep waiting for the next prompt.")
 
+    def test_claude_client_persists_partial_streams_when_report_times_out(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            workspace_root = tmp / "workspace"
+            artifacts_root = tmp / "artifacts"
+            workspace_root.mkdir()
+            artifacts_root.mkdir()
+
+            claude_script = tmp / "claude"
+            claude_script.write_text(
+                textwrap.dedent(
+                    """
+                    #!/usr/bin/env python3
+                    import json
+                    import sys
+                    import time
+
+                    sys.stdin.read()
+                    for index in range(3):
+                        print(json.dumps({"type": "thread.started", "thread_id": f"final-report-thread-{index}"}), flush=True)
+                        sys.stderr.write(f"final report synthesis is still running {index}\\n")
+                        sys.stderr.flush()
+                        time.sleep(0.1)
+                    time.sleep(2.0)
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            claude_script.chmod(0o755)
+
+            client = qa_loop.ClaudeClient(
+                workspace_root=workspace_root,
+                artifacts_root=artifacts_root,
+                command=str(claude_script),
+                timeout_seconds=0.5,
+            )
+            output_path = tmp / "output.json"
+            event_log_path = tmp / "events.jsonl"
+            stderr_log_path = tmp / "stderr.log"
+            schema_path = tmp / "schema.json"
+            schema_path.write_text("{}", encoding="utf-8")
+
+            with self.assertRaises(qa_loop.ClaudeInvocationError) as exc:
+                client.run_structured(
+                    prompt="probe",
+                    schema_path=schema_path,
+                    output_path=output_path,
+                    event_log_path=event_log_path,
+                    stderr_log_path=stderr_log_path,
+                )
+
+            self.assertIn(str(stderr_log_path), str(exc.exception))
+            self.assertTrue(event_log_path.is_file())
+            self.assertTrue(stderr_log_path.is_file())
+            self.assertIn("final-report-thread-0", event_log_path.read_text(encoding="utf-8"))
+            self.assertIn("final report synthesis is still running 0", stderr_log_path.read_text(encoding="utf-8"))
+            self.assertFalse(output_path.exists())
+
     def test_codex_client_keeps_shell_snapshot_stderr_in_log_but_hides_it_from_live_transcript(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
@@ -1710,6 +1769,9 @@ class QALoopTest(unittest.TestCase):
                         state = {"turn": 0}
 
                     if "final qualitative QA report" in prompt:
+                        print(json.dumps({"type": "thread.started", "thread_id": "final-report-thread"}), flush=True)
+                        sys.stderr.write("final report synthesis still running\\n")
+                        sys.stderr.flush()
                         time.sleep(2.0)
                         raise SystemExit(0)
 
@@ -1782,6 +1844,14 @@ class QALoopTest(unittest.TestCase):
             self.assertTrue(report_path.is_file())
             report_body = report_path.read_text(encoding="utf-8")
             self.assertIn("QA Loop Report (fallback)", report_body)
+            final_report_base = run_dir / "claude" / "final-report"
+            final_report_event_log = final_report_base.with_suffix(".jsonl")
+            final_report_stderr_log = final_report_base.with_suffix(".stderr.log")
+            self.assertTrue(final_report_event_log.is_file())
+            self.assertTrue(final_report_stderr_log.is_file())
+            self.assertIn("final-report-thread", final_report_event_log.read_text(encoding="utf-8"))
+            self.assertIn("final report synthesis still running", final_report_stderr_log.read_text(encoding="utf-8"))
+            self.assertIn(str(final_report_stderr_log), report_body)
 
             interaction_log = artifacts_root / "transcripts" / f"{run_dir.name}.interaction.jsonl"
             interaction_body = interaction_log.read_text(encoding="utf-8")

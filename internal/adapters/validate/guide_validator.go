@@ -552,7 +552,7 @@ func deriveGuideRecommendation(summary core.GuideValidationSummary) core.GuideRe
 		}
 	}
 
-	if hasLocalStatusTable && preprocessStatus != "pass" {
+	if hasLocalStatusTable && preprocessStatus != "pass" && !parserClearsPreprocess(summary.Parser) {
 		return core.GuideRecommendation{
 			Stage:   "preprocess",
 			Message: "Next recommended interface: make preprocess run directly and return training and validation subsets.",
@@ -830,8 +830,20 @@ func collectGuideIssues(
 		}
 	}
 
-	issues = append(issues, issuesFromGuideStatusRows(summary.Local)...)
+	issues = append(issues, issuesFromGuideStatusRows(summary.Local, summary.Parser)...)
 	return issues
+}
+
+func parserClearsPreprocess(parser core.GuideParserRunSummary) bool {
+	if !parser.Available {
+		return false
+	}
+	for _, payload := range parser.Payloads {
+		if strings.EqualFold(strings.TrimSpace(payload.Name), "preprocess") {
+			return payload.Passed
+		}
+	}
+	return parser.IsValid
 }
 
 var guideStatusRowIssueMap = map[string]core.IssueCode{
@@ -852,12 +864,13 @@ var guideStatusRowScopeMap = map[string]core.IssueScope{
 	"tensorleap_custom_loss":      core.IssueScopeIntegrationTest,
 }
 
-func issuesFromGuideStatusRows(local core.GuideLocalRunSummary) []core.Issue {
+func issuesFromGuideStatusRows(local core.GuideLocalRunSummary, parser core.GuideParserRunSummary) []core.Issue {
 	if local.MandatoryReady || len(local.StatusRows) == 0 {
 		return nil
 	}
 
 	var issues []core.Issue
+	preprocessCleared := parserClearsPreprocess(parser)
 	for _, row := range local.StatusRows {
 		if row.Status != "fail" {
 			continue
@@ -867,6 +880,9 @@ func issuesFromGuideStatusRows(local core.GuideLocalRunSummary) []core.Issue {
 			continue
 		}
 		normalizedName := strings.ToLower(name)
+		if normalizedName == "tensorleap_preprocess" && preprocessCleared {
+			continue
+		}
 		code, ok := guideStatusRowIssueMap[normalizedName]
 		if !ok {
 			// Unknown/unmapped decorator — use a generic fallback distinct from

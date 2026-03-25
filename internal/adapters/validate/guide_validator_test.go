@@ -265,6 +265,32 @@ func TestDeriveGuideRecommendationPrefersGroundTruthStatusOverStaleInputPayloadF
 	}
 }
 
+func TestDeriveGuideRecommendationSkipsStalePreprocessStatusWhenParserAlreadyValidatedPreprocess(t *testing.T) {
+	summary := core.GuideValidationSummary{
+		LocalStatusTableSupported: true,
+		Local: core.GuideLocalRunSummary{
+			StatusRows: []core.GuideStatusRow{
+				{Name: "tensorleap_preprocess", Status: "fail"},
+				{Name: "tensorleap_input_encoder", Status: "pass"},
+				{Name: "tensorleap_load_model", Status: "pass"},
+				{Name: "tensorleap_integration_test", Status: "fail"},
+			},
+		},
+		Parser: core.GuideParserRunSummary{
+			Available: true,
+			IsValid:   true,
+			Payloads: []core.GuidePayloadSummary{
+				{Name: "preprocess", Passed: true},
+			},
+		},
+	}
+
+	recommendation := deriveGuideRecommendation(summary)
+	if recommendation.Stage != "thin_integration_test" {
+		t.Fatalf("expected stale preprocess status to yield integration-test recommendation, got %+v", recommendation)
+	}
+}
+
 func TestGuideValidatorPrefersASTIntegrationTestIssuesOverGenericMappingFailure(t *testing.T) {
 	repoRoot := buildGuideValidationRepo(t)
 	validator := &GuideValidator{
@@ -401,6 +427,61 @@ func TestGuideValidatorMapsMissingNativeLibraryParserErrorsToRuntimeIssue(t *tes
 	}
 }
 
+func TestGuideValidatorSkipsStalePreprocessStatusIssueWhenParserAlreadyValidatedPreprocess(t *testing.T) {
+	repoRoot := buildGuideValidationRepo(t)
+	validator := &GuideValidator{
+		runtimeRunner: &fakeGuideRuntimeRunner{
+			results: []PythonRuntimeCommandResult{
+				{
+					Command: "poetry run python leap_integration.py",
+					Stdout: strings.Join([]string{
+						"Decorator Name                     | Added to integration",
+						"-------------------------------------------------------",
+						"tensorleap_preprocess              | ❌",
+						"tensorleap_input_encoder           | ✅",
+						"tensorleap_load_model              | ✅",
+						"tensorleap_integration_test        | ❌",
+						"tensorleap_gt_encoder              | ✅",
+					}, "\n"),
+				},
+				{
+					Command: "poetry run python -c ...",
+					Stdout: strings.Join([]string{
+						"{",
+						`  "available": true,`,
+						`  "isValid": true,`,
+						`  "payloads": [`,
+						`    {"name":"preprocess","passed":true}`,
+						`  ],`,
+						`  "setup": {"preprocess":{"trainingLength":4,"validationLength":2}}`,
+						"}",
+					}, "\n"),
+				},
+			},
+			errs: []error{nil, nil},
+		},
+		astAnalyzer: fakeIntegrationTestASTAnalyzer{},
+	}
+
+	result, err := validator.Run(context.Background(), guideValidationSnapshot(t, repoRoot))
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if containsIssueCode(result.Issues, core.IssueCodePreprocessFunctionMissing) {
+		t.Fatalf("did not expect stale preprocess status row to survive parser validation, got %+v", result.Issues)
+	}
+	if !containsIssueCode(result.Issues, core.IssueCodeIntegrationTestDecoratorMissing) {
+		t.Fatalf("expected integration-test issue to remain, got %+v", result.Issues)
+	}
+	primary, ok := core.SelectPrimaryEnsureStep(result.Issues)
+	if !ok {
+		t.Fatalf("expected a primary ensure step, got issues %+v", result.Issues)
+	}
+	if primary.ID != core.EnsureStepIntegrationTestWiring {
+		t.Fatalf("expected primary step %q, got %q", core.EnsureStepIntegrationTestWiring, primary.ID)
+	}
+}
+
 type fakeGuideRuntimeRunner struct {
 	results []PythonRuntimeCommandResult
 	errs    []error
@@ -505,7 +586,7 @@ func TestIssuesFromGuideStatusRowsMandatoryFail(t *testing.T) {
 		},
 	}
 
-	issues := issuesFromGuideStatusRows(local)
+	issues := issuesFromGuideStatusRows(local, core.GuideParserRunSummary{})
 	if len(issues) != 2 {
 		t.Fatalf("expected 2 issues, got %d: %+v", len(issues), issues)
 	}
@@ -529,7 +610,7 @@ func TestIssuesFromGuideStatusRowsSkipsOptional(t *testing.T) {
 		},
 	}
 
-	issues := issuesFromGuideStatusRows(local)
+	issues := issuesFromGuideStatusRows(local, core.GuideParserRunSummary{})
 	if len(issues) != 0 {
 		t.Fatalf("expected no issues for optional decorators, got %d: %+v", len(issues), issues)
 	}
@@ -543,7 +624,7 @@ func TestIssuesFromGuideStatusRowsSkipsWhenMandatoryReady(t *testing.T) {
 		},
 	}
 
-	issues := issuesFromGuideStatusRows(local)
+	issues := issuesFromGuideStatusRows(local, core.GuideParserRunSummary{})
 	if len(issues) != 0 {
 		t.Fatalf("expected no issues when MandatoryReady, got %d: %+v", len(issues), issues)
 	}
@@ -561,7 +642,7 @@ func TestIssuesFromGuideStatusRowsAllKnownDecorators(t *testing.T) {
 		},
 	}
 
-	issues := issuesFromGuideStatusRows(local)
+	issues := issuesFromGuideStatusRows(local, core.GuideParserRunSummary{})
 	if len(issues) != 6 {
 		t.Fatalf("expected 6 issues, got %d: %+v", len(issues), issues)
 	}

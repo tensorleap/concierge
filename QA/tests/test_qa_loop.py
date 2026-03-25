@@ -408,6 +408,83 @@ class QALoopTest(unittest.TestCase):
         self.assertIn("[qa-loop][claude-final-report] outcome: Reached the completion path.", rendered)
         self.assertIn("[qa-loop][claude-final-report] notable: Claude answered YES and Concierge completed immediately.", rendered)
 
+    def test_format_claude_stream_event_renders_fenced_result_payload_as_text(self) -> None:
+        rendered = qa_loop.format_claude_stream_event(
+            "claude-control-001",
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "result": "```json\n"
+                    '{"action": "SEND_INPUT", "input_text": "y", "loop_state": "CONTINUE", "observation": "Approve the requested action."}'
+                    "\n```",
+                }
+            )
+            + "\n",
+        )
+
+        self.assertIn("[qa-loop][claude-control-001] action: SEND_INPUT -> y (CONTINUE)", rendered)
+
+    def test_extract_claude_structured_output_parses_fenced_result_payload(self) -> None:
+        payload = qa_loop.extract_claude_structured_output(
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "result": "```json\n"
+                    '{"action": "SEND_INPUT", "input_text": "y", "loop_state": "CONTINUE", "observation": "Approve the requested action."}'
+                    "\n```",
+                }
+            )
+        )
+
+        self.assertEqual(payload["action"], "SEND_INPUT")
+        self.assertEqual(payload["input_text"], "y")
+        self.assertEqual(payload["loop_state"], "CONTINUE")
+
+    def test_normalize_qa_report_handles_alternative_claude_result_shape(self) -> None:
+        report = qa_loop.normalize_qa_report(
+            {
+                "status": "fail",
+                "integration_progress": {
+                    "summary": "Session failed at the first actionable step.",
+                },
+                "ux_observations": [
+                    "The confirmation prompt was clear.",
+                ],
+                "product_issues": [
+                    {
+                        "severity": "critical",
+                        "area": "loop_control",
+                        "description": "Structured output was missing from the Claude response.",
+                        "suggestion": "Retry once before declaring a dead-end.",
+                    }
+                ],
+                "agent_interaction_issues": [
+                    {"description": "The harness could not parse the model response."}
+                ],
+                "suggestions": [
+                    "Surface a clearer supervisor error in the terminal.",
+                ],
+                "overall_notes": "The run failed due to a harness-level control protocol issue.",
+            },
+            default_loop_state="STOP_DEADEND",
+        )
+
+        self.assertEqual(report.title, "QA Loop Report (fail)")
+        self.assertEqual(report.loop_state, "STOP_DEADEND")
+        self.assertEqual(report.integration_progress, "Session failed at the first actionable step.")
+        self.assertEqual(report.ux_clarity, ["The confirmation prompt was clear."])
+        self.assertEqual(
+            report.product_issues,
+            [
+                "[critical / loop_control] Structured output was missing from the Claude response. Suggestion: Retry once before declaring a dead-end."
+            ],
+        )
+        self.assertEqual(report.agent_interaction_issues, ["The harness could not parse the model response."])
+        self.assertEqual(report.suggestions, ["Surface a clearer supervisor error in the terminal."])
+        self.assertEqual(report.overall_outcome, "The run failed due to a harness-level control protocol issue.")
+
     def test_claude_client_extracts_structured_output_from_result_envelope(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
@@ -474,6 +551,58 @@ class QALoopTest(unittest.TestCase):
 
             transcript = transcript_path.read_text(encoding="utf-8")
             self.assertNotIn("Shell snapshot validation failed", transcript)
+
+    def test_claude_client_extracts_fenced_json_from_result_text(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            workspace_root = tmp / "workspace"
+            artifacts_root = tmp / "artifacts"
+            workspace_root.mkdir()
+            artifacts_root.mkdir()
+
+            claude_script = tmp / "fake_claude_markdown.py"
+            claude_script.write_text(
+                textwrap.dedent(
+                    """
+                    import json
+
+                    payload = {
+                        "type": "result",
+                        "subtype": "success",
+                        "result": "```json\\n"
+                        "{\\"action\\": \\"SEND_INPUT\\", \\"input_text\\": \\"y\\", \\"loop_state\\": \\"CONTINUE\\", \\"observation\\": \\"Approve the requested action.\\"}"
+                        "\\n```",
+                    }
+                    print(json.dumps(payload))
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            claude_script.chmod(0o755)
+
+            client = qa_loop.ClaudeClient(
+                workspace_root=workspace_root,
+                artifacts_root=artifacts_root,
+                command=f"{sys.executable} {claude_script}",
+            )
+            output_path = tmp / "output.json"
+            event_log_path = tmp / "events.jsonl"
+            stderr_log_path = tmp / "stderr.log"
+            schema_path = tmp / "schema.json"
+            schema_path.write_text("{}", encoding="utf-8")
+
+            payload = client.run_structured(
+                prompt="probe",
+                schema_path=schema_path,
+                output_path=output_path,
+                event_log_path=event_log_path,
+                stderr_log_path=stderr_log_path,
+            )
+
+            self.assertEqual(payload["action"], "SEND_INPUT")
+            self.assertEqual(payload["input_text"], "y")
+            self.assertEqual(payload["loop_state"], "CONTINUE")
 
     def test_claude_client_sends_prompt_via_stdin_for_claude_cli(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

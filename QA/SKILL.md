@@ -42,6 +42,9 @@ python3 QA/qa_loop.py \
    - `QA/runs/<run-id>/summary.json`
    - `QA/transcripts/<run-id>.terminal.txt` only if the report needs supporting detail
 8. Report the findings to the user. Lead with the actual defects or blockers, not the mechanics of the harness run.
+9. If the QA run should become a GitHub issue or PR update, generate the inline evidence bundle first:
+   `python3 scripts/qa_issue_evidence.py --run-id <run-id>`
+   Paste that markdown into the issue or PR body. Local artifact paths may stay as secondary breadcrumbs, but they cannot be the only durable evidence.
 
 ## Output expectations
 
@@ -51,6 +54,7 @@ When answering the user after QA:
 - Name the final loop state and stop reason from `summary.json`.
 - Summarize the important findings from the markdown report.
 - Link the saved report and summary paths.
+- When promoting a QA run into a GitHub issue or PR description, include the helper-generated inline evidence bundle instead of relying only on local file paths.
 
 ## Guardrails
 

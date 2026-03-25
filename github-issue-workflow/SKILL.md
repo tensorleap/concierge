@@ -10,6 +10,7 @@ Use this skill when GitHub issues are the work anchor for this repository.
 ## Core Rules
 
 - The GitHub issue body is the durable source of truth for scope, decisions, current status, and next step.
+- If an issue or PR body references a QA run, it must also carry inline evidence that makes the failure understandable without the original machine. Local artifact paths are secondary breadcrumbs, not the primary evidence.
 - Terminal chat is transient working memory, not the durable project record.
 - Milestone comments provide visibility and audit history, but they are not the primary spec.
 - Do not use `PLAN.md`, local task lists, or scratch progress notes for ongoing issue-managed work in this repository.
@@ -37,6 +38,7 @@ Use this skill when:
 - Rewrite the issue body freely so it always reflects the current truth.
 - Do not preserve stale wording for history's sake.
 - Do not keep an edit log inside the body.
+- For QA-backed issues, include a compact inline bundle with run id, fixture, guide step, ref under test, expected versus actual behavior, and short transcript excerpts. Use `python3 scripts/qa_issue_evidence.py --run-id <run-id>` when the saved QA artifacts exist locally.
 - Avoid boilerplate templates. Natural prose and short lists are preferred if they keep the issue resumable.
 - Keep the body sufficient for another agent to resume from "look at issue N and continue" without needing this terminal conversation.
 

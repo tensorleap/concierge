@@ -1188,6 +1188,181 @@ class QALoopTest(unittest.TestCase):
             self.assertIn("Continue to the next step? [y/N]:", transcript)
             self.assertIn("Integration complete", transcript)
 
+    def test_supervisor_prompt_requires_rerun_continuation_for_claude(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            artifacts_root = tmp / "artifacts"
+            command_cwd = tmp / "fixture"
+            artifacts_root.mkdir()
+            command_cwd.mkdir()
+            fake_docker = write_fake_docker(tmp)
+            container_name = "fixture"
+
+            concierge_script = tmp / "fake_concierge_rerun.py"
+            concierge_script.write_text(
+                textwrap.dedent(
+                    """
+                    from pathlib import Path
+
+                    marker = Path("rerun-ready.txt")
+                    if not marker.exists():
+                        marker.write_text("ready\\n", encoding="utf-8")
+                        print("Changes are in your working tree for local review. After reviewing or committing them, rerun `concierge run`.", flush=True)
+                        raise SystemExit(0)
+
+                    print("Continue to the next step? [y/N]: ", end="", flush=True)
+                    answer = input()
+                    print(f"Input received: {answer}", flush=True)
+                    print("Integration complete", flush=True)
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            claude_script = tmp / "fake_claude_prompt_sensitive.py"
+            claude_script.write_text(
+                textwrap.dedent(
+                    """
+                    #!/usr/bin/env python3
+                    import json
+                    import os
+                    import sys
+                    from pathlib import Path
+
+                    prompt = sys.stdin.read()
+                    state_path = Path(os.environ["FAKE_CLAUDE_STATE"])
+                    if state_path.exists():
+                        state = json.loads(state_path.read_text(encoding="utf-8"))
+                    else:
+                        state = {"turn": 0}
+
+                    rerun_guidance = (
+                        "If Concierge exits cleanly and tells the user to rerun `concierge run`, "
+                        "do not stop the QA session just because that single run ended."
+                    ) in prompt
+
+                    if "final qualitative QA report" in prompt:
+                        payload = {
+                            "type": "result",
+                            "subtype": "success",
+                            "structured_output": {
+                                "title": "Interactive rerun report",
+                                "overall_outcome": "The supervisor restarted the target command as a PTY-backed interactive session.",
+                                "loop_state": "STOP_REPORT",
+                                "integration_progress": "The rerun prompt was followed by an interactive second session that reached completion.",
+                                "ux_clarity": [],
+                                "product_issues": [],
+                                "agent_interaction_issues": [],
+                                "suggestions": [],
+                                "notable_moments": [
+                                    "The rerun command became the new interactive target instead of stopping the QA session."
+                                ],
+                            },
+                        }
+                    else:
+                        state["turn"] += 1
+                        if state["turn"] == 1:
+                            if rerun_guidance:
+                                directive = {
+                                    "action": "RUN_COMMAND",
+                                    "input_text": os.environ["FAKE_TARGET_COMMAND"],
+                                    "loop_state": "CONTINUE",
+                                    "summary": "Rerun Concierge interactively after the review-only stop.",
+                                    "issues": [],
+                                    "next_focus": "Wait for the next prompt in the restarted session.",
+                                }
+                            else:
+                                directive = {
+                                    "action": "WAIT",
+                                    "input_text": "",
+                                    "loop_state": "STOP_REPORT",
+                                    "summary": "The run reached a useful conclusion after a clean review-only exit.",
+                                    "issues": [],
+                                    "next_focus": "Write the final report.",
+                                }
+                        elif state["turn"] == 2:
+                            if "Continue to the next step? [y/N]:" not in prompt:
+                                directive = {
+                                    "action": "WAIT",
+                                    "input_text": "",
+                                    "loop_state": "STOP_FIX",
+                                    "summary": "The restarted target prompt was not visible to the supervisor.",
+                                    "issues": ["Interactive rerun did not surface the next prompt."],
+                                    "next_focus": "Restart the target command in PTY mode so prompts remain interactive.",
+                                }
+                            else:
+                                directive = {
+                                    "action": "SEND_INPUT",
+                                    "input_text": "y",
+                                    "loop_state": "CONTINUE",
+                                    "summary": "Approve the restarted interactive prompt.",
+                                    "issues": [],
+                                    "next_focus": "Wait for completion.",
+                                }
+                        else:
+                            directive = {
+                                "action": "WAIT",
+                                "input_text": "",
+                                "loop_state": "STOP_REPORT",
+                                "summary": "The restarted session completed cleanly.",
+                                "issues": [],
+                                "next_focus": "Write the final report.",
+                            }
+                        state_path.write_text(json.dumps(state), encoding="utf-8")
+                        payload = {"type": "result", "subtype": "success", "structured_output": directive}
+
+                    print(json.dumps(payload))
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            claude_script.chmod(0o755)
+
+            target_command = [sys.executable, str(concierge_script)]
+
+            env = os.environ.copy()
+            env["FAKE_CLAUDE_STATE"] = str(tmp / "fake_claude_rerun_state.json")
+            env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
+            env["FAKE_TARGET_COMMAND"] = shlex.join(target_command)
+
+            completed = subprocess.run(
+                qa_loop_command(
+                    artifacts_root=artifacts_root,
+                    fake_docker=fake_docker,
+                    container_name=container_name,
+                    claude_command=str(claude_script),
+                    target_command=target_command,
+                    extra_args=["--max-runtime-seconds", "10"],
+                ),
+                cwd=str(ROOT),
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                msg=f"stdout:\n{completed.stdout}\n\nstderr:\n{completed.stderr}",
+            )
+
+            run_dir = next((artifacts_root / "runs").iterdir())
+            summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["loop_state"], "STOP_REPORT")
+            self.assertEqual(summary["report_status"], "ready")
+
+            interaction_log = artifacts_root / "transcripts" / f"{run_dir.name}.interaction.jsonl"
+            interaction_body = interaction_log.read_text(encoding="utf-8")
+            self.assertIn('"kind": "process_restart"', interaction_body)
+
+            transcript_path = artifacts_root / "transcripts" / f"{run_dir.name}.terminal.txt"
+            transcript = transcript_path.read_text(encoding="utf-8")
+            self.assertIn("rerun `concierge run`", transcript)
+            self.assertIn("Continue to the next step? [y/N]:", transcript)
+            self.assertIn("Integration complete", transcript)
+
     def test_supervisor_loop_waits_for_delayed_followup_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)

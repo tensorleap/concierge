@@ -26,6 +26,7 @@ This repository is implemented through small, issue-scoped changes.
 - Implement only one issue-sized scope at a time.
 - Run local verification before any `git commit` or `git push`. If verification passes, commit automatically on the feature branch, push automatically, and open a PR to `main` for review.
 - GitHub pull requests are the default review surface. Do not wait for a separate local review before committing or pushing unless the user explicitly asks for one.
+- When referring to a pull request in terminal chat, PR bodies, issue comments, or status updates, use the full GitHub URL rather than shorthand like `#123` so the reference is clickable in iTerm.
 - If a change set does not modify code (for example markdown/docs-only edits), test execution is optional and may be skipped.
 - After finishing the scoped work, keep progress in GitHub issue / PR state rather than updating `PLAN.md`.
 - The agent should commit and push issue-scoped changes on a non-main feature branch once local verification passes.

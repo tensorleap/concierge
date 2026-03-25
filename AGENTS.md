@@ -4,7 +4,7 @@ This repository is implemented through small, issue-scoped changes.
 
 ## Session Start Requirements (Mandatory)
 
-- Before any planning or implementation work, read `README.md` in its entirety.
+- Before any planning or implementation work, read `DESIGN.md` in its entirety.
 - Then read the relevant GitHub issue, PR description, or user-provided task context for the work you are about to do.
 - If the active work item is a child issue, also read the umbrella issue body, but treat the active child issue as the primary execution record.
 - If no GitHub issue exists yet, treat the current user request as the temporary source of truth and keep the scope narrow enough to become one issue later.

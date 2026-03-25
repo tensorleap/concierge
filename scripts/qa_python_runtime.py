@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import argparse
 import re
-import tomllib
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    tomllib = None
 
 CURATED_PYTHON_VERSIONS = (
     "3.11.11",
@@ -38,14 +42,36 @@ def satisfies(candidate: tuple[int, int, int], token: str) -> bool:
 
 def resolve_python_version(pyproject_path: Path | str) -> str:
     path = Path(pyproject_path)
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
-    constraint = str(data["tool"]["poetry"]["dependencies"]["python"]).strip()
+    constraint = extract_python_constraint(path.read_text(encoding="utf-8"))
     tokens = [token.strip() for token in constraint.split(",") if token.strip()]
     for exact in CURATED_PYTHON_VERSIONS:
         candidate = parse_version(exact)
         if all(satisfies(candidate, token) for token in tokens):
             return exact
     raise ValueError(f"no curated Python image satisfies constraint {constraint!r}")
+
+
+def extract_python_constraint(pyproject_text: str) -> str:
+    if tomllib is not None:
+        data = tomllib.loads(pyproject_text)
+        return str(data["tool"]["poetry"]["dependencies"]["python"]).strip()
+
+    in_poetry_dependencies = False
+    for raw_line in pyproject_text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("["):
+            in_poetry_dependencies = line == "[tool.poetry.dependencies]"
+            continue
+        if not in_poetry_dependencies:
+            continue
+        match = re.match(r'python\s*=\s*"([^"]+)"', line)
+        if match:
+            return match.group(1).strip()
+        match = re.match(r"python\s*=\s*'([^']+)'", line)
+        if match:
+            return match.group(1).strip()
+
+    raise KeyError("tool.poetry.dependencies.python")
 
 
 def build_parser() -> argparse.ArgumentParser:

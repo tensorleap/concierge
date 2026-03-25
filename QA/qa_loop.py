@@ -309,7 +309,6 @@ class ClaudeClient:
             cmd.extend(["--model", self.model])
         for path in unique_paths([self.artifacts_root, *add_dirs]):
             cmd.extend(["--add-dir", str(path)])
-        cmd.append(prompt)
 
         if live_io is not None:
             live_io.stdout(f"[qa-loop] starting {session_label}: {shlex.join(cmd)}\n")
@@ -326,6 +325,7 @@ class ClaudeClient:
                 cwd=self.workspace_root,
                 env=None,
                 timeout_seconds=effective_timeout,
+                input_text=prompt,
                 live_io=live_io,
                 stdout_prefix=f"[qa-loop][{session_label} stdout] ",
                 stderr_prefix=f"[qa-loop][{session_label} stderr] ",

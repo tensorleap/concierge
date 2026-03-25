@@ -241,7 +241,7 @@ class QALoopTest(unittest.TestCase):
                     import sys
                     from pathlib import Path
 
-                    prompt = sys.argv[-1]
+                    prompt = sys.stdin.read()
                     state_path = Path(os.environ["FAKE_CODEX_STATE"])
                     if state_path.exists():
                         state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -474,6 +474,91 @@ class QALoopTest(unittest.TestCase):
 
             transcript = transcript_path.read_text(encoding="utf-8")
             self.assertNotIn("Shell snapshot validation failed", transcript)
+
+    def test_claude_client_sends_prompt_via_stdin_for_claude_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            workspace_root = tmp / "workspace"
+            artifacts_root = tmp / "artifacts"
+            workspace_root.mkdir()
+            artifacts_root.mkdir()
+
+            claude_script = tmp / "claude"
+            claude_script.write_text(
+                textwrap.dedent(
+                    """
+                    #!/usr/bin/env python3
+                    import json
+                    import sys
+
+                    args = sys.argv[1:]
+                    index = 0
+                    while index < len(args):
+                        token = args[index]
+                        if token in {"--print", "--no-session-persistence"}:
+                            index += 1
+                            continue
+                        if token in {
+                            "--output-format",
+                            "--json-schema",
+                            "--permission-mode",
+                            "--allowedTools",
+                            "--allowed-tools",
+                            "--model",
+                            "--add-dir",
+                        }:
+                            index += 2
+                            continue
+                        sys.stderr.write(f"unexpected positional argument: {token}\\n")
+                        raise SystemExit(2)
+
+                    prompt = sys.stdin.read()
+                    if not prompt.strip():
+                        sys.stderr.write(
+                            "Error: Input must be provided either through stdin or as a prompt argument when using --print\\n"
+                        )
+                        raise SystemExit(1)
+
+                    payload = {
+                        "type": "result",
+                        "subtype": "success",
+                        "structured_output": {
+                            "action": "WAIT",
+                            "summary": "Keep waiting for the next prompt.",
+                        },
+                    }
+                    print(json.dumps(payload))
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            claude_script.chmod(0o755)
+
+            client = qa_loop.ClaudeClient(
+                workspace_root=workspace_root,
+                artifacts_root=artifacts_root,
+                command=str(claude_script),
+            )
+            transcript_path = tmp / "transcript.txt"
+            output_path = tmp / "output.json"
+            event_log_path = tmp / "events.jsonl"
+            stderr_log_path = tmp / "stderr.log"
+            schema_path = tmp / "schema.json"
+            schema_path.write_text("{}", encoding="utf-8")
+
+            payload = client.run_structured(
+                prompt="probe",
+                schema_path=schema_path,
+                output_path=output_path,
+                event_log_path=event_log_path,
+                stderr_log_path=stderr_log_path,
+                live_io=qa_loop.LiveIO(transcript_path=transcript_path),
+                session_label="claude-control-stdin",
+            )
+
+            self.assertEqual(payload["action"], "WAIT")
+            self.assertEqual(payload["summary"], "Keep waiting for the next prompt.")
 
     def test_codex_client_keeps_shell_snapshot_stderr_in_log_but_hides_it_from_live_transcript(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

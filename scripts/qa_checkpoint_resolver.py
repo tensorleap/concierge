@@ -19,6 +19,7 @@ GUIDE_STEP_ORDER = (
     "integration_test",
     "ground_truth_encoders",
 )
+PRE_STEP = "pre"
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -42,7 +43,7 @@ def fixture_ids(repo_root: Path) -> list[str]:
 def guide_steps_for_fixture(repo_root: Path, *, fixture_id: str) -> list[str]:
     if fixture_id not in fixture_ids(repo_root):
         raise ValueError(f"unknown fixture id {fixture_id!r}")
-    return list(GUIDE_STEP_ORDER)
+    return [PRE_STEP, *GUIDE_STEP_ORDER]
 
 
 def format_choices(values: list[str]) -> str:
@@ -87,7 +88,7 @@ def select_runner_target(
     output_stream = output_stream or sys.stderr
 
     available_fixtures = fixture_ids(repo_root)
-    available_steps = list(GUIDE_STEP_ORDER)
+    available_steps = [PRE_STEP, *GUIDE_STEP_ORDER]
     missing_selector_message = (
         "missing required QA selectors for non-interactive run. "
         f"Valid fixtures: {format_choices(available_fixtures)}. "
@@ -150,7 +151,7 @@ def resolve_checkpoint(
     if len(matches) > 1:
         raise ValueError(f"duplicate checkpoint entries for {fixture_id!r} and step {step!r}")
 
-    fallback = len(matches) == 0
+    fallback = step == PRE_STEP or len(matches) == 0
     if fallback:
         source_kind = "variant"
         source_id = "pre"

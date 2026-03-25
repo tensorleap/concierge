@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
@@ -17,6 +18,30 @@ class QARunnerSurfaceTest(unittest.TestCase):
         self.assertIn("run_id:", workflow)
         self.assertIn("issue_number:", workflow)
         self.assertIn("pr_number:", workflow)
+
+    def test_qa_workflow_uses_choice_inputs_for_fixture_and_step(self) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "qa-loop.yml").read_text(encoding="utf-8")
+        fixture_ids = [
+            str(entry["id"]).strip()
+            for entry in json.loads((REPO_ROOT / "fixtures" / "manifest.json").read_text(encoding="utf-8"))["fixtures"]
+        ]
+
+        self.assertIn("fixture:", workflow)
+        self.assertIn("type: choice", workflow)
+        self.assertIn("options:", workflow)
+        for fixture_id in fixture_ids:
+            self.assertIn(f"          - {fixture_id}", workflow)
+
+        for step in (
+            "pre",
+            "integration_script",
+            "preprocess",
+            "input_encoders",
+            "model_acquisition",
+            "integration_test",
+            "ground_truth_encoders",
+        ):
+            self.assertIn(f"          - {step}", workflow)
 
     def test_qa_workflow_uploads_artifacts_and_supports_linked_comments(self) -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / "qa-loop.yml").read_text(encoding="utf-8")

@@ -90,6 +90,7 @@ class QACheckpointResolverTest(unittest.TestCase):
             self.assertEqual(
                 json.loads(completed.stdout),
                 [
+                    "pre",
                     "integration_script",
                     "preprocess",
                     "input_encoders",
@@ -128,7 +129,7 @@ class QACheckpointResolverTest(unittest.TestCase):
             self.assertIn("missing required QA selectors for non-interactive run", completed.stderr)
             self.assertIn("Valid fixtures: ultralytics, mnist", completed.stderr)
             self.assertIn(
-                "Valid steps: integration_script, preprocess, input_encoders, model_acquisition, integration_test, ground_truth_encoders",
+                "Valid steps: pre, integration_script, preprocess, input_encoders, model_acquisition, integration_test, ground_truth_encoders",
                 completed.stderr,
             )
 
@@ -153,7 +154,7 @@ class QACheckpointResolverTest(unittest.TestCase):
                     str(repo_root),
                     "--interactive",
                 ],
-                input="2\n3\n",
+                input="2\n4\n",
                 capture_output=True,
                 text=True,
                 check=False,
@@ -190,7 +191,7 @@ class QACheckpointResolverTest(unittest.TestCase):
                     "mnist",
                     "--interactive",
                 ],
-                input="4\n",
+                input="5\n",
                 capture_output=True,
                 text=True,
                 check=False,
@@ -202,6 +203,35 @@ class QACheckpointResolverTest(unittest.TestCase):
             self.assertEqual(
                 json.loads(completed.stdout),
                 {"fixture_id": "mnist", "step": "model_acquisition"},
+            )
+
+    def test_resolve_checkpoint_supports_explicit_pre_step_without_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            self._write_fixture_manifest(repo_root)
+            self._write_checkpoint_manifest(
+                repo_root,
+                [
+                    {
+                        "fixture_id": "mnist",
+                        "step": "preprocess",
+                        "source_kind": "case",
+                        "source_id": "mnist_preprocess_case",
+                        "build_mode": "cold",
+                        "expected_primary_step": "ensure.preprocess",
+                    }
+                ],
+            )
+
+            resolution = resolve_checkpoint(repo_root, fixture_id="mnist", step="pre")
+
+            self.assertEqual(resolution["step"], "pre")
+            self.assertEqual(resolution["source_kind"], "variant")
+            self.assertEqual(resolution["source_id"], "pre")
+            self.assertTrue(resolution["fallback"])
+            self.assertEqual(
+                resolution["repo_path"],
+                str((repo_root / ".fixtures" / "mnist" / "pre").resolve()),
             )
 
     def test_resolve_checkpoint_uses_matching_case_entry(self) -> None:

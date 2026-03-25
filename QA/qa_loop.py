@@ -805,7 +805,7 @@ class SupervisorLoop:
 
                 loop_state = directive.loop_state
                 if loop_state != "CONTINUE":
-                    stop_reason = "claude_stop"
+                    stop_reason = supervisor_stop_reason(loop_state)
                     break
                 if int(time.monotonic() - started_monotonic) >= self.config.max_runtime_seconds:
                     loop_state = "STOP_DEADEND"
@@ -848,7 +848,7 @@ class SupervisorLoop:
                 )
 
         if not stop_reason:
-            stop_reason = "claude_stop"
+            stop_reason = supervisor_stop_reason(loop_state)
 
         summary = {
             "run_id": run_id,
@@ -2048,6 +2048,14 @@ def exit_code_for_loop_state(loop_state: str) -> int:
         "STOP_FIX": 2,
         "STOP_DEADEND": 3,
     }.get(loop_state, 1)
+
+
+def supervisor_stop_reason(loop_state: str) -> str:
+    return {
+        "STOP_REPORT": "supervisor_stop_report",
+        "STOP_FIX": "supervisor_stop_fix",
+        "STOP_DEADEND": "supervisor_stop_deadend",
+    }.get(loop_state, "claude_stop")
 
 
 def utc_now() -> str:

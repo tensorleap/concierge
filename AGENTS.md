@@ -7,12 +7,13 @@ This repository is implemented through small, issue-scoped changes.
 - Before any planning or implementation work, read `DESIGN.md` in its entirety.
 - Then read the relevant GitHub issue, PR description, or user-provided task context for the work you are about to do.
 - If the active work item is a child issue, also read the umbrella issue body, but treat the active child issue as the primary execution record.
-- If the active work item is a GitHub issue, update that issue's GitHub Projects status to `In Progress` as soon as you start working on it.
+- If the active work item is a GitHub issue, update that issue's GitHub Projects status to `In Progress` as soon as you start working on it. Do not use an issue comment such as "in progress" as a substitute.
 - If no GitHub issue exists yet, treat the current user request as the temporary source of truth and keep the scope narrow enough to become one issue later.
 
 ## Planning and Progress Tracking
 
 - GitHub issues are the source of truth for backlog, prioritization, and progress tracking.
+- GitHub Projects status is the source of truth for which issue is actively being worked on across developers. Do not use issue comments to mark an issue as in progress.
 - For issue-anchored work, the issue body is the durable source of truth for scope, decisions, current status, and next step.
 - Keep issue bodies freely editable so they stay current and resumable by any agent. Do not keep an edit log inside the issue body.
 - Treat terminal chat as transient working memory. Do not rely on Codex conversations as the durable record for ongoing issue-managed work.

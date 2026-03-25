@@ -7,7 +7,7 @@ Provide one shared QA control loop that works the same way locally and in GitHub
 - run Concierge inside a real PTY-backed terminal session
 - let Claude observe terminal output and decide the next action
 - preserve transcripts, turn logs, and final QA reports
-- stop on completion, a coherent dead end, or a clear defect
+- continue across review-only rerun boundaries until Concierge reaches finished integration, a coherent dead end, or a clear defect
 
 This is a qualitative QA harness, not a deterministic assertion runner.
 
@@ -38,6 +38,8 @@ The supervisor:
 3. sends terminal input or runs the requested external shell command
 4. records turn artifacts
 5. repeats until the loop state stops or the runtime/idle limits are hit
+
+Clean process exits do not automatically end QA. If Concierge exits after a reviewed step and tells the user to rerun `concierge run`, the supervisor should normally relaunch the command and continue the same QA session instead of treating that single-run boundary as completion.
 
 ## Blind-First Policy
 

@@ -7,6 +7,7 @@ This repository is implemented through small, issue-scoped changes.
 - Before any planning or implementation work, read `README.md` in its entirety.
 - Then read the relevant GitHub issue, PR description, or user-provided task context for the work you are about to do.
 - If the active work item is a child issue, also read the umbrella issue body, but treat the active child issue as the primary execution record.
+- If the active work item is a GitHub issue, update that issue's GitHub Projects status to `In Progress` as soon as you start working on it.
 - If no GitHub issue exists yet, treat the current user request as the temporary source of truth and keep the scope narrow enough to become one issue later.
 
 ## Planning and Progress Tracking

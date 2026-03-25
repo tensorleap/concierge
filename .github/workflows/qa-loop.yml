@@ -10,11 +10,26 @@ on:
       fixture:
         description: Fixture id from fixtures/manifest.json
         required: true
-        type: string
+        type: choice
+        options:
+          - ultralytics
+          - webinar
+          - yolov5_visdrone
+          - mnist
+          - cifar10_resnet
+          - imdb
       step:
-        description: Guide-native QA checkpoint step
+        description: QA starting point. Use pre to start from the clean pre repo without a checkpoint.
         required: true
-        type: string
+        type: choice
+        options:
+          - pre
+          - integration_script
+          - preprocess
+          - input_encoders
+          - model_acquisition
+          - integration_test
+          - ground_truth_encoders
       run_id:
         description: Optional stable QA run id
         required: false

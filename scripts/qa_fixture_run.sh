@@ -21,7 +21,7 @@ start a fixture container, and run the QA loop against that container.
 
 Options:
   --repo <fixture-id>           Fixture ID from fixtures/manifest.json.
-  --step <checkpoint-step>      Guide-native checkpoint step selector.
+  --step <checkpoint-step>      Guide-native checkpoint step selector, or 'pre' for the clean pre repo.
   --help                        Show this help text.
 EOF
 }

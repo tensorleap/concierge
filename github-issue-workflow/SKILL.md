@@ -25,7 +25,7 @@ Use this skill when:
 
 ## Start Procedure
 
-1. Read `README.md`.
+1. Read `DESIGN.md`.
 2. Read the active GitHub issue body.
 3. If the active issue is a child issue, also read the umbrella issue body, but treat the active child issue as the primary execution record.
 4. Before creating a new issue branch or worktree from `main`, sync the local `main` worktree with the remote `main` tip and verify the protected branch now matches `FETCH_HEAD`. Do not branch from a stale local protected branch.
@@ -68,7 +68,7 @@ Each milestone comment should say what changed in the body and why.
 
 At any point, another agent should be able to:
 
-1. read `README.md`
+1. read `DESIGN.md`
 2. read the active issue body
 3. optionally read the umbrella issue body
 4. continue the work without needing prior terminal chat

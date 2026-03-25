@@ -931,6 +931,127 @@ class QALoopTest(unittest.TestCase):
             report_path = artifacts_root / "reports" / f"{run_dir.name}.md"
             self.assertTrue(report_path.is_file())
 
+    def test_supervisor_loop_preserves_semantic_stop_reason_for_non_continue_directives(self) -> None:
+        cases = [
+            ("STOP_REPORT", "supervisor_stop_report", 0),
+            ("STOP_FIX", "supervisor_stop_fix", 2),
+            ("STOP_DEADEND", "supervisor_stop_deadend", 3),
+        ]
+
+        for loop_state, expected_reason, expected_returncode in cases:
+            with self.subTest(loop_state=loop_state):
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    tmp = Path(tmpdir)
+                    artifacts_root = tmp / "artifacts"
+                    command_cwd = tmp / "fixture"
+                    artifacts_root.mkdir()
+                    command_cwd.mkdir()
+                    fake_docker = write_fake_docker(tmp)
+                    container_name = "fixture"
+
+                    concierge_script = tmp / "fake_concierge_waiting.py"
+                    concierge_script.write_text(
+                        textwrap.dedent(
+                            """
+                            import time
+
+                            print("Continue now? [y/N]: ", end="", flush=True)
+                            time.sleep(30)
+                            """
+                        ).strip()
+                        + "\n",
+                        encoding="utf-8",
+                    )
+
+                    codex_script = tmp / "fake_codex_semantic_stop.py"
+                    codex_script.write_text(
+                        textwrap.dedent(
+                            """
+                            import json
+                            import os
+                            import sys
+                            from pathlib import Path
+
+                            args = sys.argv[1:]
+                            output_path = None
+                            for index, value in enumerate(args):
+                                if value == "-o":
+                                    output_path = Path(args[index + 1])
+                                    break
+                            if output_path is None:
+                                raise SystemExit("missing -o")
+
+                            prompt = sys.stdin.read()
+                            loop_state = os.environ["FAKE_LOOP_STATE"]
+                            if "final qualitative QA report" in prompt:
+                                payload = {
+                                    "title": f"{loop_state} report",
+                                    "overall_outcome": f"The supervisor ended the loop with {loop_state}.",
+                                    "loop_state": loop_state,
+                                    "integration_progress": "The QA loop persisted the supervisor decision.",
+                                    "ux_clarity": [],
+                                    "product_issues": [],
+                                    "agent_interaction_issues": [],
+                                    "suggestions": [],
+                                    "notable_moments": [f"The supervisor deliberately chose {loop_state}."]
+                                }
+                            else:
+                                payload = {
+                                    "action": "WAIT",
+                                    "input_text": "",
+                                    "loop_state": loop_state,
+                                    "summary": f"Stop the run with {loop_state}.",
+                                    "issues": [],
+                                    "next_focus": "Write the final report."
+                                }
+
+                            output_path.parent.mkdir(parents=True, exist_ok=True)
+                            output_path.write_text(json.dumps(payload), encoding="utf-8")
+                            print(json.dumps({"type": "thread.started", "thread_id": "fake-thread"}))
+                            print(json.dumps({"type": "item.completed", "item": {"id": "item-1", "type": "agent_message", "text": json.dumps(payload)}}))
+                            """
+                        ).strip()
+                        + "\n",
+                        encoding="utf-8",
+                    )
+                    codex_script.chmod(0o755)
+
+                    env = os.environ.copy()
+                    env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
+                    env["FAKE_LOOP_STATE"] = loop_state
+
+                    completed = subprocess.run(
+                        qa_loop_command(
+                            artifacts_root=artifacts_root,
+                            fake_docker=fake_docker,
+                            container_name=container_name,
+                            claude_command=f"{sys.executable} {codex_script}",
+                            target_command=[sys.executable, str(concierge_script)],
+                        ),
+                        cwd=str(ROOT),
+                        env=env,
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        expected_returncode,
+                        msg=f"stdout:\n{completed.stdout}\n\nstderr:\n{completed.stderr}",
+                    )
+
+                    run_dir = next((artifacts_root / "runs").iterdir())
+                    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+                    self.assertEqual(summary["loop_state"], loop_state)
+                    self.assertEqual(summary["stop_reason"], expected_reason)
+                    self.assertTrue(summary["terminal_stopped_by_supervisor"])
+
+                    report_path = artifacts_root / "reports" / f"{run_dir.name}.md"
+                    self.assertTrue(report_path.is_file())
+                    report_body = report_path.read_text(encoding="utf-8")
+                    self.assertIn(f"Loop state: `{loop_state}`", report_body)
+                    self.assertIn(f"Stop reason: `{expected_reason}`", report_body)
+
     def test_supervisor_loop_runs_manual_command_and_restarts_concierge(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)

@@ -1,0 +1,174 @@
+name: QA Loop
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to run QA against
+        required: true
+        type: string
+      fixture:
+        description: Fixture id from fixtures/manifest.json
+        required: true
+        type: string
+      step:
+        description: Guide-native QA checkpoint step
+        required: true
+        type: string
+      run_id:
+        description: Optional stable QA run id
+        required: false
+        type: string
+      issue_number:
+        description: Optional linked issue number for result comments
+        required: false
+        type: string
+      pr_number:
+        description: Optional linked PR number for result comments
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  qa-loop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      QA_FIXTURE: ${{ inputs.fixture }}
+      QA_STEP: ${{ inputs.step }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install QA prerequisites
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "poetry>=2,<3"
+          npm install -g @anthropic-ai/claude-code
+          sudo apt-get update
+          sudo apt-get install -y git-lfs jq ripgrep
+          git lfs install --skip-smudge
+
+      - name: Resolve run id
+        shell: bash
+        run: |
+          if [[ -n "${{ inputs.run_id }}" ]]; then
+            RUN_ID="${{ inputs.run_id }}"
+          else
+            RUN_ID="${QA_FIXTURE}-${QA_STEP}-${GITHUB_RUN_ID}"
+          fi
+          echo "RUN_ID=${RUN_ID}" >> "$GITHUB_ENV"
+
+      - name: Verify QA toolchain
+        run: |
+          go version
+          python --version
+          poetry --version
+          docker version
+          jq --version
+          rg --version
+          claude --version
+
+      - name: Run QA loop
+        shell: bash
+        run: |
+          bash scripts/qa_fixture_run.sh --repo "${QA_FIXTURE}" --step "${QA_STEP}" -- --run-id "${RUN_ID}"
+
+      - name: Write QA summary
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          summary_path="QA/runs/${RUN_ID}/summary.json"
+          artifact_name="qa-loop-${RUN_ID}"
+          {
+            echo "## QA Loop"
+            echo
+            echo "- Ref: \`${{ inputs.ref }}\`"
+            echo "- Fixture: \`${QA_FIXTURE}\`"
+            echo "- Step: \`${QA_STEP}\`"
+            echo "- Run ID: \`${RUN_ID}\`"
+            echo "- Artifact: \`${artifact_name}\`"
+            if [[ -f "${summary_path}" ]]; then
+              loop_state="$(jq -r '.loop_state' "${summary_path}")"
+              stop_reason="$(jq -r '.stop_reason' "${summary_path}")"
+              echo "- Loop state: \`${loop_state}\`"
+              echo "- Stop reason: \`${stop_reason}\`"
+              echo "- Summary JSON: \`${summary_path}\`"
+              echo "- Markdown report: \`QA/reports/${RUN_ID}.md\`"
+            else
+              echo "- Summary JSON: missing"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload QA artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-loop-${{ env.RUN_ID }}
+          path: |
+            QA/reports/${{ env.RUN_ID }}.md
+            QA/reports/${{ env.RUN_ID }}.json
+            QA/runs/${{ env.RUN_ID }}
+            QA/transcripts/${{ env.RUN_ID }}.full.txt
+            QA/transcripts/${{ env.RUN_ID }}.interaction.jsonl
+            QA/transcripts/${{ env.RUN_ID }}.terminal.raw.txt
+            QA/transcripts/${{ env.RUN_ID }}.terminal.txt
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Comment linked issue
+        if: ${{ always() && inputs.issue_number != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          summary_path="QA/runs/${RUN_ID}/summary.json"
+          artifact_name="qa-loop-${RUN_ID}"
+          loop_state="unknown"
+          stop_reason="missing_summary"
+          if [[ -f "${summary_path}" ]]; then
+            loop_state="$(jq -r '.loop_state' "${summary_path}")"
+            stop_reason="$(jq -r '.stop_reason' "${summary_path}")"
+          fi
+          gh issue comment "${{ inputs.issue_number }}" --body \
+            "QA loop run \`${RUN_ID}\` finished for ref \`${{ inputs.ref }}\` on fixture \`${QA_FIXTURE}\` / step \`${QA_STEP}\`. Loop state: \`${loop_state}\`. Stop reason: \`${stop_reason}\`. Artifact: \`${artifact_name}\`. Workflow run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Comment linked pull request
+        if: ${{ always() && inputs.pr_number != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          summary_path="QA/runs/${RUN_ID}/summary.json"
+          artifact_name="qa-loop-${RUN_ID}"
+          loop_state="unknown"
+          stop_reason="missing_summary"
+          if [[ -f "${summary_path}" ]]; then
+            loop_state="$(jq -r '.loop_state' "${summary_path}")"
+            stop_reason="$(jq -r '.stop_reason' "${summary_path}")"
+          fi
+          gh pr comment "${{ inputs.pr_number }}" --body \
+            "QA loop run \`${RUN_ID}\` finished for ref \`${{ inputs.ref }}\` on fixture \`${QA_FIXTURE}\` / step \`${QA_STEP}\`. Loop state: \`${loop_state}\`. Stop reason: \`${stop_reason}\`. Artifact: \`${artifact_name}\`. Workflow run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"

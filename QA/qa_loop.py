@@ -83,9 +83,9 @@ class LoopConfig:
     container_image: str | None
     command: list[str]
     command_cwd: str
-    codex_command: str
-    codex_model: str | None
-    codex_timeout_seconds: float
+    claude_command: str
+    claude_model: str | None
+    claude_timeout_seconds: float
     max_iterations: int
     max_idle_turns: int
     max_runtime_seconds: int
@@ -102,7 +102,7 @@ class LoopConfig:
 class RunPaths:
     run_id: str
     run_dir: Path
-    codex_dir: Path
+    claude_dir: Path
     docker_dir: Path
     summary_json: Path
     turns_jsonl: Path
@@ -115,6 +115,10 @@ class RunPaths:
 
 
 class CodexInvocationError(RuntimeError):
+    pass
+
+
+class ClaudeInvocationError(RuntimeError):
     pass
 
 
@@ -198,7 +202,7 @@ class CodexClient:
             cmd.extend(["--model", self.model])
         for path in unique_paths([self.artifacts_root, *add_dirs]):
             cmd.extend(["--add-dir", str(path)])
-        cmd.append("-")
+        cmd.extend(["-", prompt])
 
         if live_io is not None:
             live_io.stdout(f"[qa-loop] starting {session_label}: {shlex.join(cmd)}\n")
@@ -219,7 +223,7 @@ class CodexClient:
                 live_io=live_io,
                 stdout_prefix=f"[qa-loop][{session_label} stdout] ",
                 stderr_prefix=f"[qa-loop][{session_label} stderr] ",
-                stdout_formatter=lambda line, session_label=session_label: format_codex_stream_event(session_label, line),
+                stdout_formatter=lambda line, session_label=session_label: format_compat_stream_event(session_label, line),
                 stderr_formatter=lambda line, session_label=session_label: format_codex_stderr_event(session_label, line),
             )
             stdout = completed["stdout"]
@@ -245,18 +249,211 @@ class CodexClient:
             raise CodexInvocationError(f"codex wrote invalid JSON to {output_path}: {exc}") from exc
 
 
+class ClaudeClient:
+    def __init__(
+        self,
+        *,
+        workspace_root: Path,
+        artifacts_root: Path,
+        command: str = "claude",
+        model: str | None = None,
+        timeout_seconds: float = DEFAULT_CODEX_TIMEOUT_SECONDS,
+    ) -> None:
+        self.workspace_root = workspace_root
+        self.artifacts_root = artifacts_root
+        self.command = command
+        self.model = model
+        self.timeout_seconds = timeout_seconds
+
+    def run_structured(
+        self,
+        *,
+        prompt: str,
+        schema_path: Path,
+        output_path: Path,
+        event_log_path: Path,
+        stderr_log_path: Path,
+        add_dirs: Iterable[Path] = (),
+        timeout_seconds: float | None = None,
+        live_io: LiveIO | None = None,
+        session_label: str = "claude",
+    ) -> dict[str, Any]:
+        if not command_looks_like_claude_cli(self.command):
+            return self._run_compat_structured(
+                prompt=prompt,
+                schema_path=schema_path,
+                output_path=output_path,
+                event_log_path=event_log_path,
+                stderr_log_path=stderr_log_path,
+                add_dirs=add_dirs,
+                timeout_seconds=timeout_seconds,
+                live_io=live_io,
+                session_label=session_label,
+            )
+
+        schema_text = schema_path.read_text(encoding="utf-8").strip()
+        cmd = [
+            *shlex.split(self.command),
+            "--print",
+            "--output-format",
+            "json",
+            "--json-schema",
+            schema_text,
+            "--permission-mode",
+            "bypassPermissions",
+            "--allowedTools",
+            "Read,Grep,Glob,LS",
+            "--no-session-persistence",
+        ]
+        if self.model:
+            cmd.extend(["--model", self.model])
+        for path in unique_paths([self.artifacts_root, *add_dirs]):
+            cmd.extend(["--add-dir", str(path)])
+        cmd.append(prompt)
+
+        if live_io is not None:
+            live_io.stdout(f"[qa-loop] starting {session_label}: {shlex.join(cmd)}\n")
+            live_io.transcript_only(
+                f"[qa-loop] --- {session_label} prompt begin ---\n"
+                f"{prompt.rstrip()}\n"
+                f"[qa-loop] --- {session_label} prompt end ---\n"
+            )
+
+        effective_timeout = self.timeout_seconds if timeout_seconds is None else timeout_seconds
+        try:
+            completed = run_streaming_subprocess(
+                cmd=cmd,
+                cwd=self.workspace_root,
+                env=None,
+                timeout_seconds=effective_timeout,
+                live_io=live_io,
+                stdout_prefix=f"[qa-loop][{session_label} stdout] ",
+                stderr_prefix=f"[qa-loop][{session_label} stderr] ",
+                stdout_formatter=lambda line, session_label=session_label: format_claude_stream_event(session_label, line),
+                stderr_formatter=lambda line, session_label=session_label: format_claude_stderr_event(session_label, line),
+            )
+            stdout = completed["stdout"]
+            stderr = completed["stderr"]
+            returncode = completed["returncode"]
+        except subprocess.TimeoutExpired:
+            raise ClaudeInvocationError(
+                f"claude --print timed out after {effective_timeout:.1f}s; see {stderr_log_path}"
+            )
+        event_log_path.parent.mkdir(parents=True, exist_ok=True)
+        event_log_path.write_text(stdout, encoding="utf-8")
+        stderr_log_path.write_text(stderr, encoding="utf-8")
+
+        if returncode != 0:
+            raise ClaudeInvocationError(
+                f"claude --print failed with exit code {returncode}; see {stderr_log_path}"
+            )
+
+        try:
+            payload = extract_claude_structured_output(stdout)
+        except ValueError as exc:
+            raise ClaudeInvocationError(str(exc)) from exc
+
+        output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        return payload
+
+    def _run_compat_structured(
+        self,
+        *,
+        prompt: str,
+        schema_path: Path,
+        output_path: Path,
+        event_log_path: Path,
+        stderr_log_path: Path,
+        add_dirs: Iterable[Path] = (),
+        timeout_seconds: float | None = None,
+        live_io: LiveIO | None = None,
+        session_label: str = "claude",
+    ) -> dict[str, Any]:
+        cmd = [
+            *shlex.split(self.command),
+            "exec",
+            "--json",
+            "--ephemeral",
+            "--skip-git-repo-check",
+            "--sandbox",
+            "read-only",
+            "--color",
+            "never",
+            "--output-schema",
+            str(schema_path),
+            "-o",
+            str(output_path),
+            "-C",
+            str(self.workspace_root),
+        ]
+        if self.model:
+            cmd.extend(["--model", self.model])
+        for path in unique_paths([self.artifacts_root, *add_dirs]):
+            cmd.extend(["--add-dir", str(path)])
+        cmd.append("-")
+
+        if live_io is not None:
+            live_io.stdout(f"[qa-loop] starting {session_label}: {shlex.join(cmd)}\n")
+            live_io.transcript_only(
+                f"[qa-loop] --- {session_label} prompt begin ---\n"
+                f"{prompt.rstrip()}\n"
+                f"[qa-loop] --- {session_label} prompt end ---\n"
+            )
+
+        effective_timeout = self.timeout_seconds if timeout_seconds is None else timeout_seconds
+        try:
+            completed = run_streaming_subprocess(
+                cmd=cmd,
+                cwd=self.workspace_root,
+                env=None,
+                input_text=prompt,
+                timeout_seconds=effective_timeout,
+                live_io=live_io,
+                stdout_prefix=f"[qa-loop][{session_label} stdout] ",
+                stderr_prefix=f"[qa-loop][{session_label} stderr] ",
+                stdout_formatter=lambda line, session_label=session_label: format_compat_stream_event(session_label, line),
+                stderr_formatter=lambda line, session_label=session_label: format_codex_stderr_event(session_label, line),
+            )
+            stdout = completed["stdout"]
+            stderr = completed["stderr"]
+            returncode = completed["returncode"]
+        except subprocess.TimeoutExpired:
+            raise ClaudeInvocationError(
+                f"claude compat exec timed out after {effective_timeout:.1f}s; see {stderr_log_path}"
+            )
+        event_log_path.parent.mkdir(parents=True, exist_ok=True)
+        event_log_path.write_text(stdout, encoding="utf-8")
+        stderr_log_path.write_text(stderr, encoding="utf-8")
+
+        if returncode != 0:
+            raise ClaudeInvocationError(
+                f"claude compat exec failed with exit code {returncode}; see {stderr_log_path}"
+            )
+        try:
+            return json.loads(output_path.read_text(encoding="utf-8"))
+        except FileNotFoundError as exc:
+            try:
+                payload = extract_claude_structured_output(stdout)
+            except ValueError:
+                raise ClaudeInvocationError(f"compat command did not write {output_path}") from exc
+            output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+            return payload
+        except json.JSONDecodeError as exc:
+            raise ClaudeInvocationError(f"compat command wrote invalid JSON to {output_path}: {exc}") from exc
+
+
 class SupervisorLoop:
     def __init__(
         self,
         *,
         config: LoopConfig,
-        codex_client: CodexClient,
+        claude_client: ClaudeClient,
         driver: PTYDriver | None = None,
         role_prompt: str,
         nudge_prompt: str,
     ) -> None:
         self.config = config
-        self.codex_client = codex_client
+        self.claude_client = claude_client
         self.driver = driver or PTYDriver()
         self.role_prompt = role_prompt.strip()
         self.nudge_prompt = nudge_prompt.strip()
@@ -376,7 +573,7 @@ class SupervisorLoop:
                         released_blind_first=released_blind_first,
                         live_io=live_io,
                     )
-                except CodexInvocationError as exc:
+                except ClaudeInvocationError as exc:
                     prompt_visible = terminal_requires_input(latest_output)
                     if last_action != "SEND_INPUT":
                         prompt_visible = prompt_visible or terminal_requires_input(transcript_clean)
@@ -421,7 +618,7 @@ class SupervisorLoop:
                         },
                     )
                     loop_state = "STOP_DEADEND"
-                    stop_reason = "codex_control_error"
+                    stop_reason = "claude_control_error"
                     break
                 turn_record = {
                     "iteration": iteration,
@@ -586,7 +783,7 @@ class SupervisorLoop:
 
                 loop_state = directive.loop_state
                 if loop_state != "CONTINUE":
-                    stop_reason = "codex_stop"
+                    stop_reason = "claude_stop"
                     break
                 if int(time.monotonic() - started_monotonic) >= self.config.max_runtime_seconds:
                     loop_state = "STOP_DEADEND"
@@ -629,7 +826,7 @@ class SupervisorLoop:
                 )
 
         if not stop_reason:
-            stop_reason = "codex_stop"
+            stop_reason = "claude_stop"
 
         summary = {
             "run_id": run_id,
@@ -676,7 +873,7 @@ class SupervisorLoop:
         try:
             report = self._request_report(paths=paths, summary=summary, loop_state=loop_state, live_io=live_io)
             summary["report_status"] = "ready"
-        except CodexInvocationError as exc:
+        except ClaudeInvocationError as exc:
             append_jsonl(
                 paths.interaction_log,
                 {
@@ -776,16 +973,16 @@ class SupervisorLoop:
         prompt += json.dumps(context, indent=2)
         prompt += "\n```\n"
 
-        turn_base = paths.codex_dir / f"turn-{iteration:03d}"
-        payload = self.codex_client.run_structured(
+        turn_base = paths.claude_dir / f"turn-{iteration:03d}"
+        payload = self.claude_client.run_structured(
             prompt=prompt,
             schema_path=PROMPTS_DIR / "control_schema.json",
             output_path=turn_base.with_suffix(".output.json"),
             event_log_path=turn_base.with_suffix(".jsonl"),
             stderr_log_path=turn_base.with_suffix(".stderr.log"),
-            add_dirs=codex_add_dirs(self.config.fixture_post_path if not blind_first_active else None),
+            add_dirs=qa_add_dirs(self.config.fixture_post_path if not blind_first_active else None),
             live_io=live_io,
-            session_label=f"codex-control-{iteration:03d}",
+            session_label=f"claude-control-{iteration:03d}",
         )
         return LoopDirective.from_dict(payload)
 
@@ -991,17 +1188,17 @@ class SupervisorLoop:
             Final loop state: {loop_state}
             """
         ).strip()
-        report_base = paths.codex_dir / "final-report"
-        payload = self.codex_client.run_structured(
+        report_base = paths.claude_dir / "final-report"
+        payload = self.claude_client.run_structured(
             prompt=prompt,
             schema_path=PROMPTS_DIR / "report_schema.json",
             output_path=report_base.with_suffix(".output.json"),
             event_log_path=report_base.with_suffix(".jsonl"),
             stderr_log_path=report_base.with_suffix(".stderr.log"),
-            add_dirs=codex_add_dirs(self.config.fixture_post_path if summary.get("blind_first_released") else None),
-            timeout_seconds=min(self.config.codex_timeout_seconds, DEFAULT_REPORT_TIMEOUT_SECONDS),
+            add_dirs=qa_add_dirs(self.config.fixture_post_path if summary.get("blind_first_released") else None),
+            timeout_seconds=min(self.config.claude_timeout_seconds, DEFAULT_REPORT_TIMEOUT_SECONDS),
             live_io=live_io,
-            session_label="codex-final-report",
+            session_label="claude-final-report",
         )
         return QAReport(
             title=str(payload.get("title", "")).strip(),
@@ -1018,7 +1215,7 @@ class SupervisorLoop:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run Concierge inside a Docker container PTY and let Codex drive it like a QA engineer.",
+        description="Run Concierge inside a Docker container PTY and let Claude drive it like a QA engineer.",
     )
     parser.add_argument(
         "--artifacts-root",
@@ -1029,9 +1226,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--container-name", required=True)
     parser.add_argument("--container-workdir", default="/workspace")
     parser.add_argument("--container-image", default=None)
-    parser.add_argument("--codex-command", default=os.environ.get("CODEX_BIN", "codex"))
+    parser.add_argument("--claude-command", default=os.environ.get("CLAUDE_BIN", "claude"))
+    parser.add_argument("--claude-timeout-seconds", type=float, default=DEFAULT_CODEX_TIMEOUT_SECONDS)
+    parser.add_argument(
+        "--codex-command",
+        dest="claude_command",
+        default=argparse.SUPPRESS,
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--model", default=None)
-    parser.add_argument("--codex-timeout-seconds", type=float, default=DEFAULT_CODEX_TIMEOUT_SECONDS)
+    parser.add_argument(
+        "--codex-timeout-seconds",
+        dest="claude_timeout_seconds",
+        type=float,
+        default=argparse.SUPPRESS,
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS)
     parser.add_argument("--max-idle-turns", type=int, default=DEFAULT_MAX_IDLE_TURNS)
@@ -1073,9 +1283,9 @@ def main(argv: list[str] | None = None) -> int:
         container_image=args.container_image,
         command=command,
         command_cwd=args.container_workdir,
-        codex_command=args.codex_command,
-        codex_model=args.model,
-        codex_timeout_seconds=args.codex_timeout_seconds,
+        claude_command=args.claude_command,
+        claude_model=args.model,
+        claude_timeout_seconds=args.claude_timeout_seconds,
         max_iterations=args.max_iterations,
         max_idle_turns=args.max_idle_turns,
         max_runtime_seconds=args.max_runtime_seconds,
@@ -1089,17 +1299,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     role_prompt = (PROMPTS_DIR / "role_prompt.md").read_text(encoding="utf-8")
     nudge_prompt = (PROMPTS_DIR / "nudge_prompt.md").read_text(encoding="utf-8")
-    codex_workspace = artifacts_root
-    client = CodexClient(
-        workspace_root=codex_workspace,
+    claude_workspace = artifacts_root
+    client = ClaudeClient(
+        workspace_root=claude_workspace,
         artifacts_root=artifacts_root,
-        command=config.codex_command,
-        model=config.codex_model,
-        timeout_seconds=config.codex_timeout_seconds,
+        command=config.claude_command,
+        model=config.claude_model,
+        timeout_seconds=config.claude_timeout_seconds,
     )
     loop = SupervisorLoop(
         config=config,
-        codex_client=client,
+        claude_client=client,
         role_prompt=role_prompt,
         nudge_prompt=nudge_prompt,
     )
@@ -1115,16 +1325,16 @@ def default_run_id() -> str:
 
 def prepare_run_paths(artifacts_root: Path, run_id: str) -> RunPaths:
     run_dir = artifacts_root / "runs" / run_id
-    codex_dir = run_dir / "codex"
+    claude_dir = run_dir / "claude"
     docker_dir = run_dir / "docker"
     transcripts_dir = artifacts_root / "transcripts"
     reports_dir = artifacts_root / "reports"
-    for directory in (run_dir, codex_dir, docker_dir, transcripts_dir, reports_dir):
+    for directory in (run_dir, claude_dir, docker_dir, transcripts_dir, reports_dir):
         directory.mkdir(parents=True, exist_ok=True)
     return RunPaths(
         run_id=run_id,
         run_dir=run_dir,
-        codex_dir=codex_dir,
+        claude_dir=claude_dir,
         docker_dir=docker_dir,
         summary_json=run_dir / "summary.json",
         turns_jsonl=run_dir / "turns.jsonl",
@@ -1198,7 +1408,7 @@ def unique_paths(paths: Iterable[Path]) -> list[Path]:
     return ordered
 
 
-def codex_add_dirs(fixture_post_path: Path | None) -> list[Path]:
+def qa_add_dirs(fixture_post_path: Path | None) -> list[Path]:
     add_dirs: list[Path] = []
     if fixture_post_path is not None:
         add_dirs.append(fixture_post_path if fixture_post_path.is_dir() else fixture_post_path.parent)
@@ -1238,6 +1448,43 @@ def indent_lines(text: str, *, prefix: str = "    ") -> list[str]:
     if not body:
         return []
     return [f"{prefix}{line}" for line in body.splitlines()]
+
+
+def extract_claude_structured_output(stdout: str) -> dict[str, Any]:
+    stripped = stdout.strip()
+    if not stripped:
+        raise ValueError("claude did not emit JSON output")
+
+    try:
+        payload = json.loads(stripped)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"claude wrote invalid JSON output: {exc}") from exc
+
+    if isinstance(payload, dict):
+        structured_output = payload.get("structured_output")
+        if isinstance(structured_output, dict):
+            return structured_output
+
+        result_text = payload.get("result")
+        if isinstance(result_text, str) and result_text.strip():
+            try:
+                nested = json.loads(result_text)
+            except json.JSONDecodeError:
+                nested = None
+            if isinstance(nested, dict):
+                return nested
+
+    raise ValueError("claude JSON output did not include structured_output")
+
+
+def command_looks_like_claude_cli(command: str) -> bool:
+    tokens = shlex.split(command)
+    if not tokens:
+        return False
+    for token in tokens[:2]:
+        if "claude" in Path(token).name.lower():
+            return True
+    return False
 
 
 def format_codex_agent_payload(prefix: str, payload: dict[str, Any]) -> str:
@@ -1356,6 +1603,42 @@ def format_codex_stream_event(session_label: str, line: str) -> str:
     return f"[qa-loop][{session_label} stdout] {line}"
 
 
+def format_claude_stream_event(session_label: str, line: str) -> str:
+    prefix = f"[qa-loop][{session_label}]"
+    stripped = line.strip()
+    if not stripped:
+        return line
+
+    try:
+        event = json.loads(stripped)
+    except json.JSONDecodeError:
+        return f"[qa-loop][{session_label} stdout] {line}"
+
+    if not isinstance(event, dict):
+        return f"[qa-loop][{session_label} stdout] {line}"
+
+    structured_output = event.get("structured_output")
+    if isinstance(structured_output, dict):
+        formatted = format_codex_agent_payload(prefix, structured_output)
+        if formatted:
+            return formatted
+
+    event_type = str(event.get("type", "")).strip()
+    subtype = str(event.get("subtype", "")).strip()
+    if event_type == "result" and subtype:
+        return f"{prefix} result: {subtype}\n"
+    if event_type:
+        return f"{prefix} event: {event_type}\n"
+    return f"[qa-loop][{session_label} stdout] {line}"
+
+
+def format_compat_stream_event(session_label: str, line: str) -> str:
+    rendered = format_claude_stream_event(session_label, line)
+    if f"[qa-loop][{session_label}] event: result" != rendered.strip():
+        return rendered
+    return format_codex_stream_event(session_label, line)
+
+
 def format_codex_stderr_event(session_label: str, line: str) -> str:
     stripped = line.strip()
     if not stripped:
@@ -1365,11 +1648,28 @@ def format_codex_stderr_event(session_label: str, line: str) -> str:
     return f"[qa-loop][{session_label} stderr] {line}"
 
 
+def format_claude_stderr_event(session_label: str, line: str) -> str:
+    stripped = line.strip()
+    if not stripped:
+        return line
+    if should_hide_claude_stderr_line(stripped):
+        return ""
+    return f"[qa-loop][{session_label} stderr] {line}"
+
+
 def should_hide_codex_stderr_line(line: str) -> bool:
     lowered = line.lower()
     return (
         "codex_core::shell_snapshot" in lowered
         or "shell snapshot validation failed" in lowered
+        or "syntax error in conditional expression: unexpected token" in lowered
+    )
+
+
+def should_hide_claude_stderr_line(line: str) -> bool:
+    lowered = line.lower()
+    return (
+        "shell snapshot validation failed" in lowered
         or "syntax error in conditional expression: unexpected token" in lowered
     )
 
@@ -1512,7 +1812,7 @@ def fallback_report(*, summary: dict[str, Any], turns: list[dict[str, Any]], err
         ux_clarity=[],
         product_issues=product_issues,
         agent_interaction_issues=[f"Automatic report generation failed: {error}"],
-        suggestions=["Inspect the saved transcript and Codex stderr log for the interrupted report step."],
+        suggestions=["Inspect the saved transcript and Claude stderr log for the interrupted report step."],
         notable_moments=notable_moments,
     )
 
@@ -1531,7 +1831,7 @@ def provisional_report(*, summary: dict[str, Any], turns: list[dict[str, Any]]) 
         product_issues.append(f"Run stopped with `{summary['stop_reason']}`.")
     return QAReport(
         title="QA Loop Report (provisional)",
-        overall_outcome="A provisional report was written before final Codex report synthesis completed.",
+        overall_outcome="A provisional report was written before final Claude report synthesis completed.",
         loop_state=str(summary.get("loop_state", "")).strip(),
         integration_progress=last_summary or "The run finished before the synthesized report was available.",
         ux_clarity=[],

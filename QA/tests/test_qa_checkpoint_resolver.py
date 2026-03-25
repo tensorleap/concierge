@@ -261,6 +261,8 @@ class QACheckpointResolverTest(unittest.TestCase):
             self.assertEqual(resolution["build_mode"], "cold")
             self.assertEqual(resolution["expected_primary_step"], "ensure.input_encoders")
             self.assertFalse(resolution["fallback"])
+            self.assertTrue(resolution["requires_case_generation"])
+            self.assertEqual(resolution["prepare_case_id"], "mnist_minimum_inputs")
             self.assertEqual(
                 resolution["repo_path"],
                 str((repo_root / ".fixtures" / "cases" / "mnist_minimum_inputs").resolve()),
@@ -278,6 +280,8 @@ class QACheckpointResolverTest(unittest.TestCase):
             self.assertEqual(resolution["source_id"], "pre")
             self.assertEqual(resolution["build_mode"], "cold")
             self.assertTrue(resolution["fallback"])
+            self.assertFalse(resolution["requires_case_generation"])
+            self.assertIsNone(resolution["prepare_case_id"])
             self.assertIsNone(resolution["expected_primary_step"])
             self.assertEqual(
                 resolution["repo_path"],

@@ -14,11 +14,12 @@ source "${RESET_LIB_PATH}"
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/fixtures_mutate_cases.sh [--bootstrap-poetry]
+Usage: bash scripts/fixtures_mutate_cases.sh [--case <case-id>] [--bootstrap-poetry]
 
 Generate deterministic guide-native fixture cases under .fixtures/cases/.
 
 Options:
+  --case ID            Generate only the selected case ID from fixtures/cases/manifest.json.
   --bootstrap-poetry   After generating cases, bootstrap Poetry environments explicitly.
   --help               Show this help text.
 EOF
@@ -39,8 +40,14 @@ require_cmd() {
 }
 
 bootstrap_poetry=0
+selected_case_id=""
 while (($# > 0)); do
   case "$1" in
+    --case)
+      shift
+      [[ $# -gt 0 ]] || fail "--case requires a value"
+      selected_case_id="$1"
+      ;;
     --bootstrap-poetry)
       bootstrap_poetry=1
       ;;
@@ -79,6 +86,9 @@ jq -e '
 mkdir -p "${FIXTURES_ROOT}/cases"
 log "Case manifest: ${CASE_MANIFEST_PATH}"
 log "Case output root: ${FIXTURES_ROOT}/cases"
+if [[ -n "${selected_case_id}" ]]; then
+  log "Targeted case generation enabled for case '${selected_case_id}'"
+fi
 
 write_case_reset_script() {
   local repo_dir="$1"
@@ -115,36 +125,55 @@ reset_case_dir() {
   [[ ! -e "${dir}" ]] || fail "failed to reset case directory: ${dir}"
 }
 
+processed_cases=0
 while IFS= read -r case_json; do
-  case_id="$(jq -r '.id' <<<"${case_json}")"
+  current_case_id="$(jq -r '.id' <<<"${case_json}")"
   source_fixture_id="$(jq -r '.source_fixture_id' <<<"${case_json}")"
   source_variant="$(jq -r '.source_variant' <<<"${case_json}")"
   patch_relpath="$(jq -r '.patch' <<<"${case_json}")"
   patch_path="${REPO_ROOT}/${patch_relpath}"
-  commit_message="Create fixture case ${case_id}"
+  commit_message="Create fixture case ${current_case_id}"
 
   source_dir="${FIXTURES_ROOT}/${source_fixture_id}/${source_variant}"
-  case_dir="${FIXTURES_ROOT}/cases/${case_id}"
+  case_dir="${FIXTURES_ROOT}/cases/${current_case_id}"
 
-  [[ -d "${source_dir}/.git" ]] || fail "source fixture repo missing for case '${case_id}': ${source_dir}"
-  [[ -f "${patch_path}" ]] || fail "patch file missing for case '${case_id}': ${patch_relpath}"
+  [[ -d "${source_dir}/.git" ]] || fail "source fixture repo missing for case '${current_case_id}': ${source_dir}"
+  [[ -f "${patch_path}" ]] || fail "patch file missing for case '${current_case_id}': ${patch_relpath}"
   source_ref="$(git -C "${source_dir}" rev-parse HEAD)"
 
-  log "Generating case '${case_id}' from fixture '${source_fixture_id}'"
+  log "Generating case '${current_case_id}' from fixture '${source_fixture_id}'"
   reset_case_dir "${case_dir}"
-  git clone --quiet --no-checkout "${source_dir}" "${case_dir}"
+  cp -R "${source_dir}" "${case_dir}"
   git -C "${case_dir}" checkout --quiet "${source_ref}"
   fixture_apply_case_patch "${case_dir}" "${patch_path}" "${commit_message}"
   write_case_reset_script "${case_dir}" "${source_ref}" "${patch_path}" "${commit_message}"
 
   if [[ -n "$(git -C "${case_dir}" status --porcelain)" ]]; then
-    fail "generated case '${case_id}' is not a clean git tree"
+    fail "generated case '${current_case_id}' is not a clean git tree"
   fi
-done < <(jq -c '.cases[]' "${CASE_MANIFEST_PATH}")
+  processed_cases=$((processed_cases + 1))
+done < <(
+  if [[ -n "${selected_case_id}" ]]; then
+    jq -c --arg case_id "${selected_case_id}" '.cases[] | select(.id == $case_id)' "${CASE_MANIFEST_PATH}"
+  else
+    jq -c '.cases[]' "${CASE_MANIFEST_PATH}"
+  fi
+)
+
+if [[ "${processed_cases}" == "0" ]]; then
+  if [[ -n "${selected_case_id}" ]]; then
+    fail "unknown case id '${selected_case_id}' (see ${CASE_MANIFEST_PATH})"
+  fi
+  fail "no fixture cases found in ${CASE_MANIFEST_PATH}"
+fi
 
 if [[ "${bootstrap_poetry}" == "1" ]]; then
   log "Bootstrapping Poetry environments for generated cases"
-  bash "${BOOTSTRAP_SCRIPT_PATH}" --variant cases
+  bootstrap_args=(--variant cases)
+  if [[ -n "${selected_case_id}" ]]; then
+    bootstrap_args+=(--case "${selected_case_id}")
+  fi
+  bash "${BOOTSTRAP_SCRIPT_PATH}" "${bootstrap_args[@]}"
 fi
 
 log "Fixture case generation complete"

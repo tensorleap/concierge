@@ -14,7 +14,7 @@ DEFAULT_CLAUDE_CODE_VERSION="${QA_CLAUDE_CODE_VERSION:-2.1.76}"
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/qa_fixture_run.sh [--repo <fixture-id>] [--step <checkpoint-step>] [-- <qa_loop args...>]
+Usage: bash scripts/qa_fixture_run.sh [--repo <fixture-id>] [--step <checkpoint-step>] [--require-explicit-setup] [-- <qa_loop args...>]
 
 Resolve a deterministic fixture checkpoint, build an isolated Docker image from that clean state,
 start a fixture container, and run the QA loop against that container.
@@ -22,6 +22,7 @@ start a fixture container, and run the QA loop against that container.
 Options:
   --repo <fixture-id>           Fixture ID from fixtures/manifest.json.
   --step <checkpoint-step>      Guide-native checkpoint step selector, or 'pre' for the clean pre repo.
+  --require-explicit-setup      Fail fast instead of preparing fixture/case repos implicitly.
   --help                        Show this help text.
 EOF
 }
@@ -128,6 +129,7 @@ select_runner_json() {
 fixture_id="${REPO:-}"
 step="${QA_STEP:-}"
 image_mode_override="${QA_IMAGE_MODE:-}"
+require_explicit_setup="${QA_REQUIRE_EXPLICIT_SETUP:-0}"
 while (($# > 0)); do
   case "$1" in
     --repo)
@@ -144,6 +146,10 @@ while (($# > 0)); do
       (($# >= 2)) || fail "--image-mode requires cold or prewarmed"
       image_mode_override="$2"
       shift 2
+      ;;
+    --require-explicit-setup)
+      require_explicit_setup=1
+      shift
       ;;
     --help|-h)
       usage
@@ -181,11 +187,6 @@ step="$(jq -r '.step' <<<"${selection_json}")"
 if [[ -n "${image_mode_override}" && "${image_mode_override}" != "cold" && "${image_mode_override}" != "prewarmed" ]]; then
   fail "unsupported image mode override '${image_mode_override}'"
 fi
-[[ -n "${ANTHROPIC_API_KEY:-}" ]] || fail "ANTHROPIC_API_KEY is required for Docker QA runs"
-
-command -v docker >/dev/null 2>&1 || fail "required command 'docker' not found"
-command -v git >/dev/null 2>&1 || fail "required command 'git' not found"
-command -v go >/dev/null 2>&1 || fail "required command 'go' not found"
 
 jq -e --arg id "${fixture_id}" '.fixtures[] | select(.id == $id)' "${MANIFEST_PATH}" >/dev/null \
   || fail "unknown fixture id '${fixture_id}' (see ${MANIFEST_PATH})"
@@ -202,19 +203,35 @@ selected_warmup_script="$(jq -r '.warmup_script // empty' <<<"${resolution_json}
 selected_prepare_case_id="$(jq -r '.prepare_case_id // empty' <<<"${resolution_json}")"
 checkpoint_key="$(jq -r '.checkpoint_key' <<<"${resolution_json}")"
 
-if [[ ! -x "${pre_dir}/.fixture_reset.sh" || ! -x "${post_dir}/.fixture_reset.sh" ]]; then
-  log "Preparing fixtures because '${fixture_id}' is not available locally yet"
-  bash "${REPO_ROOT}/scripts/fixtures_prepare.sh"
-fi
+if [[ "${require_explicit_setup}" == "1" ]]; then
+  if [[ ! -x "${pre_dir}/.fixture_reset.sh" || ! -x "${post_dir}/.fixture_reset.sh" ]]; then
+    fail "explicit QA setup required: selected fixture '${fixture_id}' is not prepared. Run: bash scripts/fixtures_prepare.sh --fixture \"${fixture_id}\""
+  fi
 
-if [[ -n "${selected_prepare_case_id}" && ! -x "${selected_repo_dir}/.fixture_reset.sh" ]]; then
-  log "Generating fixture cases because checkpoint '${checkpoint_key}' is not available locally yet"
-  bash "${REPO_ROOT}/scripts/fixtures_mutate_cases.sh" --case "${selected_prepare_case_id}"
+  if [[ -n "${selected_prepare_case_id}" && ! -x "${selected_repo_dir}/.fixture_reset.sh" ]]; then
+    fail "explicit QA setup required: selected checkpoint '${checkpoint_key}' is not prepared. Run: bash scripts/fixtures_mutate_cases.sh --case \"${selected_prepare_case_id}\""
+  fi
+else
+  if [[ ! -x "${pre_dir}/.fixture_reset.sh" || ! -x "${post_dir}/.fixture_reset.sh" ]]; then
+    log "Preparing fixtures because '${fixture_id}' is not available locally yet"
+    bash "${REPO_ROOT}/scripts/fixtures_prepare.sh" --fixture "${fixture_id}"
+  fi
+
+  if [[ -n "${selected_prepare_case_id}" && ! -x "${selected_repo_dir}/.fixture_reset.sh" ]]; then
+    log "Generating fixture cases because checkpoint '${checkpoint_key}' is not available locally yet"
+    bash "${REPO_ROOT}/scripts/fixtures_mutate_cases.sh" --case "${selected_prepare_case_id}"
+  fi
 fi
 
 [[ -x "${pre_dir}/.fixture_reset.sh" ]] || fail "missing pre reset script for fixture '${fixture_id}': ${pre_dir}/.fixture_reset.sh"
 [[ -x "${post_dir}/.fixture_reset.sh" ]] || fail "missing post reset script for fixture '${fixture_id}': ${post_dir}/.fixture_reset.sh"
 [[ -x "${selected_repo_dir}/.fixture_reset.sh" ]] || fail "missing reset script for checkpoint '${checkpoint_key}': ${selected_repo_dir}/.fixture_reset.sh"
+
+[[ -n "${ANTHROPIC_API_KEY:-}" ]] || fail "ANTHROPIC_API_KEY is required for Docker QA runs"
+
+command -v docker >/dev/null 2>&1 || fail "required command 'docker' not found"
+command -v git >/dev/null 2>&1 || fail "required command 'git' not found"
+command -v go >/dev/null 2>&1 || fail "required command 'go' not found"
 
 log "Resetting fixture '${fixture_id}' post variant"
 "${post_dir}/.fixture_reset.sh"

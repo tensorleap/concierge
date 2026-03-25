@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -105,6 +107,110 @@ with tempfile.TemporaryDirectory() as tmpdir:
         self.assertIn("missing required QA selectors for non-interactive run", completed.stderr)
         self.assertIn("Valid fixtures:", completed.stderr)
         self.assertIn("Valid steps:", completed.stderr)
+
+    def test_runner_fails_fast_when_explicit_setup_requires_targeted_fixture_prepare(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = self._create_minimal_runner_repo(Path(tmpdir))
+
+            completed = subprocess.run(
+                [
+                    "bash",
+                    str(repo_root / "scripts" / "qa_fixture_run.sh"),
+                    "--repo",
+                    "mnist",
+                    "--step",
+                    "pre",
+                    "--require-explicit-setup",
+                ],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 1)
+            self.assertIn("explicit QA setup required", completed.stderr)
+            self.assertIn('bash scripts/fixtures_prepare.sh --fixture "mnist"', completed.stderr)
+
+    def test_runner_fails_fast_when_explicit_setup_requires_targeted_case_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = self._create_minimal_runner_repo(
+                Path(tmpdir),
+                checkpoint_entries=[
+                    {
+                        "fixture_id": "mnist",
+                        "step": "input_encoders",
+                        "source_kind": "case",
+                        "source_id": "mnist_minimum_inputs",
+                        "build_mode": "cold",
+                        "expected_primary_step": "ensure.input_encoders",
+                    }
+                ],
+                prepare_fixture=True,
+            )
+
+            completed = subprocess.run(
+                [
+                    "bash",
+                    str(repo_root / "scripts" / "qa_fixture_run.sh"),
+                    "--repo",
+                    "mnist",
+                    "--step",
+                    "input_encoders",
+                    "--require-explicit-setup",
+                ],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 1)
+            self.assertIn("explicit QA setup required", completed.stderr)
+            self.assertIn('bash scripts/fixtures_mutate_cases.sh --case "mnist_minimum_inputs"', completed.stderr)
+
+    def _create_minimal_runner_repo(
+        self,
+        repo_root: Path,
+        *,
+        checkpoint_entries: list[dict[str, object]] | None = None,
+        prepare_fixture: bool = False,
+    ) -> Path:
+        checkpoint_entries = checkpoint_entries or []
+        (repo_root / "scripts").mkdir(parents=True, exist_ok=True)
+        (repo_root / "fixtures" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        (repo_root / "QA" / "docker").mkdir(parents=True, exist_ok=True)
+
+        self._copy_repo_file("scripts/qa_fixture_run.sh", repo_root)
+        self._copy_repo_file("scripts/qa_checkpoint_resolver.py", repo_root)
+        self._write_executable(repo_root / "scripts" / "qa_sanitize_workspace.sh", "#!/usr/bin/env bash\nset -euo pipefail\n")
+        (repo_root / "QA" / "docker" / "fixture.Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+        (repo_root / "fixtures" / "manifest.json").write_text(
+            json.dumps({"fixtures": [{"id": "mnist"}]}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        (repo_root / "fixtures" / "checkpoints" / "manifest.json").write_text(
+            json.dumps({"checkpoints": checkpoint_entries}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        if prepare_fixture:
+            self._write_executable(repo_root / ".fixtures" / "mnist" / "pre" / ".fixture_reset.sh", "#!/usr/bin/env bash\n")
+            self._write_executable(repo_root / ".fixtures" / "mnist" / "post" / ".fixture_reset.sh", "#!/usr/bin/env bash\n")
+
+        return repo_root
+
+    def _copy_repo_file(self, relative_path: str, repo_root: Path) -> None:
+        source_path = REPO_ROOT / relative_path
+        target_path = repo_root / relative_path
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, target_path)
+        target_path.chmod(target_path.stat().st_mode | 0o111)
+
+    def _write_executable(self, path: Path, contents: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(contents, encoding="utf-8")
+        path.chmod(path.stat().st_mode | 0o111)
 
 
 if __name__ == "__main__":

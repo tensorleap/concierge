@@ -54,6 +54,24 @@ class QARunnerSurfaceTest(unittest.TestCase):
         self.assertIn("gh issue comment", workflow)
         self.assertIn("gh pr comment", workflow)
 
+    def test_qa_workflow_uses_explicit_targeted_setup_steps(self) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "qa-loop.yml").read_text(encoding="utf-8")
+
+        self.assertIn("- name: Prepare selected fixture", workflow)
+        self.assertIn('bash scripts/fixtures_prepare.sh --fixture "${QA_FIXTURE}"', workflow)
+        self.assertIn("- name: Resolve selected QA source", workflow)
+        self.assertIn("qa_checkpoint_resolver.py", workflow)
+        self.assertIn("resolve", workflow)
+        self.assertIn("QA_PREPARE_CASE_ID", workflow)
+        self.assertIn("- name: Generate selected case repo", workflow)
+        self.assertIn('bash scripts/fixtures_mutate_cases.sh --case "${QA_PREPARE_CASE_ID}"', workflow)
+        self.assertIn("--require-explicit-setup", workflow)
+
+    def test_qa_workflow_generates_case_repos_only_when_resolution_requires_it(self) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "qa-loop.yml").read_text(encoding="utf-8")
+
+        self.assertIn("if: ${{ env.QA_PREPARE_CASE_ID != '' }}", workflow)
+
     def test_makefile_does_not_force_default_repo(self) -> None:
         makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
 
@@ -89,6 +107,12 @@ class QARunnerSurfaceTest(unittest.TestCase):
 
         self.assertIn("selected_prepare_case_id", script)
         self.assertIn('fixtures_mutate_cases.sh" --case "${selected_prepare_case_id}"', script)
+
+    def test_runner_script_supports_strict_explicit_setup_mode(self) -> None:
+        script = (REPO_ROOT / "scripts" / "qa_fixture_run.sh").read_text(encoding="utf-8")
+
+        self.assertIn("--require-explicit-setup", script)
+        self.assertIn("require_explicit_setup", script)
 
     def test_case_generation_script_does_not_fetch_from_prepared_fixture_repo(self) -> None:
         script = (REPO_ROOT / "scripts" / "fixtures_mutate_cases.sh").read_text(encoding="utf-8")

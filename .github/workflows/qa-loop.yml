@@ -107,10 +107,35 @@ jobs:
           rg --version
           claude --version
 
+      - name: Prepare selected fixture
+        shell: bash
+        run: |
+          bash scripts/fixtures_prepare.sh --fixture "${QA_FIXTURE}"
+
+      - name: Resolve selected QA source
+        shell: bash
+        run: |
+          resolution_json="$(python3 scripts/qa_checkpoint_resolver.py resolve --repo-root "${GITHUB_WORKSPACE}" --fixture-id "${QA_FIXTURE}" --step "${QA_STEP}")"
+          echo "QA_CHECKPOINT_KEY=$(jq -r '.checkpoint_key' <<<"${resolution_json}")" >> "$GITHUB_ENV"
+          echo "QA_SOURCE_KIND=$(jq -r '.source_kind' <<<"${resolution_json}")" >> "$GITHUB_ENV"
+          echo "QA_SOURCE_ID=$(jq -r '.source_id' <<<"${resolution_json}")" >> "$GITHUB_ENV"
+          echo "QA_PREPARE_CASE_ID=$(jq -r '.prepare_case_id // empty' <<<"${resolution_json}")" >> "$GITHUB_ENV"
+
+      - name: Generate selected case repo
+        if: ${{ env.QA_PREPARE_CASE_ID != '' }}
+        shell: bash
+        run: |
+          bash scripts/fixtures_mutate_cases.sh --case "${QA_PREPARE_CASE_ID}"
+
       - name: Run QA loop
         shell: bash
         run: |
-          bash scripts/qa_fixture_run.sh --repo "${QA_FIXTURE}" --step "${QA_STEP}" -- --run-id "${RUN_ID}"
+          bash scripts/qa_fixture_run.sh \
+            --repo "${QA_FIXTURE}" \
+            --step "${QA_STEP}" \
+            --require-explicit-setup \
+            -- \
+            --run-id "${RUN_ID}"
 
       - name: Write QA summary
         if: ${{ always() }}
@@ -124,6 +149,8 @@ jobs:
             echo "- Ref: \`${{ inputs.ref }}\`"
             echo "- Fixture: \`${QA_FIXTURE}\`"
             echo "- Step: \`${QA_STEP}\`"
+            echo "- Resolved checkpoint: \`${QA_CHECKPOINT_KEY:-unresolved}\`"
+            echo "- Source: \`${QA_SOURCE_KIND:-unknown}:${QA_SOURCE_ID:-unknown}\`"
             echo "- Run ID: \`${RUN_ID}\`"
             echo "- Artifact: \`${artifact_name}\`"
             if [[ -f "${summary_path}" ]]; then

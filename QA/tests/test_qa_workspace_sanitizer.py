@@ -17,6 +17,8 @@ class QAWorkspaceSanitizerTest(unittest.TestCase):
             tmp_path = Path(tmpdir)
             source = tmp_path / "source"
             output = tmp_path / "output"
+            git_global_config = tmp_path / "gitconfig"
+            git_template_dir = tmp_path / "git-template"
 
             source.mkdir()
             self._git(source, "init")
@@ -39,12 +41,30 @@ class QAWorkspaceSanitizerTest(unittest.TestCase):
             (source / ".fixture_reset.sh").write_text("#!/usr/bin/env bash\necho reset\n", encoding="utf-8")
             os.chmod(source / ".fixture_reset.sh", os.stat(source / ".fixture_reset.sh").st_mode | stat.S_IXUSR)
 
+            git_global_config.write_text(
+                "[remote \"origin\"]\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n",
+                encoding="utf-8",
+            )
+            git_template_dir.mkdir()
+            (git_template_dir / "config").write_text(
+                (
+                    "[remote \"origin\"]\n"
+                    "\turl = https://github.com/example/template.git\n"
+                    "\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+                ),
+                encoding="utf-8",
+            )
+            git_env = os.environ.copy()
+            git_env["GIT_CONFIG_GLOBAL"] = str(git_global_config)
+            git_env["GIT_TEMPLATE_DIR"] = str(git_template_dir)
+
             completed = subprocess.run(
                 ["bash", str(SANITIZER), str(source), str(output)],
                 cwd=REPO_ROOT,
                 capture_output=True,
                 text=True,
                 check=False,
+                env=git_env,
             )
 
             self.assertEqual(
@@ -63,8 +83,25 @@ class QAWorkspaceSanitizerTest(unittest.TestCase):
             commit_count = self._git(output, "rev-list", "--count", "HEAD").strip()
             self.assertEqual(commit_count, "1")
 
-            remotes = self._git(output, "remote").strip()
-            self.assertEqual(remotes, "")
+            inherited_remotes = self._git(output, "remote", env=git_env).strip()
+            self.assertEqual(inherited_remotes, "origin")
+
+            local_remote_config = subprocess.run(
+                ["git", "-C", str(output), "config", "--local", "--get-regexp", r"^remote\."],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=git_env,
+            )
+            self.assertEqual(
+                local_remote_config.returncode,
+                1,
+                msg=(
+                    "expected sanitized repo to have no repo-local remote config, got "
+                    f"stdout={local_remote_config.stdout!r} stderr={local_remote_config.stderr!r}"
+                ),
+            )
 
             leak_show = subprocess.run(
                 ["git", "-C", str(output), "show", "HEAD~1:leak.txt"],
@@ -107,13 +144,14 @@ class QAWorkspaceSanitizerTest(unittest.TestCase):
             status = self._git(output, "status", "--porcelain")
             self.assertEqual(status.strip(), "", msg=f"expected helper to be ignored, got git status {status!r}")
 
-    def _git(self, repo: Path, *args: str) -> str:
+    def _git(self, repo: Path, *args: str, env: dict[str, str] | None = None) -> str:
         completed = subprocess.run(
             ["git", "-C", str(repo), *args],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
             check=False,
+            env=env,
         )
         if completed.returncode != 0:
             self.fail(f"git {' '.join(args)} failed:\nstdout={completed.stdout}\nstderr={completed.stderr}")

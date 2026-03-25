@@ -6,7 +6,7 @@ usage() {
 Usage: bash scripts/qa_sanitize_workspace.sh <source-repo> <output-dir>
 
 Copy the tracked working tree from <source-repo> into <output-dir>, then
-reinitialize it as a single-commit detached git repo with no remotes.
+reinitialize it as a single-commit detached git repo with no repo-local remotes.
 EOF
 }
 
@@ -33,7 +33,10 @@ mkdir -p "${output_dir}"
 
 git -C "${source_repo}" archive --format=tar HEAD | tar -xf - -C "${output_dir}"
 
-git -C "${output_dir}" init --quiet
+git_init_template_dir="$(mktemp -d)"
+trap 'rm -rf "${git_init_template_dir}"' EXIT
+GIT_TEMPLATE_DIR="${git_init_template_dir}" git -C "${output_dir}" init --quiet
+mkdir -p "${output_dir}/.git/info"
 printf '.checkpoint_warmup.sh\n' >>"${output_dir}/.git/info/exclude"
 git -C "${output_dir}" add -A
 

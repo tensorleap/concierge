@@ -30,6 +30,7 @@ DEFAULT_LATEST_OUTPUT_CHARS = 6000
 DEFAULT_CODEX_TIMEOUT_SECONDS = 300.0
 DEFAULT_REPORT_TIMEOUT_SECONDS = 60.0
 ANSI_ESCAPE_RE = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
+JSON_CODE_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.IGNORECASE | re.DOTALL)
 PROMPT_LINE_RE = re.compile(
     r"(\[[^\]]+\]\s*:?\s*$|(?:continue|apply|type|enter|select|choose|confirm|approve|input).*[?:]\s*$|you\s*>\s*.*$)",
     re.IGNORECASE,
@@ -51,11 +52,14 @@ class LoopDirective:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "LoopDirective":
+        summary = str(payload.get("summary", "")).strip()
+        if not summary:
+            summary = str(payload.get("observation", "")).strip()
         return cls(
             action=str(payload.get("action", "")).strip(),
             input_text=str(payload.get("input_text", "")),
             loop_state=str(payload.get("loop_state", "")).strip(),
-            summary=str(payload.get("summary", "")).strip(),
+            summary=summary,
             issues=[str(item).strip() for item in payload.get("issues", []) if str(item).strip()],
             next_focus=str(payload.get("next_focus", "")).strip(),
         )
@@ -1200,17 +1204,7 @@ class SupervisorLoop:
             live_io=live_io,
             session_label="claude-final-report",
         )
-        return QAReport(
-            title=str(payload.get("title", "")).strip(),
-            overall_outcome=str(payload.get("overall_outcome", "")).strip(),
-            loop_state=str(payload.get("loop_state", "")).strip(),
-            integration_progress=str(payload.get("integration_progress", "")).strip(),
-            ux_clarity=clean_string_list(payload.get("ux_clarity", [])),
-            product_issues=clean_string_list(payload.get("product_issues", [])),
-            agent_interaction_issues=clean_string_list(payload.get("agent_interaction_issues", [])),
-            suggestions=clean_string_list(payload.get("suggestions", [])),
-            notable_moments=clean_string_list(payload.get("notable_moments", [])),
-        )
+        return normalize_qa_report(payload, default_loop_state=loop_state)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -1467,14 +1461,135 @@ def extract_claude_structured_output(stdout: str) -> dict[str, Any]:
 
         result_text = payload.get("result")
         if isinstance(result_text, str) and result_text.strip():
-            try:
-                nested = json.loads(result_text)
-            except json.JSONDecodeError:
-                nested = None
+            nested = extract_json_dict_from_text(result_text)
             if isinstance(nested, dict):
                 return nested
 
     raise ValueError("claude JSON output did not include structured_output")
+
+
+def extract_json_dict_from_text(text: str) -> dict[str, Any] | None:
+    decoder = json.JSONDecoder()
+    candidates = [match.group(1).strip() for match in JSON_CODE_FENCE_RE.finditer(text)]
+    candidates.append(text.strip())
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+
+        try:
+            payload, _ = decoder.raw_decode(candidate)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            return payload
+
+        for index, char in enumerate(candidate):
+            if char not in "{[":
+                continue
+            try:
+                payload, _ = decoder.raw_decode(candidate[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                return payload
+
+    return None
+
+
+def summarize_report_item(item: Any) -> str:
+    if isinstance(item, str):
+        return item.strip()
+    if not isinstance(item, dict):
+        return str(item).strip()
+
+    severity = str(item.get("severity", "")).strip()
+    area = str(item.get("area", "")).strip()
+    description = str(item.get("description", "")).strip()
+    detail = str(item.get("detail", "")).strip()
+    likely_cause = str(item.get("likely_cause", "")).strip()
+    suggestion = str(item.get("suggestion", "")).strip()
+    lead = description or detail or likely_cause
+
+    prefixes = [value for value in (severity, area) if value]
+    text = lead
+    if prefixes:
+        prefix = " / ".join(prefixes)
+        text = f"[{prefix}] {lead or 'Report item'}"
+    if suggestion:
+        if text:
+            text += f" Suggestion: {suggestion}"
+        else:
+            text = f"Suggestion: {suggestion}"
+    return text.strip()
+
+
+def clean_report_items(values: Any) -> list[str]:
+    if isinstance(values, list):
+        items = values
+    elif values is None:
+        items = []
+    else:
+        items = [values]
+
+    cleaned: list[str] = []
+    for item in items:
+        text = summarize_report_item(item)
+        if text:
+            cleaned.append(text)
+    return cleaned
+
+
+def normalize_integration_progress(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        summary = str(value.get("summary", "")).strip()
+        if summary:
+            return summary
+        completed = ", ".join(clean_string_list(value.get("completed_steps", [])))
+        attempted = ", ".join(clean_string_list(value.get("attempted_steps", [])))
+        blocked = ", ".join(clean_string_list(value.get("blocked_steps", [])))
+        parts = []
+        if completed:
+            parts.append(f"Completed: {completed}.")
+        if attempted:
+            parts.append(f"Attempted: {attempted}.")
+        if blocked:
+            parts.append(f"Blocked: {blocked}.")
+        return " ".join(parts).strip()
+    return str(value).strip()
+
+
+def normalize_qa_report(payload: dict[str, Any], *, default_loop_state: str) -> QAReport:
+    title = str(payload.get("title", "")).strip()
+    if not title:
+        status = str(payload.get("status", "")).strip()
+        title = f"QA Loop Report ({status})" if status else "QA Loop Report"
+
+    overall_outcome = str(payload.get("overall_outcome", "")).strip()
+    if not overall_outcome:
+        overall_outcome = str(payload.get("overall_notes", "")).strip()
+    if not overall_outcome:
+        overall_outcome = summarize_report_item(payload.get("stop_reason_assessment"))
+
+    loop_state = str(payload.get("loop_state", "")).strip() or default_loop_state
+    integration_progress = normalize_integration_progress(payload.get("integration_progress", ""))
+    ux_clarity = clean_report_items(payload.get("ux_clarity", []))
+    if not ux_clarity:
+        ux_clarity = clean_report_items(payload.get("ux_observations", []))
+
+    return QAReport(
+        title=title,
+        overall_outcome=overall_outcome,
+        loop_state=loop_state,
+        integration_progress=integration_progress,
+        ux_clarity=ux_clarity,
+        product_issues=clean_report_items(payload.get("product_issues", [])),
+        agent_interaction_issues=clean_report_items(payload.get("agent_interaction_issues", [])),
+        suggestions=clean_report_items(payload.get("suggestions", [])),
+        notable_moments=clean_report_items(payload.get("notable_moments", [])),
+    )
 
 
 def command_looks_like_claude_cli(command: str) -> bool:
@@ -1625,6 +1740,12 @@ def format_claude_stream_event(session_label: str, line: str) -> str:
 
     event_type = str(event.get("type", "")).strip()
     subtype = str(event.get("subtype", "")).strip()
+    if event_type == "result":
+        result_payload = extract_json_dict_from_text(str(event.get("result", "")))
+        if isinstance(result_payload, dict):
+            formatted = format_codex_agent_payload(prefix, result_payload)
+            if formatted:
+                return formatted
     if event_type == "result" and subtype:
         return f"{prefix} result: {subtype}\n"
     if event_type:

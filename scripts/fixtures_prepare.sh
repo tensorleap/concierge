@@ -13,11 +13,12 @@ source "${RESET_LIB_PATH}"
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/fixtures_prepare.sh [--bootstrap-poetry]
+Usage: bash scripts/fixtures_prepare.sh [--fixture <id>] [--bootstrap-poetry]
 
 Prepare the pinned pre/post fixture repositories in .fixtures/.
 
 Options:
+  --fixture ID         Limit preparation to one fixture ID from fixtures/manifest.json.
   --bootstrap-poetry   After preparing fixtures, bootstrap Poetry environments explicitly.
   --help               Show this help text.
 EOF
@@ -42,8 +43,14 @@ require_cmd() {
 }
 
 bootstrap_poetry=0
+fixture_id=""
 while (($# > 0)); do
   case "$1" in
+    --fixture)
+      shift
+      [[ $# -gt 0 ]] || fail "--fixture requires a value"
+      fixture_id="$1"
+      ;;
     --bootstrap-poetry)
       bootstrap_poetry=1
       ;;
@@ -270,6 +277,11 @@ require_cmd python3
 jq -e '.fixtures and (.fixtures | type == "array")' "${MANIFEST_PATH}" >/dev/null \
   || fail "invalid manifest schema in ${MANIFEST_PATH}"
 
+if [[ -n "${fixture_id}" ]]; then
+  jq -e --arg id "${fixture_id}" '.fixtures[] | select(.id == $id)' "${MANIFEST_PATH}" >/dev/null \
+    || fail "unknown fixture id '${fixture_id}' (see ${MANIFEST_PATH})"
+fi
+
 git_fixture() {
   GIT_LFS_SKIP_SMUDGE=1 git "$@"
 }
@@ -277,6 +289,14 @@ git_fixture() {
 mkdir -p "${FIXTURES_ROOT}"
 log "Manifest: ${MANIFEST_PATH}"
 log "Fixture output root: ${FIXTURES_ROOT}"
+if [[ -n "${fixture_id}" ]]; then
+  log "Target fixture: ${fixture_id}"
+fi
+
+manifest_filter='.fixtures[]'
+if [[ -n "${fixture_id}" ]]; then
+  manifest_filter='.fixtures[] | select(.id == $id)'
+fi
 
 while IFS= read -r fixture_json; do
   id="$(jq -r '.id // empty' <<<"${fixture_json}")"
@@ -454,11 +474,15 @@ while IFS= read -r fixture_json; do
 
   assert_clean_git_tree "${pre_dir}" "pre variant for fixture '${id}'"
   log "Prepared fixture '${id}' at ${fixture_root}"
-done < <(jq -c '.fixtures[]' "${MANIFEST_PATH}")
+done < <(jq -c --arg id "${fixture_id}" "${manifest_filter}" "${MANIFEST_PATH}")
 
 if [[ "${bootstrap_poetry}" == "1" ]]; then
   log "Bootstrapping Poetry environments for prepared fixtures"
-  bash "${BOOTSTRAP_SCRIPT_PATH}" --variant all
+  bootstrap_args=(--variant all)
+  if [[ -n "${fixture_id}" ]]; then
+    bootstrap_args+=(--fixture "${fixture_id}")
+  fi
+  bash "${BOOTSTRAP_SCRIPT_PATH}" "${bootstrap_args[@]}"
 fi
 
 log "Fixture preparation complete"

@@ -84,6 +84,18 @@ class QARunnerSurfaceTest(unittest.TestCase):
         self.assertIn("warmup_sha", script)
         self.assertIn(".checkpoint_warmup.sh", script)
 
+    def test_runner_script_uses_targeted_case_generation_for_case_sources(self) -> None:
+        script = (REPO_ROOT / "scripts" / "qa_fixture_run.sh").read_text(encoding="utf-8")
+
+        self.assertIn("selected_prepare_case_id", script)
+        self.assertIn('fixtures_mutate_cases.sh" --case "${selected_prepare_case_id}"', script)
+
+    def test_case_generation_script_does_not_fetch_from_prepared_fixture_repo(self) -> None:
+        script = (REPO_ROOT / "scripts" / "fixtures_mutate_cases.sh").read_text(encoding="utf-8")
+
+        self.assertNotIn('git -C "${case_dir}" fetch --quiet origin "${source_ref}"', script)
+        self.assertIn('cp -R "${source_dir}" "${case_dir}"', script)
+
     def test_dockerfile_runs_checkpoint_warmup_for_prewarmed_images(self) -> None:
         dockerfile = (REPO_ROOT / "QA" / "docker" / "fixture.Dockerfile").read_text(encoding="utf-8")
 

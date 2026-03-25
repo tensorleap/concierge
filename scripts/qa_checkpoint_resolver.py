@@ -179,6 +179,8 @@ def resolve_checkpoint(
     if warmup_script is not None:
         warmup_script_path = str((repo_root / warmup_script).resolve())
 
+    prepare_case_id = source_id if source_kind == "case" else None
+
     return {
         "fixture_id": fixture_id,
         "step": step,
@@ -190,6 +192,8 @@ def resolve_checkpoint(
         "expected_primary_step": expected_primary_step,
         "warmup_script": warmup_script_path,
         "fallback": fallback,
+        "requires_case_generation": prepare_case_id is not None,
+        "prepare_case_id": prepare_case_id,
     }
 
 

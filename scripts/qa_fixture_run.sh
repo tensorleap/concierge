@@ -199,6 +199,7 @@ selected_source_kind="$(jq -r '.source_kind' <<<"${resolution_json}")"
 selected_source_id="$(jq -r '.source_id' <<<"${resolution_json}")"
 selected_build_mode="$(jq -r '.build_mode' <<<"${resolution_json}")"
 selected_warmup_script="$(jq -r '.warmup_script // empty' <<<"${resolution_json}")"
+selected_prepare_case_id="$(jq -r '.prepare_case_id // empty' <<<"${resolution_json}")"
 checkpoint_key="$(jq -r '.checkpoint_key' <<<"${resolution_json}")"
 
 if [[ ! -x "${pre_dir}/.fixture_reset.sh" || ! -x "${post_dir}/.fixture_reset.sh" ]]; then
@@ -206,9 +207,9 @@ if [[ ! -x "${pre_dir}/.fixture_reset.sh" || ! -x "${post_dir}/.fixture_reset.sh
   bash "${REPO_ROOT}/scripts/fixtures_prepare.sh"
 fi
 
-if [[ "${selected_source_kind}" == "case" && ! -x "${selected_repo_dir}/.fixture_reset.sh" ]]; then
+if [[ -n "${selected_prepare_case_id}" && ! -x "${selected_repo_dir}/.fixture_reset.sh" ]]; then
   log "Generating fixture cases because checkpoint '${checkpoint_key}' is not available locally yet"
-  bash "${REPO_ROOT}/scripts/fixtures_mutate_cases.sh"
+  bash "${REPO_ROOT}/scripts/fixtures_mutate_cases.sh" --case "${selected_prepare_case_id}"
 fi
 
 [[ -x "${pre_dir}/.fixture_reset.sh" ]] || fail "missing pre reset script for fixture '${fixture_id}': ${pre_dir}/.fixture_reset.sh"

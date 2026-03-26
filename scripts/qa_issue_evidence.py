@@ -154,10 +154,20 @@ def extract_transcript_excerpts(
 
 def summarize_exported_artifacts(run_dir: Path) -> list[str]:
     summaries: list[str] = []
-    concierge_root = run_dir / "docker" / "export" / "workspace" / ".concierge"
+    export_root = run_dir / "docker" / "export" / "workspace"
+    concierge_root = export_root / ".concierge"
     if concierge_root.exists():
         file_count = sum(1 for path in concierge_root.rglob("*") if path.is_file())
         summaries.append(f"workspace/.concierge: {file_count} files")
+
+    for relative_path in (
+        "leap.yaml",
+        "leap_integration.py",
+        "leap_binder.py",
+        "leap_custom_test.py",
+    ):
+        if (export_root / relative_path).is_file():
+            summaries.append(f"workspace/{relative_path}")
 
     docker_dir = run_dir / "docker"
     diff_count = len(list(docker_dir.glob("turn-*.diff.txt")))

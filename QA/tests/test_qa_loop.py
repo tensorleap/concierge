@@ -443,6 +443,11 @@ class QALoopTest(unittest.TestCase):
             command_cwd = tmp / "fixture"
             artifacts_root.mkdir()
             command_cwd.mkdir()
+            (command_cwd / ".concierge" / "reports").mkdir(parents=True)
+            (command_cwd / ".concierge" / "reports" / "snapshot.json").write_text("{}\n", encoding="utf-8")
+            (command_cwd / "leap.yaml").write_text("entryFile: leap_integration.py\n", encoding="utf-8")
+            (command_cwd / "leap_integration.py").write_text("print('integration')\n", encoding="utf-8")
+            (command_cwd / "leap_binder.py").write_text("print('legacy binder')\n", encoding="utf-8")
             fake_docker = write_fake_docker(tmp)
             container_name = "fixture"
 
@@ -562,6 +567,17 @@ class QALoopTest(unittest.TestCase):
             self.assertEqual(summary["docker"]["container_name"], container_name)
             self.assertTrue(summary["docker"]["snapshots_enabled"])
             self.assertEqual(len(summary["docker"]["snapshots"]), 2)
+            exported_artifacts = summary["docker"]["exported_artifacts"]
+            exported_sources = {item["source"] for item in exported_artifacts}
+            self.assertIn(f"{container_name}:/workspace/.concierge", exported_sources)
+            self.assertIn(f"{container_name}:/workspace/leap.yaml", exported_sources)
+            self.assertIn(f"{container_name}:/workspace/leap_integration.py", exported_sources)
+            self.assertIn(f"{container_name}:/workspace/leap_binder.py", exported_sources)
+            export_root = run_dir / "docker" / "export" / "workspace"
+            self.assertTrue((export_root / ".concierge" / "reports" / "snapshot.json").is_file())
+            self.assertTrue((export_root / "leap.yaml").is_file())
+            self.assertTrue((export_root / "leap_integration.py").is_file())
+            self.assertTrue((export_root / "leap_binder.py").is_file())
             first_snapshot = summary["docker"]["snapshots"][0]
             self.assertTrue(Path(first_snapshot["diff_path"]).is_file())
             self.assertTrue(Path(first_snapshot["inspect_path"]).is_file())

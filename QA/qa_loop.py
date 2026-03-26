@@ -510,11 +510,12 @@ class SupervisorLoop:
         loop_state = "CONTINUE"
         stop_reason = ""
         idle_turns = 0
+        control_turns = 0
         blind_first_active = True
         target_stopped_by_supervisor = False
 
         try:
-            for iteration in range(1, self.config.max_iterations + 1):
+            while True:
                 buffered_output = self.driver.drain(max_bytes=262144)
                 if buffered_output:
                     latest_output = visible_terminal_output(
@@ -531,6 +532,7 @@ class SupervisorLoop:
                     latest_output = ""
 
                 elapsed = int(time.monotonic() - started_monotonic)
+                pending_iteration = control_turns + 1
                 released_blind_first = not blind_first_active
                 stalled = idle_turns >= blind_first_release_threshold(self.config.max_idle_turns)
                 if (
@@ -546,7 +548,7 @@ class SupervisorLoop:
                         paths.interaction_log,
                         {
                             "time": utc_now(),
-                            "iteration": iteration,
+                            "iteration": pending_iteration,
                             "kind": "blind_first_released",
                             "idle_turns": idle_turns,
                         },
@@ -581,6 +583,13 @@ class SupervisorLoop:
                         stop_reason = "idle_limit"
                         break
                     continue
+
+                if control_turns >= self.config.max_iterations:
+                    loop_state = "STOP_DEADEND"
+                    stop_reason = "iteration_limit"
+                    break
+                control_turns += 1
+                iteration = control_turns
 
                 try:
                     directive = self._request_control(
@@ -819,9 +828,6 @@ class SupervisorLoop:
                     loop_state = "STOP_REPORT"
                     stop_reason = "process_exit"
                     break
-            else:
-                loop_state = "STOP_DEADEND"
-                stop_reason = "iteration_limit"
         finally:
             trailing_output = self.driver.read_until_quiet(
                 quiet_period=self.config.read_quiet_seconds,

@@ -879,6 +879,10 @@ func parserClearsGTEncoder(parser core.GuideParserRunSummary) bool {
 	return false
 }
 
+func parserClearsLoadModel(parser core.GuideParserRunSummary) bool {
+	return parser.Available && parser.IsValidForModel
+}
+
 func selectPrimaryBlockingGuideStep(issues []core.Issue) (core.EnsureStep, bool) {
 	blocking := make([]core.Issue, 0, len(issues))
 	for _, issue := range issues {
@@ -917,6 +921,7 @@ func issuesFromGuideStatusRows(local core.GuideLocalRunSummary, parser core.Guid
 	preprocessCleared := parserClearsPreprocess(parser)
 	inputEncoderCleared := parserClearsInputEncoder(parser)
 	gtEncoderCleared := parserClearsGTEncoder(parser)
+	loadModelCleared := parserClearsLoadModel(parser)
 	for _, row := range local.StatusRows {
 		if row.Status != "fail" {
 			continue
@@ -939,6 +944,11 @@ func issuesFromGuideStatusRows(local core.GuideLocalRunSummary, parser core.Guid
 			// Work around code-loader#273: the local status table can keep the
 			// generic GT-encoder row at fail even after parser payloads prove
 			// a real ground-truth encoder exists and runs successfully.
+			continue
+		}
+		if normalizedName == "tensorleap_load_model" && loadModelCleared {
+			// When check_dataset() already validated model wiring, a stale local
+			// load_model row should not keep the run pinned on model_contract.
 			continue
 		}
 		code, ok := guideStatusRowIssueMap[normalizedName]

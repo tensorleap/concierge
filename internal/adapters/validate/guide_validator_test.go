@@ -538,6 +538,69 @@ func TestGuideValidatorSkipsStalePreprocessStatusIssueWhenParserAlreadyValidated
 	}
 }
 
+func TestGuideValidatorSkipsStalePreprocessStatusIssueWhenDownstreamInterfacesAlreadyPass(t *testing.T) {
+	repoRoot := buildGuideValidationRepo(t)
+	validator := &GuideValidator{
+		runtimeRunner: &fakeGuideRuntimeRunner{
+			results: []PythonRuntimeCommandResult{
+				{
+					Command: "poetry run python leap_integration.py",
+					Stdout: strings.Join([]string{
+						"Decorator Name                     | Added to integration",
+						"-------------------------------------------------------",
+						"tensorleap_preprocess              | ❌",
+						"tensorleap_input_encoder           | ✅",
+						"tensorleap_load_model              | ✅",
+						"tensorleap_integration_test        | ❌",
+						"tensorleap_gt_encoder              | ✅",
+					}, "\n"),
+				},
+				{
+					Command: "poetry run python -c ...",
+					Stdout: strings.Join([]string{
+						"{",
+						`  "available": true,`,
+						`  "isValid": false,`,
+						`  "generalError": "Something went wrong. AttributeError(\"'TempMapping' object has no attribute 'transpose'\") in file leap_integration.py, line_number:  235"`,
+						"}",
+					}, "\n"),
+				},
+			},
+			errs: []error{nil, nil},
+		},
+		astAnalyzer: fakeIntegrationTestASTAnalyzer{
+			result: IntegrationTestASTResult{
+				Issues: []core.Issue{
+					{
+						Code:     core.IssueCodeIntegrationTestManualBatchManipulation,
+						Message:  "Tensorleap adds the batch dimension automatically inside integration_test",
+						Severity: core.SeverityError,
+						Scope:    core.IssueScopeIntegrationTest,
+					},
+				},
+			},
+		},
+	}
+
+	result, err := validator.Run(context.Background(), guideValidationSnapshot(t, repoRoot))
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if containsIssueCode(result.Issues, core.IssueCodePreprocessFunctionMissing) {
+		t.Fatalf("did not expect stale preprocess status row to survive downstream pass evidence, got %+v", result.Issues)
+	}
+	if !containsIssueCode(result.Issues, core.IssueCodeIntegrationTestManualBatchManipulation) {
+		t.Fatalf("expected integration-test AST issue, got %+v", result.Issues)
+	}
+	primary, ok := core.SelectPrimaryEnsureStep(result.Issues)
+	if !ok {
+		t.Fatalf("expected a primary ensure step, got issues %+v", result.Issues)
+	}
+	if primary.ID != core.EnsureStepIntegrationTestWiring {
+		t.Fatalf("expected primary step %q, got %q", core.EnsureStepIntegrationTestWiring, primary.ID)
+	}
+}
+
 type fakeGuideRuntimeRunner struct {
 	results []PythonRuntimeCommandResult
 	errs    []error

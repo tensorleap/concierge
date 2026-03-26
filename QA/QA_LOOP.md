@@ -107,7 +107,7 @@ Everything after `--` is treated as the container-internal PTY command.
 - `--claude-command STRING`
   Command used to launch Claude. Default: `claude`, or `CLAUDE_BIN` if set.
 - `--claude-timeout-seconds FLOAT`
-  Timeout for each Claude control or report step. Default: `300`.
+  Timeout for each Claude control step. Default: `300`. Final report synthesis is capped at `120`.
 - `--model MODEL`
   Optional Claude model override.
 - `--run-id ID`

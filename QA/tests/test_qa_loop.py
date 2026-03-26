@@ -193,6 +193,33 @@ class QALoopTest(unittest.TestCase):
         self.assertEqual(args.claude_command, "claude")
         self.assertEqual(args.claude_timeout_seconds, 45.0)
 
+    def test_parse_args_accepts_issue_evidence_context(self) -> None:
+        args = qa_loop.parse_args(
+            [
+                "--container-name",
+                "fixture",
+                "--fixture-id",
+                "mnist",
+                "--guide-step",
+                "preprocess",
+                "--ref-under-test",
+                "feature/issue-90@abc1234",
+                "--checkpoint-key",
+                "mnist:preprocess",
+                "--source-kind",
+                "case",
+                "--source-id",
+                "mnist_missing_entrypoint",
+            ]
+        )
+
+        self.assertEqual(args.fixture_id, "mnist")
+        self.assertEqual(args.guide_step, "preprocess")
+        self.assertEqual(args.ref_under_test, "feature/issue-90@abc1234")
+        self.assertEqual(args.checkpoint_key, "mnist:preprocess")
+        self.assertEqual(args.source_kind, "case")
+        self.assertEqual(args.source_id, "mnist_missing_entrypoint")
+
     def test_prepare_run_paths_uses_claude_artifact_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             paths = qa_loop.prepare_run_paths(Path(tmpdir), "run-123")

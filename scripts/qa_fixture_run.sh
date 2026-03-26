@@ -260,6 +260,12 @@ case "${docker_arch}" in
 esac
 
 fixture_ref="$(git -C "${selected_repo_dir}" rev-parse HEAD)"
+concierge_git_sha="$(git -C "${REPO_ROOT}" rev-parse HEAD)"
+concierge_branch="$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD)"
+qa_ref_under_test="${concierge_git_sha}"
+if [[ "${concierge_branch}" != "HEAD" ]]; then
+  qa_ref_under_test="${concierge_branch}@${concierge_git_sha:0:12}"
+fi
 safe_fixture_id="$(printf '%s' "${fixture_id}" | tr '[:upper:]_' '[:lower:]-')"
 
 tmpdir="$(mktemp -d)"
@@ -346,4 +352,10 @@ python3 "${REPO_ROOT}/QA/qa_loop.py" \
   --container-workdir /workspace \
   --container-image "${image_ref}" \
   --fixture-post-path "${post_dir}" \
+  --fixture-id "${fixture_id}" \
+  --guide-step "${step}" \
+  --ref-under-test "${qa_ref_under_test}" \
+  --checkpoint-key "${checkpoint_key}" \
+  --source-kind "${selected_source_kind}" \
+  --source-id "${selected_source_id}" \
   "${qa_args[@]}"

@@ -17,6 +17,7 @@ This repository is implemented through small, issue-scoped changes.
 - For issue-anchored work, the issue body is the durable source of truth for scope, decisions, current status, and next step.
 - Keep issue bodies freely editable so they stay current and resumable by any agent. Do not keep an edit log inside the issue body.
 - Treat terminal chat as transient working memory. Do not rely on Codex conversations as the durable record for ongoing issue-managed work.
+- If a GitHub issue or PR references a QA run, include inline evidence in the body that is sufficient to understand the defect without access to the original machine. Local `QA/...` or `/Users/...` artifact paths may be included only as secondary breadcrumbs, never as the primary evidence.
 - Use issue comments only for milestone-level updates such as major decisions, blockers, slice completion, PR or CI milestones, or other material progress changes. Update the issue body first, then add the milestone comment.
 - Do not create, maintain, or rely on `PLAN.md` for new work tracking.
 - Do not create local progress logs, task lists, or planning notes for ongoing issue-managed work when the same information belongs in the GitHub issue body.

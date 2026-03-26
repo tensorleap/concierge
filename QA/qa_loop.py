@@ -100,6 +100,12 @@ class LoopConfig:
     latest_output_chars: int
     fixture_post_path: Path | None
     docker_snapshots_enabled: bool
+    fixture_id: str
+    guide_step: str
+    ref_under_test: str
+    checkpoint_key: str
+    source_kind: str
+    source_id: str
 
 
 @dataclass
@@ -872,6 +878,14 @@ class SupervisorLoop:
             "terminal_exit_code": None if target_stopped_by_supervisor else exit_code,
             "terminal_stopped_by_supervisor": target_stopped_by_supervisor,
             "report_status": "pending",
+            "qa_context": {
+                "fixture_id": self.config.fixture_id,
+                "guide_step": self.config.guide_step,
+                "ref_under_test": self.config.ref_under_test,
+                "checkpoint_key": self.config.checkpoint_key,
+                "source_kind": self.config.source_kind,
+                "source_id": self.config.source_id,
+            },
             "docker": {
                 "docker_bin": self.config.docker_bin,
                 "container_name": self.config.container_name,
@@ -1270,6 +1284,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--transcript-tail-chars", type=int, default=DEFAULT_TRANSCRIPT_TAIL_CHARS)
     parser.add_argument("--latest-output-chars", type=int, default=DEFAULT_LATEST_OUTPUT_CHARS)
     parser.add_argument("--fixture-post-path", default=None)
+    parser.add_argument("--fixture-id", default="")
+    parser.add_argument("--guide-step", default="")
+    parser.add_argument("--ref-under-test", default="")
+    parser.add_argument("--checkpoint-key", default="")
+    parser.add_argument("--source-kind", default="")
+    parser.add_argument("--source-id", default="")
     parser.add_argument(
         "--docker-snapshots",
         action="store_true",
@@ -1314,6 +1334,12 @@ def main(argv: list[str] | None = None) -> int:
         latest_output_chars=args.latest_output_chars,
         fixture_post_path=fixture_post_path,
         docker_snapshots_enabled=args.docker_snapshots,
+        fixture_id=args.fixture_id,
+        guide_step=args.guide_step,
+        ref_under_test=args.ref_under_test,
+        checkpoint_key=args.checkpoint_key,
+        source_kind=args.source_kind,
+        source_id=args.source_id,
     )
     role_prompt = (PROMPTS_DIR / "role_prompt.md").read_text(encoding="utf-8")
     nudge_prompt = (PROMPTS_DIR / "nudge_prompt.md").read_text(encoding="utf-8")

@@ -95,6 +95,16 @@ class QARunnerSurfaceTest(unittest.TestCase):
         self.assertIn("qa_sanitize_workspace.sh", script)
         self.assertNotIn('cp -a "${selected_repo_dir}/." "${context_dir}/workspace/"', script)
 
+    def test_runner_script_passes_issue_evidence_context_into_qa_loop(self) -> None:
+        script = (REPO_ROOT / "scripts" / "qa_fixture_run.sh").read_text(encoding="utf-8")
+
+        self.assertIn("--fixture-id", script)
+        self.assertIn("--guide-step", script)
+        self.assertIn("--ref-under-test", script)
+        self.assertIn("--checkpoint-key", script)
+        self.assertIn("--source-kind", script)
+        self.assertIn("--source-id", script)
+
     def test_runner_script_tracks_selected_warmup_script(self) -> None:
         script = (REPO_ROOT / "scripts" / "qa_fixture_run.sh").read_text(encoding="utf-8")
 

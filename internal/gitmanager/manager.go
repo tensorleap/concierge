@@ -105,6 +105,39 @@ func (m *Manager) Handle(ctx context.Context, snapshot core.WorkspaceSnapshot, r
 		return core.GitDecision{}, core.WrapError(core.KindUnknown, "gitmanager.handle.review", err)
 	}
 
+	if review.Risk.IsRisky() {
+		decision.Evidence = append(decision.Evidence,
+			core.EvidenceItem{Name: "git.review_risk", Value: strings.TrimSpace(review.Risk.Level)},
+			core.EvidenceItem{Name: "git.review_risk_summary", Value: strings.TrimSpace(review.Risk.Summary)},
+		)
+		if len(review.Risk.Reasons) > 0 {
+			decision.Evidence = append(decision.Evidence, core.EvidenceItem{
+				Name:  "git.review_risk_reasons",
+				Value: strings.Join(review.Risk.Reasons, "\n"),
+			})
+		}
+	}
+
+	if review.Risk.Block {
+		if err := m.restoreWorkingTree(ctx, repoRoot); err != nil {
+			return core.GitDecision{}, err
+		}
+		decision.FinalResult = core.ExecutionResult{
+			Step:     result.Step,
+			Applied:  false,
+			Summary:  "risky artifact-only remediation blocked and restored",
+			Evidence: append([]core.EvidenceItem(nil), result.Evidence...),
+		}
+		decision.Notes = append(decision.Notes,
+			"Concierge blocked this change because it only vendored dataset/cache artifacts into the repository working tree.",
+			"Resolve the dataset or cache requirement as external runtime state, then rerun `concierge run`.",
+		)
+		decision.Evidence = append(decision.Evidence,
+			core.EvidenceItem{Name: "git.review_action", Value: "blocked_risky_artifacts"},
+		)
+		return decision, nil
+	}
+
 	reviewDecision, err := m.approve(result.Step, review)
 	if err != nil {
 		if restoreErr := m.restoreWorkingTree(ctx, repoRoot); restoreErr != nil {
@@ -240,6 +273,7 @@ func (m *Manager) buildChangeReview(
 		return ChangeReview{}, err
 	}
 	review.Patch = strings.TrimSpace(patch)
+	review.Risk = classifyReviewRisk(step, review.Files, review.Stat)
 
 	return review, nil
 }

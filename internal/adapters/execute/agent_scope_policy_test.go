@@ -27,6 +27,7 @@ func TestScopePolicyForPreprocessUsesOnlyPreprocessSection(t *testing.T) {
 	assertContainsSubstring(t, policy.StopAndAskTriggers, "repo-supported dataset resolver")
 	assertContainsSubstring(t, policy.StopAndAskTriggers, "generic repo assets")
 	assertContainsSubstring(t, policy.StopAndAskTriggers, "system directories")
+	assertContainsSubstring(t, policy.StopAndAskTriggers, "vendored dataset/cache artifacts")
 }
 
 func TestPolicyForPreprocessUsesOnlyPreprocessSection(t *testing.T) {

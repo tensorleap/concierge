@@ -43,6 +43,26 @@ func promptChangeReviewApproval(
 		return gitmanager.ReviewDecision{}, err
 	}
 
+	if review.Risk.IsRisky() {
+		if _, err := fmt.Fprintln(out, "Risk warning:"); err != nil {
+			return gitmanager.ReviewDecision{}, err
+		}
+		if summary := strings.TrimSpace(review.Risk.Summary); summary != "" {
+			if _, err := fmt.Fprintf(out, "- %s\n", summary); err != nil {
+				return gitmanager.ReviewDecision{}, err
+			}
+		}
+		for _, reason := range review.Risk.Reasons {
+			trimmed := strings.TrimSpace(reason)
+			if trimmed == "" {
+				continue
+			}
+			if _, err := fmt.Fprintf(out, "- %s\n", trimmed); err != nil {
+				return gitmanager.ReviewDecision{}, err
+			}
+		}
+	}
+
 	if len(review.Files) > 0 {
 		if _, err := fmt.Fprintln(out, "Files changed:"); err != nil {
 			return gitmanager.ReviewDecision{}, err
@@ -71,16 +91,26 @@ func promptChangeReviewApproval(
 	}
 
 	patch := strings.TrimSpace(review.Patch)
-	if patch != "" {
+	if patch != "" && !review.Risk.HidePatch {
 		if _, err := fmt.Fprintln(out, "Patch:"); err != nil {
 			return gitmanager.ReviewDecision{}, err
 		}
 		if _, err := fmt.Fprintln(out, patch); err != nil {
 			return gitmanager.ReviewDecision{}, err
 		}
+	} else if review.Risk.HidePatch {
+		if _, err := fmt.Fprintln(out, "Patch omitted because this diff is dominated by risky artifact changes."); err != nil {
+			return gitmanager.ReviewDecision{}, err
+		}
 	}
 
-	keep, err := promptYesNo(in, out, "Keep these changes in your working tree for local review? [Y/n]:", true)
+	keepPrompt := "Keep these changes in your working tree for local review? [Y/n]:"
+	keepDefault := true
+	if review.Risk.IsRisky() {
+		keepPrompt = "Keep these risky changes in your working tree for local review? [y/N]:"
+		keepDefault = false
+	}
+	keep, err := promptYesNo(in, out, keepPrompt, keepDefault)
 	if err != nil || !keep {
 		return gitmanager.ReviewDecision{KeepChanges: keep}, err
 	}

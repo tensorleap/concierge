@@ -261,6 +261,25 @@ func TestEngineRunStopsWhenStepApprovalIsRejected(t *testing.T) {
 	}
 }
 
+func TestEngineRunStopsWhenRiskyArtifactReviewIsBlocked(t *testing.T) {
+	harness := newRunHarness([]core.EnsureStepID{core.EnsureStepPreprocessContract, core.EnsureStepComplete})
+	harness.executionEvidence = []core.EvidenceItem{
+		{Name: "git.review_action", Value: "blocked_risky_artifacts"},
+	}
+	engine := newRunTestEngine(t, harness)
+
+	result, err := engine.Run(context.Background(), core.SnapshotRequest{}, RunOptions{MaxIterations: 5})
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if result.StopReason != RunStopReasonNeedsUserAction {
+		t.Fatalf("expected stop reason %q, got %q", RunStopReasonNeedsUserAction, result.StopReason)
+	}
+	if len(result.Reports) != 1 {
+		t.Fatalf("expected one report, got %d", len(result.Reports))
+	}
+}
+
 func TestEngineRunStopsWhenValidationRequiresManualUserAction(t *testing.T) {
 	harness := newRunHarness([]core.EnsureStepID{core.EnsureStepPreprocessContract, core.EnsureStepComplete})
 	harness.validation = core.ValidationResult{

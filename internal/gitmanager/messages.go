@@ -7,6 +7,11 @@ import (
 	"github.com/tensorleap/concierge/internal/core"
 )
 
+const (
+	ChangeReviewRiskNone = ""
+	ChangeReviewRiskHigh = "high"
+)
+
 // CommitMessage returns the structured commit subject for one ensure-step.
 func CommitMessage(step core.EnsureStep, summary string) string {
 	normalizedSummary := strings.TrimSpace(summary)
@@ -16,12 +21,27 @@ func CommitMessage(step core.EnsureStep, summary string) string {
 	return fmt.Sprintf("concierge(%s): %s", step.ID, normalizedSummary)
 }
 
+// ChangeReviewRisk captures whether a review payload should be treated as risky.
+type ChangeReviewRisk struct {
+	Level     string
+	Summary   string
+	Reasons   []string
+	HidePatch bool
+	Block     bool
+}
+
+// IsRisky reports whether the review should use risk-aware rendering.
+func (r ChangeReviewRisk) IsRisky() bool {
+	return strings.TrimSpace(r.Level) != "" && strings.TrimSpace(r.Level) != ChangeReviewRiskNone
+}
+
 // ChangeReview contains the user-facing review payload before final confirmation.
 type ChangeReview struct {
 	Focus string
 	Files []string
 	Stat  string
 	Patch string
+	Risk  ChangeReviewRisk
 }
 
 // ReviewFocus returns user-facing wording for what Concierge is fixing.

@@ -113,7 +113,7 @@ Everything after `--` is treated as the container-internal PTY command.
 - `--run-id ID`
   Set a stable run ID instead of the generated timestamp-based one.
 - `--max-iterations N`
-  Hard cap on Claude control turns. Default: `30`.
+  Hard cap on Claude control turns. Default: `50`.
 - `--max-idle-turns N`
   Stop after this many no-progress turns. Default: `5`.
 - `--max-runtime-seconds N`

@@ -178,6 +178,11 @@ class QALoopTest(unittest.TestCase):
         self.assertEqual(args.claude_command, "claude")
         self.assertEqual(args.claude_timeout_seconds, qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS)
 
+    def test_parse_args_uses_50_control_turns_by_default(self) -> None:
+        args = qa_loop.parse_args(["--container-name", "fixture"])
+        self.assertEqual(qa_loop.DEFAULT_MAX_ITERATIONS, 50)
+        self.assertEqual(args.max_iterations, 50)
+
     def test_parse_args_accepts_claude_runner_surface(self) -> None:
         args = qa_loop.parse_args(
             [

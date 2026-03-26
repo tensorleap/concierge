@@ -160,6 +160,62 @@ func TestGuideValidatorMapsLeapLoaderPayloadFailures(t *testing.T) {
 	}
 }
 
+func TestGuideValidatorParsesGuideParserJSONWithTrailingWarnings(t *testing.T) {
+	repoRoot := buildGuideValidationRepo(t)
+	parserStdout := strings.Join([]string{
+		`{"available":true,"isValid":true,"payloads":[{"name":"preprocess","passed":true},{"name":"image","passed":true}],"setup":{"preprocess":{"trainingLength":4,"validationLength":2},"inputs":[{"name":"image","shape":[224,224,3],"channelDim":-1}]}}`,
+		"",
+		"Warnings (Default use. It is recommended to set values explicitly):",
+		" ⚠️ Parameter 'prediction_types' defaults to [] in the following functions: [tensorleap_load_model].",
+		"",
+		"If this isn't the intended behaviour, set them explicitly.",
+	}, "\n")
+	validator := &GuideValidator{
+		runtimeRunner: &fakeGuideRuntimeRunner{
+			results: []PythonRuntimeCommandResult{
+				{
+					Command: "poetry run python leap_integration.py",
+					Stdout: strings.Join([]string{
+						"Decorator Name                     | Added to integration",
+						"-------------------------------------------------------",
+						"tensorleap_preprocess              | ✅",
+						"tensorleap_input_encoder           | ✅",
+						"tensorleap_load_model              | ✅",
+						"tensorleap_integration_test        | ✅",
+						"tensorleap_gt_encoder              | ✅",
+						"",
+						"Successful!",
+					}, "\n"),
+				},
+				{
+					Command: "poetry run python -c ...",
+					Stdout:  parserStdout,
+				},
+			},
+			errs: []error{nil, nil},
+		},
+		astAnalyzer: fakeIntegrationTestASTAnalyzer{},
+	}
+
+	result, err := validator.Run(context.Background(), guideValidationSnapshot(t, repoRoot))
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !result.Summary.Parser.Available || !result.Summary.Parser.IsValid {
+		t.Fatalf("expected parser summary to survive trailing warnings, got %+v", result.Summary.Parser)
+	}
+	if result.Summary.Parser.Setup == nil || len(result.Summary.Parser.Setup.Inputs) != 1 {
+		t.Fatalf("expected parser setup inputs to parse, got %+v", result.Summary.Parser.Setup)
+	}
+	rawStdout, ok := guideEvidenceValue(result.Evidence, core.GuideEvidenceParserStdout)
+	if !ok {
+		t.Fatalf("expected raw parser stdout evidence, got %+v", result.Evidence)
+	}
+	if rawStdout != parserStdout {
+		t.Fatalf("expected parser stdout evidence to preserve the mixed stream, got %q", rawStdout)
+	}
+}
+
 func TestGuideValidatorPrefersSpecificPayloadFailureOverGenericParserImportError(t *testing.T) {
 	repoRoot := buildGuideValidationRepo(t)
 	validator := &GuideValidator{
@@ -807,6 +863,15 @@ func hasEvidenceName(evidence []core.EvidenceItem, name string) bool {
 		}
 	}
 	return false
+}
+
+func guideEvidenceValue(evidence []core.EvidenceItem, name string) (string, bool) {
+	for _, item := range evidence {
+		if item.Name == name {
+			return item.Value, true
+		}
+	}
+	return "", false
 }
 
 func TestIssuesFromGuideStatusRowsMandatoryFail(t *testing.T) {

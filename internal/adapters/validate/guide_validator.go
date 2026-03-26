@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -303,7 +304,11 @@ func (v *GuideValidator) runGuideParser(
 		return core.GuideParserRunSummary{}, nil, PythonRuntimeCommandResult{}, core.WrapError(core.KindUnknown, "validate.guide.parser_run", runErr)
 	}
 
-	if err := json.Unmarshal([]byte(result.Stdout), &summary); err != nil {
+	parserJSON, err := extractGuideParserJSON(result.Stdout)
+	if err != nil {
+		return core.GuideParserRunSummary{}, nil, PythonRuntimeCommandResult{}, core.WrapError(core.KindUnknown, "validate.guide.parser_unmarshal", err)
+	}
+	if err := json.Unmarshal(parserJSON, &summary); err != nil {
 		return core.GuideParserRunSummary{}, nil, PythonRuntimeCommandResult{}, core.WrapError(core.KindUnknown, "validate.guide.parser_unmarshal", err)
 	}
 	summary.Attempted = true
@@ -313,6 +318,49 @@ func (v *GuideValidator) runGuideParser(
 	}
 
 	return summary, evidence, result, nil
+}
+
+func extractGuideParserJSON(stdout string) ([]byte, error) {
+	trimmed := strings.TrimSpace(stdout)
+	if trimmed == "" {
+		return nil, fmt.Errorf("parser stdout is empty")
+	}
+
+	firstErr := error(nil)
+	if raw, err := decodeGuideParserJSONPrefix(trimmed); err == nil {
+		return raw, nil
+	} else {
+		firstErr = err
+	}
+
+	for offset := strings.IndexByte(trimmed, '{'); offset >= 0; {
+		if raw, err := decodeGuideParserJSONPrefix(trimmed[offset:]); err == nil {
+			return raw, nil
+		}
+		nextOffset := strings.IndexByte(trimmed[offset+1:], '{')
+		if nextOffset < 0 {
+			break
+		}
+		offset += nextOffset + 1
+	}
+
+	return nil, firstErr
+}
+
+func decodeGuideParserJSONPrefix(candidate string) ([]byte, error) {
+	decoder := json.NewDecoder(strings.NewReader(candidate))
+	var raw json.RawMessage
+	if err := decoder.Decode(&raw); err != nil {
+		return nil, err
+	}
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("parser stdout did not contain a JSON object")
+	}
+	if raw[0] != '{' {
+		return nil, fmt.Errorf("parser stdout did not start with a JSON object")
+	}
+	return raw, nil
 }
 
 func guideValidationSkipReason(snapshot core.WorkspaceSnapshot) (string, string, error) {

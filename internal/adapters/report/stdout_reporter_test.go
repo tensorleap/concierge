@@ -209,6 +209,41 @@ func TestReporterStopsAtFirstWarningAndPrintsWarningDetails(t *testing.T) {
 	}
 }
 
+func TestReporterLabelsLeapCLIWarningsAsDeferredUntilUpload(t *testing.T) {
+	var sink strings.Builder
+	reporter := NewStdoutReporter(&sink)
+
+	err := reporter.Report(context.Background(), core.IterationReport{
+		SnapshotID: "snapshot-123",
+		Step:       core.EnsureStep{ID: core.EnsureStepComplete},
+		Checks: []core.VerifiedCheck{
+			{
+				StepID: core.EnsureStepLeapCLIAuth,
+				Label:  core.HumanEnsureStepLabel(core.EnsureStepLeapCLIAuth),
+				Status: core.CheckStatusWarning,
+				Issues: []core.Issue{
+					{
+						Code:     core.IssueCodeLeapCLINotAuthenticated,
+						Message:  "leap CLI is not authenticated",
+						Severity: core.SeverityWarning,
+						Scope:    core.IssueScopeCLI,
+					},
+				},
+			},
+		},
+		Validation: core.ValidationResult{Passed: true},
+	})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	output := sink.String()
+	expected := "This warning is deferred for authoring right now and becomes blocking again before upload readiness and `leap push`."
+	if !strings.Contains(output, expected) {
+		t.Fatalf("expected output to contain %q, got %q", expected, output)
+	}
+}
+
 func TestReporterShowsManualGuidanceWhenExecutorCannotApplyFix(t *testing.T) {
 	var sink strings.Builder
 	reporter := NewStdoutReporter(&sink)

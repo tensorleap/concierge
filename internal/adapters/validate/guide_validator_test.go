@@ -91,11 +91,11 @@ func TestGuideValidatorParsesStatusTableAndTreatsMissingParserAsBestEffort(t *te
 	if result.Summary.Parser.Available {
 		t.Fatalf("expected parser to be unavailable, got %+v", result.Summary.Parser)
 	}
-	if !containsIssueCode(result.Issues, core.IssueCodeIntegrationTestDecoratorMissing) {
-		t.Fatalf("expected integration_test_decorator_missing issue from status row, got %+v", result.Issues)
+	if !containsIssueCode(result.Issues, core.IssueCodeIntegrationTestMissing) {
+		t.Fatalf("expected integration_test_missing issue from status row, got %+v", result.Issues)
 	}
-	if !containsIssueCode(result.Issues, core.IssueCodeIntegrationTestMissingRequiredCalls) {
-		t.Fatalf("expected integration_test_missing_required_calls issue from gt_encoder status row, got %+v", result.Issues)
+	if !containsIssueCode(result.Issues, core.IssueCodeGTEncoderMissing) {
+		t.Fatalf("expected gt_encoder_missing issue from gt_encoder status row, got %+v", result.Issues)
 	}
 	if !hasEvidenceName(result.Evidence, core.GuideEvidenceSummary) {
 		t.Fatalf("expected guide summary evidence, got %+v", result.Evidence)
@@ -233,7 +233,9 @@ func TestDeriveGuideRecommendationDoesNotMislabelGenericParserFailureAsPreproces
 		},
 	}
 
-	recommendation := deriveGuideRecommendation(summary)
+	recommendation := deriveGuideRecommendation(summary, []core.Issue{
+		{Code: core.IssueCodeIntegrationTestExecutionFailed, Severity: core.SeverityError},
+	})
 	if recommendation.Stage != "thin_integration_test" {
 		t.Fatalf("expected generic parser failures to fall through to thin integration test, got %+v", recommendation)
 	}
@@ -259,7 +261,9 @@ func TestDeriveGuideRecommendationPrefersGroundTruthStatusOverStaleInputPayloadF
 		},
 	}
 
-	recommendation := deriveGuideRecommendation(summary)
+	recommendation := deriveGuideRecommendation(summary, []core.Issue{
+		{Code: core.IssueCodeGTEncoderMissing, Severity: core.SeverityError},
+	})
 	if recommendation.Stage != "ground_truth" {
 		t.Fatalf("expected ground-truth recommendation, got %+v", recommendation)
 	}
@@ -285,7 +289,9 @@ func TestDeriveGuideRecommendationSkipsStalePreprocessStatusWhenParserAlreadyVal
 		},
 	}
 
-	recommendation := deriveGuideRecommendation(summary)
+	recommendation := deriveGuideRecommendation(summary, []core.Issue{
+		{Code: core.IssueCodeIntegrationTestMissing, Severity: core.SeverityError},
+	})
 	if recommendation.Stage != "thin_integration_test" {
 		t.Fatalf("expected stale preprocess status to yield integration-test recommendation, got %+v", recommendation)
 	}
@@ -390,6 +396,56 @@ func TestGuideValidatorDoesNotAssumePreprocessFailureWhenLegacyCodeLoaderOmitsSt
 	}
 }
 
+func TestGuideValidatorKeepsInputAuthoringRecommendationAlignedWithPrimaryStep(t *testing.T) {
+	repoRoot := buildGuideValidationRepo(t)
+	validator := &GuideValidator{
+		runtimeRunner: &fakeGuideRuntimeRunner{
+			results: []PythonRuntimeCommandResult{
+				{
+					Command: "poetry run python leap_integration.py",
+					Stdout: strings.Join([]string{
+						"Decorator Name                     | Added to integration",
+						"-------------------------------------------------------",
+						"tensorleap_preprocess              | ✅",
+						"tensorleap_input_encoder           | ❌",
+						"tensorleap_load_model              | ✅",
+						"tensorleap_integration_test        | ✅",
+						"tensorleap_gt_encoder              | ✅",
+						"",
+						"Some mandatory components have not yet been added to the Integration test. Recommended next interface to add is: tensorleap_input_encoder",
+					}, "\n"),
+				},
+				{
+					Command: "poetry run python -c ...",
+					Stderr:  "Traceback (most recent call last):\nModuleNotFoundError: No module named 'code_loader'\n",
+				},
+			},
+			errs: []error{
+				nil,
+				errors.New("exit status 1"),
+			},
+		},
+		astAnalyzer: fakeIntegrationTestASTAnalyzer{},
+	}
+
+	result, err := validator.Run(context.Background(), guideValidationSnapshot(t, repoRoot))
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if got := result.Summary.Recommendation.Stage; got != "remaining_inputs" {
+		t.Fatalf("expected remaining inputs recommendation, got %q", got)
+	}
+
+	primary, ok := core.SelectPrimaryEnsureStep(result.Issues)
+	if !ok {
+		t.Fatalf("expected blocking issues, got %+v", result.Issues)
+	}
+	if primary.ID != core.EnsureStepInputEncoders {
+		t.Fatalf("expected primary step %q, got %q (issues=%+v)", core.EnsureStepInputEncoders, primary.ID, result.Issues)
+	}
+}
+
 func TestGuideValidatorMapsMissingNativeLibraryParserErrorsToRuntimeIssue(t *testing.T) {
 	repoRoot := buildGuideValidationRepo(t)
 	validator := &GuideValidator{
@@ -470,15 +526,15 @@ func TestGuideValidatorSkipsStalePreprocessStatusIssueWhenParserAlreadyValidated
 	if containsIssueCode(result.Issues, core.IssueCodePreprocessFunctionMissing) {
 		t.Fatalf("did not expect stale preprocess status row to survive parser validation, got %+v", result.Issues)
 	}
-	if !containsIssueCode(result.Issues, core.IssueCodeIntegrationTestDecoratorMissing) {
+	if !containsIssueCode(result.Issues, core.IssueCodeIntegrationTestMissing) {
 		t.Fatalf("expected integration-test issue to remain, got %+v", result.Issues)
 	}
 	primary, ok := core.SelectPrimaryEnsureStep(result.Issues)
 	if !ok {
 		t.Fatalf("expected a primary ensure step, got issues %+v", result.Issues)
 	}
-	if primary.ID != core.EnsureStepIntegrationTestWiring {
-		t.Fatalf("expected primary step %q, got %q", core.EnsureStepIntegrationTestWiring, primary.ID)
+	if primary.ID != core.EnsureStepIntegrationTestContract {
+		t.Fatalf("expected primary step %q, got %q", core.EnsureStepIntegrationTestContract, primary.ID)
 	}
 }
 
@@ -590,8 +646,8 @@ func TestIssuesFromGuideStatusRowsMandatoryFail(t *testing.T) {
 	if len(issues) != 2 {
 		t.Fatalf("expected 2 issues, got %d: %+v", len(issues), issues)
 	}
-	if issues[0].Code != core.IssueCodeIntegrationTestMissingRequiredCalls {
-		t.Fatalf("expected integration_test_missing_required_calls issue code for input_encoder, got %q", issues[0].Code)
+	if issues[0].Code != core.IssueCodeInputEncoderMissing {
+		t.Fatalf("expected input_encoder_missing issue code for input_encoder, got %q", issues[0].Code)
 	}
 	if issues[0].Severity != core.SeverityError {
 		t.Fatalf("expected error severity, got %q", issues[0].Severity)
@@ -647,13 +703,13 @@ func TestIssuesFromGuideStatusRowsAllKnownDecorators(t *testing.T) {
 		t.Fatalf("expected 6 issues, got %d: %+v", len(issues), issues)
 	}
 
-	// input_encoder, gt_encoder, and custom_loss all map to IntegrationTestMissingRequiredCalls,
-	// so we check unique codes that must appear at least once.
 	expected := map[core.IssueCode]bool{
 		core.IssueCodePreprocessFunctionMissing:           false,
+		core.IssueCodeInputEncoderMissing:                 false,
+		core.IssueCodeGTEncoderMissing:                    false,
 		core.IssueCodeIntegrationTestMissingRequiredCalls: false,
 		core.IssueCodeLoadModelDecoratorMissing:           false,
-		core.IssueCodeIntegrationTestDecoratorMissing:     false,
+		core.IssueCodeIntegrationTestMissing:              false,
 	}
 	for _, issue := range issues {
 		expected[issue.Code] = true

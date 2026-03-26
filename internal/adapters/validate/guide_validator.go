@@ -237,10 +237,8 @@ func (v *GuideValidator) Run(ctx context.Context, snapshot core.WorkspaceSnapsho
 	}
 	applyGuideHandlerKinds(&summary.Parser, handlerKinds)
 
-	summary.Recommendation = deriveGuideRecommendation(summary)
 	evidence = append(evidence, marshalGuideEvidence(core.GuideEvidenceLocalRaw, localSummary))
 	evidence = append(evidence, marshalGuideEvidence(core.GuideEvidenceParserRaw, summary.Parser))
-	evidence = append(evidence, marshalGuideEvidence(core.GuideEvidenceSummary, summary))
 
 	astResult, err := v.astAnalyzer.Analyze(ctx, snapshot)
 	if err != nil {
@@ -248,9 +246,11 @@ func (v *GuideValidator) Run(ctx context.Context, snapshot core.WorkspaceSnapsho
 	}
 	evidence = append(evidence, astResult.Evidence...)
 
-	issues := collectGuideIssues(summary, localOutput, parserOutput, handlerKinds, astResult.Issues)
+	issues := dedupeIssues(collectGuideIssues(summary, localOutput, parserOutput, handlerKinds, astResult.Issues))
+	summary.Recommendation = deriveGuideRecommendation(summary, issues)
+	evidence = append(evidence, marshalGuideEvidence(core.GuideEvidenceSummary, summary))
 	return GuideValidationResult{
-		Issues:   dedupeIssues(issues),
+		Issues:   issues,
 		Evidence: evidence,
 		Summary:  summary,
 	}, nil
@@ -506,7 +506,7 @@ func firstGuidePayloadError(payload core.GuidePayloadSummary) string {
 	return ""
 }
 
-func deriveGuideRecommendation(summary core.GuideValidationSummary) core.GuideRecommendation {
+func deriveGuideRecommendation(summary core.GuideValidationSummary, issues []core.Issue) core.GuideRecommendation {
 	if summary.Skipped {
 		return core.GuideRecommendation{}
 	}
@@ -525,86 +525,50 @@ func deriveGuideRecommendation(summary core.GuideValidationSummary) core.GuideRe
 
 	hasLocalStatusTable := len(summary.Local.StatusRows) > 0 || summary.LocalStatusTableSupported
 
-	preprocessStatus := "unknown"
-	inputStatus := "unknown"
-	loadModelStatus := "unknown"
-	integrationStatus := "unknown"
-	gtStatus := "unknown"
-	if hasLocalStatusTable {
-		preprocessStatus = guideStatus(summary.Local, "tensorleap_preprocess")
-		inputStatus = guideStatus(summary.Local, "tensorleap_input_encoder")
-		loadModelStatus = guideStatus(summary.Local, "tensorleap_load_model")
-		integrationStatus = guideStatus(summary.Local, "tensorleap_integration_test")
-		gtStatus = guideStatus(summary.Local, "tensorleap_gt_encoder")
-	}
-
-	if payloadFailed(summary.Parser, "preprocess") {
-		return core.GuideRecommendation{
-			Stage:   "preprocess",
-			Message: "Next recommended interface: make preprocess run directly and return training and validation subsets.",
-		}
-	}
-
-	if summary.Local.MappingFailure || parserHasGeneralFailure(summary.Parser) {
-		return core.GuideRecommendation{
-			Stage:   "thin_integration_test",
-			Message: "Next recommended interface: add or repair a thin @tensorleap_integration_test that only calls Tensorleap decorators.",
-		}
-	}
-
-	if hasLocalStatusTable && preprocessStatus != "pass" && !parserClearsPreprocess(summary.Parser) {
-		return core.GuideRecommendation{
-			Stage:   "preprocess",
-			Message: "Next recommended interface: make preprocess run directly and return training and validation subsets.",
-		}
-	}
-
-	if hasLocalStatusTable && inputStatus != "pass" && loadModelStatus != "pass" {
-		return core.GuideRecommendation{
-			Stage:   "minimum_inputs",
-			Message: "Next recommended interface: add the minimum required input encoders so a real sample can reach the model.",
-		}
-	}
-
-	if hasLocalStatusTable && loadModelStatus != "pass" {
-		return core.GuideRecommendation{
-			Stage:   "load_model",
-			Message: "Next recommended interface: add @tensorleap_load_model after the minimum input path runs locally.",
-		}
-	}
-
-	if hasLocalStatusTable && integrationStatus != "pass" {
-		return core.GuideRecommendation{
-			Stage:   "thin_integration_test",
-			Message: "Next recommended interface: add or repair a thin @tensorleap_integration_test that only calls Tensorleap decorators.",
-		}
-	}
-
-	if hasLocalStatusTable && inputStatus != "pass" {
-		return core.GuideRecommendation{
-			Stage:   "remaining_inputs",
-			Message: "Next recommended interface: add the remaining required input encoders and rerun the thin integration test.",
-		}
-	}
-
-	if hasLocalStatusTable && gtStatus != "pass" {
-		return core.GuideRecommendation{
-			Stage:   "ground_truth",
-			Message: "Next recommended interface: add the required GT encoders and rerun the integration test.",
-		}
-	}
-
-	if payloadFailedByKinds(summary.Parser, guideHandlerInput) {
-		return core.GuideRecommendation{
-			Stage:   "remaining_inputs",
-			Message: "Next recommended interface: add the remaining required input encoders and rerun the thin integration test.",
-		}
-	}
-
-	if payloadFailedByKinds(summary.Parser, guideHandlerGT) {
-		return core.GuideRecommendation{
-			Stage:   "ground_truth",
-			Message: "Next recommended interface: add the required GT encoders and rerun the integration test.",
+	primary, ok := selectPrimaryBlockingGuideStep(issues)
+	if ok {
+		switch primary.ID {
+		case core.EnsureStepIntegrationScript:
+			return core.GuideRecommendation{
+				Stage:   "integration_script",
+				Message: "Next prerequisite: make `leap_integration.py` import cleanly from the repository root, then rerun `concierge run`.",
+			}
+		case core.EnsureStepPreprocessContract:
+			return core.GuideRecommendation{
+				Stage:   "preprocess",
+				Message: "Next recommended interface: make preprocess run directly and return training and validation subsets.",
+			}
+		case core.EnsureStepInputEncoders:
+			if hasLocalStatusTable && guideStatus(summary.Local, "tensorleap_load_model") != "pass" {
+				return core.GuideRecommendation{
+					Stage:   "minimum_inputs",
+					Message: "Next recommended interface: add the minimum required input encoders so a real sample can reach the model.",
+				}
+			}
+			return core.GuideRecommendation{
+				Stage:   "remaining_inputs",
+				Message: "Next recommended interface: add the remaining required input encoders and rerun the thin integration test.",
+			}
+		case core.EnsureStepModelAcquisition:
+			return core.GuideRecommendation{
+				Stage:   "model_artifact",
+				Message: "Next recommended milestone: materialize one supported `.onnx` or `.h5` model artifact locally so `@tensorleap_load_model` can be wired.",
+			}
+		case core.EnsureStepModelContract:
+			return core.GuideRecommendation{
+				Stage:   "load_model",
+				Message: "Next recommended interface: add @tensorleap_load_model after the minimum input path runs locally.",
+			}
+		case core.EnsureStepIntegrationTestContract, core.EnsureStepIntegrationTestWiring:
+			return core.GuideRecommendation{
+				Stage:   "thin_integration_test",
+				Message: "Next recommended interface: add or repair a thin @tensorleap_integration_test that only calls Tensorleap decorators.",
+			}
+		case core.EnsureStepGroundTruthEncoders:
+			return core.GuideRecommendation{
+				Stage:   "ground_truth",
+				Message: "Next recommended interface: add the required GT encoders and rerun the integration test.",
+			}
 		}
 	}
 
@@ -846,12 +810,23 @@ func parserClearsPreprocess(parser core.GuideParserRunSummary) bool {
 	return parser.IsValid
 }
 
+func selectPrimaryBlockingGuideStep(issues []core.Issue) (core.EnsureStep, bool) {
+	blocking := make([]core.Issue, 0, len(issues))
+	for _, issue := range issues {
+		if issue.Severity != core.SeverityError {
+			continue
+		}
+		blocking = append(blocking, issue)
+	}
+	return core.SelectPrimaryEnsureStep(blocking)
+}
+
 var guideStatusRowIssueMap = map[string]core.IssueCode{
 	"tensorleap_preprocess":       core.IssueCodePreprocessFunctionMissing,
-	"tensorleap_input_encoder":    core.IssueCodeIntegrationTestMissingRequiredCalls,
-	"tensorleap_gt_encoder":       core.IssueCodeIntegrationTestMissingRequiredCalls,
+	"tensorleap_input_encoder":    core.IssueCodeInputEncoderMissing,
+	"tensorleap_gt_encoder":       core.IssueCodeGTEncoderMissing,
 	"tensorleap_load_model":       core.IssueCodeLoadModelDecoratorMissing,
-	"tensorleap_integration_test": core.IssueCodeIntegrationTestDecoratorMissing,
+	"tensorleap_integration_test": core.IssueCodeIntegrationTestMissing,
 	"tensorleap_custom_loss":      core.IssueCodeIntegrationTestMissingRequiredCalls,
 }
 

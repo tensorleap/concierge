@@ -353,6 +353,18 @@ func TestDeriveGuideRecommendationSkipsStalePreprocessStatusWhenParserAlreadyVal
 	}
 }
 
+func TestDeriveGuideRecommendationPrefersIntegrationTestContractWhenPreprocessAlsoMissing(t *testing.T) {
+	summary := core.GuideValidationSummary{}
+
+	recommendation := deriveGuideRecommendation(summary, []core.Issue{
+		{Code: core.IssueCodeIntegrationTestMissing, Severity: core.SeverityError},
+		{Code: core.IssueCodePreprocessFunctionMissing, Severity: core.SeverityError},
+	})
+	if recommendation.Stage != "thin_integration_test" {
+		t.Fatalf("expected integration-test contract recommendation, got %+v", recommendation)
+	}
+}
+
 func TestGuideValidatorPrefersASTIntegrationTestIssuesOverGenericMappingFailure(t *testing.T) {
 	repoRoot := buildGuideValidationRepo(t)
 	validator := &GuideValidator{
@@ -765,8 +777,8 @@ func TestGuideValidatorSkipsStaleGTEncoderStatusIssueWhenParserAlreadyValidatedG
 	if !containsIssueCode(result.Issues, core.IssueCodeLoadModelDecoratorMissing) {
 		t.Fatalf("expected load-model issue to remain, got %+v", result.Issues)
 	}
-	if got := result.Summary.Recommendation.Stage; got != "load_model" {
-		t.Fatalf("expected load_model recommendation after stale gt suppression, got %q", got)
+	if got := result.Summary.Recommendation.Stage; got != "thin_integration_test" {
+		t.Fatalf("expected integration-test contract recommendation after stale gt suppression, got %q", got)
 	}
 }
 

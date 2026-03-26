@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -303,7 +304,11 @@ func (v *GuideValidator) runGuideParser(
 		return core.GuideParserRunSummary{}, nil, PythonRuntimeCommandResult{}, core.WrapError(core.KindUnknown, "validate.guide.parser_run", runErr)
 	}
 
-	if err := json.Unmarshal([]byte(result.Stdout), &summary); err != nil {
+	parserJSON, err := extractGuideParserJSON(result.Stdout)
+	if err != nil {
+		return core.GuideParserRunSummary{}, nil, PythonRuntimeCommandResult{}, core.WrapError(core.KindUnknown, "validate.guide.parser_unmarshal", err)
+	}
+	if err := json.Unmarshal(parserJSON, &summary); err != nil {
 		return core.GuideParserRunSummary{}, nil, PythonRuntimeCommandResult{}, core.WrapError(core.KindUnknown, "validate.guide.parser_unmarshal", err)
 	}
 	summary.Attempted = true
@@ -313,6 +318,49 @@ func (v *GuideValidator) runGuideParser(
 	}
 
 	return summary, evidence, result, nil
+}
+
+func extractGuideParserJSON(stdout string) ([]byte, error) {
+	trimmed := strings.TrimSpace(stdout)
+	if trimmed == "" {
+		return nil, fmt.Errorf("parser stdout is empty")
+	}
+
+	firstErr := error(nil)
+	if raw, err := decodeGuideParserJSONPrefix(trimmed); err == nil {
+		return raw, nil
+	} else {
+		firstErr = err
+	}
+
+	for offset := strings.IndexByte(trimmed, '{'); offset >= 0; {
+		if raw, err := decodeGuideParserJSONPrefix(trimmed[offset:]); err == nil {
+			return raw, nil
+		}
+		nextOffset := strings.IndexByte(trimmed[offset+1:], '{')
+		if nextOffset < 0 {
+			break
+		}
+		offset += nextOffset + 1
+	}
+
+	return nil, firstErr
+}
+
+func decodeGuideParserJSONPrefix(candidate string) ([]byte, error) {
+	decoder := json.NewDecoder(strings.NewReader(candidate))
+	var raw json.RawMessage
+	if err := decoder.Decode(&raw); err != nil {
+		return nil, err
+	}
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("parser stdout did not contain a JSON object")
+	}
+	if raw[0] != '{' {
+		return nil, fmt.Errorf("parser stdout did not start with a JSON object")
+	}
+	return raw, nil
 }
 
 func guideValidationSkipReason(snapshot core.WorkspaceSnapshot) (string, string, error) {
@@ -812,6 +860,25 @@ func parserClearsPreprocess(parser core.GuideParserRunSummary) bool {
 	return parser.IsValid
 }
 
+func parserClearsInputEncoder(parser core.GuideParserRunSummary) bool {
+	if !parser.Available || !parser.IsValid || parser.Setup == nil {
+		return false
+	}
+	return len(parser.Setup.Inputs) > 0
+}
+
+func parserClearsGTEncoder(parser core.GuideParserRunSummary) bool {
+	if !parser.Available {
+		return false
+	}
+	for _, payload := range parser.Payloads {
+		if payload.Passed && strings.TrimSpace(payload.HandlerType) == string(guideHandlerGT) {
+			return true
+		}
+	}
+	return false
+}
+
 func selectPrimaryBlockingGuideStep(issues []core.Issue) (core.EnsureStep, bool) {
 	blocking := make([]core.Issue, 0, len(issues))
 	for _, issue := range issues {
@@ -848,6 +915,8 @@ func issuesFromGuideStatusRows(local core.GuideLocalRunSummary, parser core.Guid
 
 	var issues []core.Issue
 	preprocessCleared := parserClearsPreprocess(parser)
+	inputEncoderCleared := parserClearsInputEncoder(parser)
+	gtEncoderCleared := parserClearsGTEncoder(parser)
 	for _, row := range local.StatusRows {
 		if row.Status != "fail" {
 			continue
@@ -858,6 +927,18 @@ func issuesFromGuideStatusRows(local core.GuideLocalRunSummary, parser core.Guid
 		}
 		normalizedName := strings.ToLower(name)
 		if normalizedName == "tensorleap_preprocess" && preprocessCleared {
+			continue
+		}
+		if normalizedName == "tensorleap_input_encoder" && inputEncoderCleared {
+			// Work around code-loader#273: the local status table can keep the
+			// generic input-encoder row at fail even after check_dataset() proves
+			// a real input encoder exists and runs successfully.
+			continue
+		}
+		if normalizedName == "tensorleap_gt_encoder" && gtEncoderCleared {
+			// Work around code-loader#273: the local status table can keep the
+			// generic GT-encoder row at fail even after parser payloads prove
+			// a real ground-truth encoder exists and runs successfully.
 			continue
 		}
 		code, ok := guideStatusRowIssueMap[normalizedName]
@@ -897,17 +978,31 @@ func suppressStaleGuideStatusIssues(
 	}
 
 	preprocessSuperseded := localStatusShowsDownstreamPreprocessProgress(local)
+	modelSuperseded := hasConcreteModelIssue(existing)
 	integrationTestSuperseded := hasConcreteIntegrationTestIssue(existing)
+	downstreamSuperseded := modelSuperseded || integrationTestSuperseded
 
 	filtered := make([]core.Issue, 0, len(statusIssues))
 	for _, issue := range statusIssues {
 		switch issue.Code {
 		case core.IssueCodePreprocessFunctionMissing:
-			if preprocessSuperseded {
+			if preprocessSuperseded || (downstreamSuperseded && isGuideStatusRowIssue(issue)) {
+				continue
+			}
+		case core.IssueCodeInputEncoderMissing, core.IssueCodeGTEncoderMissing:
+			if downstreamSuperseded && isGuideStatusRowIssue(issue) {
+				continue
+			}
+		case core.IssueCodeLoadModelDecoratorMissing:
+			if modelSuperseded && isGuideStatusRowIssue(issue) {
 				continue
 			}
 		case core.IssueCodeIntegrationTestMissing:
 			if integrationTestSuperseded {
+				continue
+			}
+		case core.IssueCodeIntegrationTestMissingRequiredCalls:
+			if integrationTestSuperseded && isGuideStatusRowIssue(issue) {
 				continue
 			}
 		}
@@ -932,6 +1027,23 @@ func hasConcreteIntegrationTestIssue(issues []core.Issue) bool {
 		return true
 	}
 	return false
+}
+
+func hasConcreteModelIssue(issues []core.Issue) bool {
+	for _, issue := range issues {
+		if issue.Severity != core.SeverityError || issue.Scope != core.IssueScopeModel {
+			continue
+		}
+		if issue.Code == core.IssueCodeLoadModelDecoratorMissing {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func isGuideStatusRowIssue(issue core.Issue) bool {
+	return strings.HasPrefix(issue.Message, "guide status table reports mandatory decorator @")
 }
 
 func hasSpecificIntegrationTestIssue(issues []core.Issue) bool {

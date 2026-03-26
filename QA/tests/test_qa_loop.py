@@ -233,6 +233,77 @@ class QALoopTest(unittest.TestCase):
             self.assertTrue(paths.claude_dir.is_dir())
             self.assertFalse((Path(tmpdir) / "runs" / "run-123" / "codex").exists())
 
+    def test_request_report_caps_final_report_timeout_at_120_seconds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            artifacts_root = tmp / "artifacts"
+            artifacts_root.mkdir()
+            paths = qa_loop.prepare_run_paths(artifacts_root, "run-123")
+            live_io = qa_loop.LiveIO(transcript_path=paths.full_transcript)
+
+            class FakeClaudeClient:
+                def __init__(self) -> None:
+                    self.calls: list[dict[str, object]] = []
+
+                def run_structured(self, **kwargs: object) -> dict[str, object]:
+                    self.calls.append(kwargs)
+                    return {
+                        "title": "Synthetic QA Report",
+                        "overall_outcome": "Reached the completion path.",
+                        "loop_state": "STOP_REPORT",
+                        "integration_progress": "The report writer completed.",
+                        "ux_clarity": [],
+                        "product_issues": [],
+                        "agent_interaction_issues": [],
+                        "suggestions": [],
+                        "notable_moments": [],
+                    }
+
+            fake_client = FakeClaudeClient()
+            config = qa_loop.LoopConfig(
+                artifacts_root=artifacts_root,
+                docker_bin="docker",
+                host_cwd=tmp,
+                container_name="fixture",
+                container_image=None,
+                command=["/usr/local/bin/concierge", "run"],
+                command_cwd="/workspace",
+                claude_command="claude",
+                claude_model=None,
+                claude_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
+                max_iterations=qa_loop.DEFAULT_MAX_ITERATIONS,
+                max_idle_turns=qa_loop.DEFAULT_MAX_IDLE_TURNS,
+                max_runtime_seconds=qa_loop.DEFAULT_MAX_RUNTIME_SECONDS,
+                read_quiet_seconds=qa_loop.DEFAULT_READ_QUIET_SECONDS,
+                read_timeout_seconds=qa_loop.DEFAULT_READ_TIMEOUT_SECONDS,
+                settle_timeout_seconds=qa_loop.DEFAULT_SETTLE_TIMEOUT_SECONDS,
+                transcript_tail_chars=qa_loop.DEFAULT_TRANSCRIPT_TAIL_CHARS,
+                latest_output_chars=qa_loop.DEFAULT_LATEST_OUTPUT_CHARS,
+                fixture_post_path=None,
+                docker_snapshots_enabled=False,
+                fixture_id="ultralytics",
+                guide_step="pre",
+                ref_under_test="main@abc1234",
+                checkpoint_key="ultralytics:pre",
+                source_kind="variant",
+                source_id="pre",
+            )
+            supervisor = qa_loop.SupervisorLoop(
+                config=config,
+                claude_client=fake_client,
+                role_prompt="role",
+                nudge_prompt="nudge",
+            )
+
+            supervisor._request_report(
+                paths=paths,
+                summary={"blind_first_released": False},
+                loop_state="STOP_REPORT",
+                live_io=live_io,
+            )
+
+            self.assertEqual(fake_client.calls[0]["timeout_seconds"], 120.0)
+
     def test_supervisor_loop_writes_transcript_and_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)

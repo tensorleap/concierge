@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
 	"github.com/tensorleap/concierge/internal/adapters/execute"
 	"github.com/tensorleap/concierge/internal/adapters/inspect"
 	"github.com/tensorleap/concierge/internal/adapters/planner"
@@ -87,10 +88,33 @@ func newRunCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			liveRenderer := observe.NewHighlightsRenderer(
-				writer,
-				observe.RenderOptions{NoColor: noColor},
-			)
+
+			var liveRenderer observe.Sink
+			var splitScreen *observe.SplitScreenRenderer
+			var tuiScreen *observe.TUIRenderer
+
+			if isTUICapable(writer, noColor) {
+				tui := observe.NewTUIRenderer(
+					writer.(*os.File),
+					observe.RenderOptions{NoColor: noColor},
+				)
+				defer tui.Close()
+				liveRenderer = tui
+				tuiScreen = tui
+			} else if isSplitScreenCapable(writer, noColor) {
+				ss := observe.NewSplitScreenRenderer(
+					writer.(*os.File),
+					observe.RenderOptions{NoColor: noColor},
+				)
+				defer ss.Close()
+				liveRenderer = ss
+				splitScreen = ss
+			} else {
+				liveRenderer = observe.NewHighlightsRenderer(
+					writer,
+					observe.RenderOptions{NoColor: noColor},
+				)
+			}
 			liveEvents := observe.NewSafeSink(observe.NewMultiSink(recorder, liveRenderer))
 
 			loadedState, err := state.LoadState(repoRoot)
@@ -199,25 +223,38 @@ func newRunCommand() *cobra.Command {
 				return cloneLocalRuntimeProfile(resolution.Profile), nil
 			}
 
+			reportWriter := writer
+			if splitScreen != nil {
+				reportWriter = splitScreen.LeftWriter()
+			} else if tuiScreen != nil {
+				// When the TUI is active, reporter output goes to /dev/null;
+				// the TUI renders report data directly from the IterationReport.
+				reportWriter = io.Discard
+			}
+			reportOpts := report.OutputOptions{
+				NoColor: noColor,
+				Debug:   debugOutput,
+			}
 			var iterationReporter ports.Reporter = report.NewStdoutReporterWithOptions(
-				writer,
-				report.OutputOptions{
-					NoColor: noColor,
-					Debug:   debugOutput,
-				},
+				reportWriter,
+				reportOpts,
 			)
 			if persist {
 				iterationReporter, err = report.NewFileReporterWithOptions(
 					repoRoot,
-					writer,
-					report.OutputOptions{
-						NoColor: noColor,
-						Debug:   debugOutput,
-					},
+					reportWriter,
+					reportOpts,
 				)
 				if err != nil {
 					return err
 				}
+			}
+			if tuiScreen != nil {
+				tuiScreen.SetReporter(iterationReporter)
+				iterationReporter = tuiScreen
+			} else if splitScreen != nil {
+				splitScreen.SetReporter(iterationReporter)
+				iterationReporter = splitScreen
 			}
 
 			plannerAdapter := newPlanCapturePlanner(planner.NewDeterministicPlanner())
@@ -283,12 +320,17 @@ func newRunCommand() *cobra.Command {
 					StepID:  step.ID,
 					Message: "Waiting for your approval before making changes",
 				})
-				return promptApproval(
+				result, promptErr := promptApproval(
 					promptInput,
 					cmd.OutOrStdout(),
 					stepApprovalMessage(step, snapshotValue, hasSnapshot, status, hasStatus, renderOptions.EnableColor),
 					renderOptions.EnableColor,
 				)
+				liveEvents.Emit(observe.Event{
+					Kind:   observe.EventApprovalResolved,
+					StepID: step.ID,
+				})
+				return result, promptErr
 			}
 
 			gitApproval := func(step core.EnsureStep, review gitmanager.ChangeReview) (gitmanager.ReviewDecision, error) {
@@ -307,13 +349,18 @@ func newRunCommand() *cobra.Command {
 					StepID:  step.ID,
 					Message: "Waiting for your approval to review changes",
 				})
-				return promptChangeReviewApproval(
+				decision, promptErr := promptChangeReviewApproval(
 					promptInput,
 					cmd.OutOrStdout(),
 					step,
 					review,
 					changeReviewRenderOptions{EnableColor: renderOptions.EnableColor},
 				)
+				liveEvents.Emit(observe.Event{
+					Kind:   observe.EventGitReviewFinished,
+					StepID: step.ID,
+				})
+				return decision, promptErr
 			}
 
 			engine, err := orchestrator.NewEngine(orchestrator.Dependencies{
@@ -427,10 +474,18 @@ func newRunCommand() *cobra.Command {
 				return nil
 			case orchestrator.RunStopReasonNoProgress:
 				stepLabel := "unknown"
+				lastError := ""
 				if n := len(runResult.Reports); n > 0 {
-					stepLabel = string(runResult.Reports[n-1].Step.ID)
+					last := runResult.Reports[n-1]
+					stepLabel = string(last.Step.ID)
+					lastError = extractLastError(last)
 				}
-				return fmt.Errorf("the orchestrator could not make progress on step %q after consecutive attempts. inspect the integration state and rerun `concierge run`", stepLabel)
+				msg := fmt.Sprintf("the orchestrator could not make progress on step %q after consecutive attempts.", stepLabel)
+				if lastError != "" {
+					msg += "\n\nLast error:\n  " + lastError
+				}
+				msg += "\n\ninspect the integration state and rerun `concierge run`"
+				return errors.New(msg)
 			case orchestrator.RunStopReasonMaxIterations:
 				return fmt.Errorf("integration still has pending requirements. run `concierge run` again to continue guided checks.\ntip: use `--max-iterations 3` to run multiple guided rounds in one command")
 			case orchestrator.RunStopReasonCancelled:
@@ -907,6 +962,33 @@ func promptCheckLabelColor(status core.CheckStatus) string {
 	default:
 		return ansiDim
 	}
+}
+
+// extractLastError returns the most relevant error message from a report.
+// It checks validation issues, failing checks, and notes in priority order.
+func extractLastError(r core.IterationReport) string {
+	// Validation issues are the most specific.
+	for _, issue := range r.Validation.Issues {
+		if issue.Severity == core.SeverityError || issue.Severity == core.SeverityWarning {
+			return issue.Message
+		}
+	}
+	// Failing check issues.
+	for _, check := range r.Checks {
+		if check.Status == core.CheckStatusFail {
+			for _, issue := range check.Issues {
+				return issue.Message
+			}
+			if check.Label != "" {
+				return check.Label + " — failed"
+			}
+		}
+	}
+	// Fall back to the last note.
+	if n := len(r.Notes); n > 0 {
+		return r.Notes[n-1]
+	}
+	return ""
 }
 
 type stepApprovalGuidance struct {

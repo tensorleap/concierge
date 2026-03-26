@@ -978,17 +978,31 @@ func suppressStaleGuideStatusIssues(
 	}
 
 	preprocessSuperseded := localStatusShowsDownstreamPreprocessProgress(local)
+	modelSuperseded := hasConcreteModelIssue(existing)
 	integrationTestSuperseded := hasConcreteIntegrationTestIssue(existing)
+	downstreamSuperseded := modelSuperseded || integrationTestSuperseded
 
 	filtered := make([]core.Issue, 0, len(statusIssues))
 	for _, issue := range statusIssues {
 		switch issue.Code {
 		case core.IssueCodePreprocessFunctionMissing:
-			if preprocessSuperseded {
+			if preprocessSuperseded || (downstreamSuperseded && isGuideStatusRowIssue(issue)) {
+				continue
+			}
+		case core.IssueCodeInputEncoderMissing, core.IssueCodeGTEncoderMissing:
+			if downstreamSuperseded && isGuideStatusRowIssue(issue) {
+				continue
+			}
+		case core.IssueCodeLoadModelDecoratorMissing:
+			if modelSuperseded && isGuideStatusRowIssue(issue) {
 				continue
 			}
 		case core.IssueCodeIntegrationTestMissing:
 			if integrationTestSuperseded {
+				continue
+			}
+		case core.IssueCodeIntegrationTestMissingRequiredCalls:
+			if integrationTestSuperseded && isGuideStatusRowIssue(issue) {
 				continue
 			}
 		}
@@ -1013,6 +1027,23 @@ func hasConcreteIntegrationTestIssue(issues []core.Issue) bool {
 		return true
 	}
 	return false
+}
+
+func hasConcreteModelIssue(issues []core.Issue) bool {
+	for _, issue := range issues {
+		if issue.Severity != core.SeverityError || issue.Scope != core.IssueScopeModel {
+			continue
+		}
+		if issue.Code == core.IssueCodeLoadModelDecoratorMissing {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func isGuideStatusRowIssue(issue core.Issue) bool {
+	return strings.HasPrefix(issue.Message, "guide status table reports mandatory decorator @")
 }
 
 func hasSpecificIntegrationTestIssue(issues []core.Issue) bool {

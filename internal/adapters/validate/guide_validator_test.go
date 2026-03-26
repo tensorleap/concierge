@@ -770,6 +770,50 @@ func TestGuideValidatorSkipsStaleGTEncoderStatusIssueWhenParserAlreadyValidatedG
 	}
 }
 
+func TestGuideValidatorSkipsStaleEarlyStatusRowsWhenConcreteDownstreamIssuesExist(t *testing.T) {
+	summary := core.GuideValidationSummary{
+		LocalStatusTableSupported: true,
+		Local: core.GuideLocalRunSummary{
+			StatusRows: []core.GuideStatusRow{
+				{Name: "tensorleap_preprocess", Status: "fail"},
+				{Name: "tensorleap_input_encoder", Status: "fail"},
+				{Name: "tensorleap_gt_encoder", Status: "fail"},
+				{Name: "tensorleap_load_model", Status: "fail"},
+				{Name: "tensorleap_custom_loss", Status: "fail"},
+			},
+		},
+		Parser: core.GuideParserRunSummary{
+			Available:    true,
+			GeneralError: `Something went wrong. TypeError("load_model returned a placeholder")`,
+		},
+	}
+
+	issues := collectGuideIssues(summary, PythonRuntimeCommandResult{}, PythonRuntimeCommandResult{}, nil, []core.Issue{
+		{
+			Code:     core.IssueCodeIntegrationTestIllegalBodyLogic,
+			Message:  "integration_test should stay declarative",
+			Severity: core.SeverityError,
+			Scope:    core.IssueScopeIntegrationTest,
+		},
+	})
+
+	if containsIssueCode(issues, core.IssueCodePreprocessFunctionMissing) {
+		t.Fatalf("did not expect stale preprocess status row to survive downstream model/integration issues, got %+v", issues)
+	}
+	if containsIssueCode(issues, core.IssueCodeInputEncoderMissing) {
+		t.Fatalf("did not expect stale input status row to survive downstream model/integration issues, got %+v", issues)
+	}
+	if containsIssueCode(issues, core.IssueCodeGTEncoderMissing) {
+		t.Fatalf("did not expect stale gt status row to survive downstream model/integration issues, got %+v", issues)
+	}
+	if !containsIssueCode(issues, core.IssueCodeModelLoadFailed) {
+		t.Fatalf("expected concrete model-load issue to remain, got %+v", issues)
+	}
+	if got := deriveGuideRecommendation(summary, issues).Stage; got != "load_model" {
+		t.Fatalf("expected load_model recommendation after suppressing stale early rows, got %q with issues %+v", got, issues)
+	}
+}
+
 type fakeGuideRuntimeRunner struct {
 	results []PythonRuntimeCommandResult
 	errs    []error

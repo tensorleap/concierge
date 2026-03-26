@@ -75,6 +75,30 @@ func TestKnownEnsureStepsAreInPriorityOrder(t *testing.T) {
 	}
 }
 
+func TestKnownEnsureStepsPlaceIntegrationTestContractBeforeEarlierAuthoringMilestones(t *testing.T) {
+	steps := KnownEnsureSteps()
+	indexByStep := make(map[EnsureStepID]int, len(steps))
+	for index, step := range steps {
+		indexByStep[step.ID] = index
+	}
+
+	contractIndex := indexByStep[EnsureStepIntegrationTestContract]
+	for _, stepID := range []EnsureStepID{
+		EnsureStepPreprocessContract,
+		EnsureStepInputEncoders,
+		EnsureStepModelAcquisition,
+		EnsureStepModelContract,
+		EnsureStepGroundTruthEncoders,
+	} {
+		if contractIndex >= indexByStep[stepID] {
+			t.Fatalf("expected %q before %q, got order %+v", EnsureStepIntegrationTestContract, stepID, steps)
+		}
+	}
+	if contractIndex >= indexByStep[EnsureStepIntegrationTestWiring] {
+		t.Fatalf("expected %q before %q, got order %+v", EnsureStepIntegrationTestContract, EnsureStepIntegrationTestWiring, steps)
+	}
+}
+
 func TestIntegrationTestDecoratorMissingRoutesToWiringStep(t *testing.T) {
 	step, ok := PreferredEnsureStepForIssueCode(IssueCodeIntegrationTestDecoratorMissing)
 	if !ok {

@@ -56,7 +56,7 @@ func TestPlannerReturnsAdditionalSteps(t *testing.T) {
 	}
 }
 
-func TestPlannerPrioritizesPreprocessBeforeIntegrationTestContract(t *testing.T) {
+func TestPlannerPrioritizesIntegrationTestContractBeforePreprocess(t *testing.T) {
 	adapter := NewDeterministicPlanner()
 
 	plan, err := adapter.Plan(context.Background(), core.WorkspaceSnapshot{}, core.IntegrationStatus{
@@ -69,11 +69,11 @@ func TestPlannerPrioritizesPreprocessBeforeIntegrationTestContract(t *testing.T)
 		t.Fatalf("Plan returned error: %v", err)
 	}
 
-	if plan.Primary.ID != core.EnsureStepPreprocessContract {
-		t.Fatalf("expected primary step %q, got %q", core.EnsureStepPreprocessContract, plan.Primary.ID)
+	if plan.Primary.ID != core.EnsureStepIntegrationTestContract {
+		t.Fatalf("expected primary step %q, got %q", core.EnsureStepIntegrationTestContract, plan.Primary.ID)
 	}
-	if len(plan.Additional) != 1 || plan.Additional[0].ID != core.EnsureStepIntegrationTestContract {
-		t.Fatalf("expected integration-test contract to remain queued after preprocess, got %+v", plan.Additional)
+	if len(plan.Additional) != 1 || plan.Additional[0].ID != core.EnsureStepPreprocessContract {
+		t.Fatalf("expected preprocess to remain queued after integration-test contract, got %+v", plan.Additional)
 	}
 }
 

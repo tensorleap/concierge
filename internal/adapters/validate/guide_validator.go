@@ -794,7 +794,9 @@ func collectGuideIssues(
 		}
 	}
 
-	issues = append(issues, issuesFromGuideStatusRows(summary.Local, summary.Parser)...)
+	statusIssues := issuesFromGuideStatusRows(summary.Local, summary.Parser)
+	statusIssues = suppressStaleGuideStatusIssues(statusIssues, summary.Local, issues)
+	issues = append(issues, statusIssues...)
 	return issues
 }
 
@@ -883,6 +885,53 @@ func suppressGuideParserGeneralIssue(issue core.Issue, payloadIssues []core.Issu
 		return false
 	}
 	return len(payloadIssues) > 0
+}
+
+func suppressStaleGuideStatusIssues(
+	statusIssues []core.Issue,
+	local core.GuideLocalRunSummary,
+	existing []core.Issue,
+) []core.Issue {
+	if len(statusIssues) == 0 {
+		return nil
+	}
+
+	preprocessSuperseded := localStatusShowsDownstreamPreprocessProgress(local)
+	integrationTestSuperseded := hasConcreteIntegrationTestIssue(existing)
+
+	filtered := make([]core.Issue, 0, len(statusIssues))
+	for _, issue := range statusIssues {
+		switch issue.Code {
+		case core.IssueCodePreprocessFunctionMissing:
+			if preprocessSuperseded {
+				continue
+			}
+		case core.IssueCodeIntegrationTestMissing:
+			if integrationTestSuperseded {
+				continue
+			}
+		}
+		filtered = append(filtered, issue)
+	}
+	return filtered
+}
+
+func localStatusShowsDownstreamPreprocessProgress(local core.GuideLocalRunSummary) bool {
+	return guideStatus(local, "tensorleap_input_encoder") == "pass" ||
+		guideStatus(local, "tensorleap_gt_encoder") == "pass"
+}
+
+func hasConcreteIntegrationTestIssue(issues []core.Issue) bool {
+	for _, issue := range issues {
+		if issue.Severity != core.SeverityError || issue.Scope != core.IssueScopeIntegrationTest {
+			continue
+		}
+		if issue.Code == core.IssueCodeIntegrationTestMissing {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func hasSpecificIntegrationTestIssue(issues []core.Issue) bool {

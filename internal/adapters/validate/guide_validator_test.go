@@ -601,6 +601,60 @@ func TestGuideValidatorSkipsStalePreprocessStatusIssueWhenDownstreamInterfacesAl
 	}
 }
 
+func TestGuideValidatorSkipsStaleInputEncoderStatusIssueWhenParserAlreadyValidatedInput(t *testing.T) {
+	repoRoot := buildGuideValidationRepo(t)
+	validator := &GuideValidator{
+		runtimeRunner: &fakeGuideRuntimeRunner{
+			results: []PythonRuntimeCommandResult{
+				{
+					Command: "poetry run python leap_integration.py",
+					Stdout: strings.Join([]string{
+						"Decorator Name                     | Added to integration",
+						"-------------------------------------------------------",
+						"tensorleap_preprocess              | ❌",
+						"tensorleap_input_encoder           | ❌",
+						"tensorleap_load_model              | ❌",
+						"tensorleap_integration_test        | ❌",
+						"tensorleap_gt_encoder              | ❌",
+						"",
+						"Some mandatory components have not yet been added to the Integration test. Recommended next interface to add is: tensorleap_integration_test",
+					}, "\n"),
+				},
+				{
+					Command: "poetry run python -c ...",
+					Stdout: strings.Join([]string{
+						"{",
+						`  "available": true,`,
+						`  "isValid": true,`,
+						`  "payloads": [`,
+						`    {"name":"preprocess","passed":true},`,
+						`    {"name":"image","passed":true,"shape":[640,640,3]}`,
+						`  ],`,
+						`  "setup": {`,
+						`    "preprocess":{"trainingLength":4,"validationLength":2},`,
+						`    "inputs":[{"name":"image","channelDim":-1,"shape":[640,640,3]}]`,
+						`  }`,
+						"}",
+					}, "\n"),
+				},
+			},
+			errs: []error{nil, nil},
+		},
+		astAnalyzer: fakeIntegrationTestASTAnalyzer{},
+	}
+
+	result, err := validator.Run(context.Background(), guideValidationSnapshot(t, repoRoot))
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if containsIssueCode(result.Issues, core.IssueCodeInputEncoderMissing) {
+		t.Fatalf("did not expect stale input_encoder status row to survive parser validation from code-loader#273, got %+v", result.Issues)
+	}
+	if !containsIssueCode(result.Issues, core.IssueCodeIntegrationTestMissing) {
+		t.Fatalf("expected integration-test issue to remain, got %+v", result.Issues)
+	}
+}
+
 type fakeGuideRuntimeRunner struct {
 	results []PythonRuntimeCommandResult
 	errs    []error

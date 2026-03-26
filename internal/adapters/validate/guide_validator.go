@@ -812,6 +812,13 @@ func parserClearsPreprocess(parser core.GuideParserRunSummary) bool {
 	return parser.IsValid
 }
 
+func parserClearsInputEncoder(parser core.GuideParserRunSummary) bool {
+	if !parser.Available || !parser.IsValid || parser.Setup == nil {
+		return false
+	}
+	return len(parser.Setup.Inputs) > 0
+}
+
 func selectPrimaryBlockingGuideStep(issues []core.Issue) (core.EnsureStep, bool) {
 	blocking := make([]core.Issue, 0, len(issues))
 	for _, issue := range issues {
@@ -848,6 +855,7 @@ func issuesFromGuideStatusRows(local core.GuideLocalRunSummary, parser core.Guid
 
 	var issues []core.Issue
 	preprocessCleared := parserClearsPreprocess(parser)
+	inputEncoderCleared := parserClearsInputEncoder(parser)
 	for _, row := range local.StatusRows {
 		if row.Status != "fail" {
 			continue
@@ -858,6 +866,12 @@ func issuesFromGuideStatusRows(local core.GuideLocalRunSummary, parser core.Guid
 		}
 		normalizedName := strings.ToLower(name)
 		if normalizedName == "tensorleap_preprocess" && preprocessCleared {
+			continue
+		}
+		if normalizedName == "tensorleap_input_encoder" && inputEncoderCleared {
+			// Work around code-loader#273: the local status table can keep the
+			// generic input-encoder row at fail even after check_dataset() proves
+			// a real input encoder exists and runs successfully.
 			continue
 		}
 		code, ok := guideStatusRowIssueMap[normalizedName]

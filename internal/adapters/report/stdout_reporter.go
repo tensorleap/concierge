@@ -172,7 +172,9 @@ func writeSummaryLine(writer io.Writer, report core.IterationReport, options Out
 	}
 
 	changeStatus := "No changes were applied."
-	if hasEvidenceValue(report.Evidence, "executor.change_approval", "rejected") ||
+	if hasEvidenceValue(report.Evidence, "git.review_action", "blocked_risky_artifacts") {
+		changeStatus = "No changes were applied because Concierge blocked a risky artifact-heavy diff."
+	} else if hasEvidenceValue(report.Evidence, "executor.change_approval", "rejected") ||
 		hasEvidenceValue(report.Evidence, "git.approval", "rejected") {
 		changeStatus = "No changes were made because approval was not granted."
 	} else if hasEvidenceValue(report.Evidence, "git.commit_pending_review", "true") {

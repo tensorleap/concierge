@@ -257,6 +257,47 @@ func TestReporterShowsManualGuidanceWhenExecutorCannotApplyFix(t *testing.T) {
 	}
 }
 
+func TestReporterExplainsBlockedRiskyArtifactDiff(t *testing.T) {
+	var sink strings.Builder
+	reporter := NewStdoutReporter(&sink)
+
+	err := reporter.Report(context.Background(), core.IterationReport{
+		SnapshotID: "snapshot-123",
+		Step:       core.EnsureStep{ID: core.EnsureStepPreprocessContract},
+		Evidence: []core.EvidenceItem{
+			{Name: "git.review_action", Value: "blocked_risky_artifacts"},
+		},
+		Notes: []string{
+			"Concierge blocked this change because it only vendored dataset/cache artifacts into the repository working tree.",
+			"Resolve the dataset or cache requirement as external runtime state, then rerun `concierge run`.",
+		},
+		Checks: []core.VerifiedCheck{
+			{
+				StepID:   core.EnsureStepPreprocessContract,
+				Label:    core.HumanEnsureStepRequirementLabel(core.EnsureStepPreprocessContract),
+				Status:   core.CheckStatusFail,
+				Blocking: true,
+			},
+		},
+		Validation: core.ValidationResult{Passed: false},
+	})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	output := sink.String()
+	for _, snippet := range []string{
+		"Changes: No changes were applied because Concierge blocked a risky artifact-heavy diff.",
+		"Notes:",
+		"only vendored dataset/cache artifacts",
+		"external runtime state",
+	} {
+		if !strings.Contains(output, snippet) {
+			t.Fatalf("expected output to contain %q, got %q", snippet, output)
+		}
+	}
+}
+
 func TestReporterShowsGuideValidationMilestoneAndRecommendation(t *testing.T) {
 	var sink strings.Builder
 	reporter := NewStdoutReporter(&sink)

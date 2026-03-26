@@ -310,6 +310,51 @@ func TestGitManagerKeepsUncommittedChangesForReview(t *testing.T) {
 	}
 }
 
+func TestGitManagerBlocksArtifactOnlyDatasetDiffsBeforeApproval(t *testing.T) {
+	repo := initGitRepo(t)
+	runGit(t, repo, "checkout", "-B", "feature/test")
+	writeFile(t, filepath.Join(repo, ".tensorleap_data", "coco8", "LICENSE"), "license\n")
+	writeFile(t, filepath.Join(repo, ".tensorleap_data", "coco8", "images", "train", "000000000009.jpg"), "jpeg-bytes\n")
+	writeFile(t, filepath.Join(repo, ".tensorleap_data", "coco8", "labels", "train", "000000000009.txt"), "0 0.5 0.5 1 1\n")
+
+	approvalCalled := false
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (ReviewDecision, error) {
+		_ = step
+		_ = review
+		approvalCalled = true
+		return ReviewDecision{KeepChanges: true, Commit: false}, nil
+	})
+
+	decision, err := manager.Handle(
+		context.Background(),
+		core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: repo}},
+		executionResult(core.EnsureStepPreprocessContract),
+	)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if approvalCalled {
+		t.Fatal("expected risky artifact-only preprocess diff to be blocked before approval prompt")
+	}
+	if decision.FinalResult.Applied {
+		t.Fatalf("expected blocked risky diff to restore changes, got %+v", decision.FinalResult)
+	}
+	if !hasEvidence(decision.Evidence, "git.review_action", "blocked_risky_artifacts") {
+		t.Fatalf("expected blocked review action evidence, got %+v", decision.Evidence)
+	}
+	if !hasEvidence(decision.Evidence, "git.review_risk", "high") {
+		t.Fatalf("expected high-risk evidence, got %+v", decision.Evidence)
+	}
+	if !containsNoteSubstring(decision.Notes, "only vendored dataset/cache artifacts") {
+		t.Fatalf("expected dataset-artifact block note, got %v", decision.Notes)
+	}
+
+	status := runGit(t, repo, "status", "--porcelain")
+	if strings.TrimSpace(status) != "" {
+		t.Fatalf("expected clean worktree after blocked risky diff, got %q", status)
+	}
+}
+
 func executionResult(stepID core.EnsureStepID) core.ExecutionResult {
 	step, _ := core.EnsureStepByID(stepID)
 	return core.ExecutionResult{
@@ -372,6 +417,15 @@ func hasEvidence(items []core.EvidenceItem, name, value string) bool {
 func containsNote(notes []string, want string) bool {
 	for _, note := range notes {
 		if note == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsNoteSubstring(notes []string, want string) bool {
+	for _, note := range notes {
+		if strings.Contains(note, want) {
 			return true
 		}
 	}

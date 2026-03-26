@@ -25,7 +25,7 @@ const (
 	RunStopReasonCancelled       RunStopReason = "cancelled"
 	RunStopReasonInterrupted     RunStopReason = "interrupted_step"
 	RunStopReasonNeedsUserAction RunStopReason = "needs_user_action"
-	RunStopReasonNoProgress     RunStopReason = "no_progress"
+	RunStopReasonNoProgress      RunStopReason = "no_progress"
 )
 
 // RunResult aggregates per-iteration reports for one run invocation.
@@ -148,6 +148,9 @@ func requiresUserAction(report core.IterationReport) bool {
 			return true
 		}
 		if item.Name == "git.approval" && item.Value == "rejected" {
+			return true
+		}
+		if item.Name == "git.review_action" && item.Value == "blocked_risky_artifacts" {
 			return true
 		}
 		if item.Name == "git.commit_pending_review" && item.Value == "true" {

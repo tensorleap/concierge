@@ -20,7 +20,7 @@ Concierge is not meant to replace the Leap CLI. It wraps the authoring and valid
 
 ## Current Product Boundary
 
-As of 2026-03-25, the implemented shape is narrower and more concrete than the original design draft:
+As of 2026-03-26, the implemented shape is narrower and more concrete than the original design draft:
 
 - target layout: root-level `leap_integration.py` and root-level `leap.yaml`
 - local runtime boundary: Poetry-managed Python projects only
@@ -97,6 +97,8 @@ The planner and validators are built around the guide-native entrypoint-first wo
 - `leap.yaml.entryFile` should point at `leap_integration.py`
 - newly scaffolded or repaired integrations should converge on the canonical root-level entrypoint
 - validation is call-driven, so a decorator definition is not enough by itself
+- `@tensorleap_integration_test` should be scaffolded early and extended continuously as preprocess, input encoders, GT encoders, model loading, and optional surfaces are added
+- guide status rows should be interpreted as end-to-end wiring signals, not as a plain inventory of which decorators exist in the file
 
 ### Concierge Stays Deterministic Even When An Agent Helps
 
@@ -118,6 +120,14 @@ Concierge should avoid declaring success based on skeleton files alone. The impo
 - structured parse and harness-level checks
 - bounded multi-sample coverage across preprocess, input encoders, GT encoders, and model wiring
 - heuristics that catch suspiciously shallow integrations
+
+The validator should use different signals for different questions:
+
+- `check_dataset()` and related parser payloads are the primary contract-level truth for preprocess, input encoder, and GT encoder presence plus first-sample execution
+- `@tensorleap_integration_test` and model-loading checks are the primary end-to-end wiring truth
+- local guide status tables are supporting evidence, but they are not authoritative enough to override stronger parser or runtime proof on their own
+
+This matters because guide status rows can regress when downstream wiring breaks. Concierge should not snap back to the earliest red row if more concrete downstream evidence already identifies the current blocker.
 
 The validator should answer both:
 

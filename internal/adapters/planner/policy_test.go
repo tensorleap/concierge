@@ -66,3 +66,39 @@ func TestPlannerReturnsCompleteOnlyWhenNoBlockingIssues(t *testing.T) {
 		t.Fatalf("did not expect %q when blocking issues exist", core.EnsureStepComplete)
 	}
 }
+
+func TestPlannerKeepsInputEncodersAheadOfIntegrationTestContract(t *testing.T) {
+	adapter := NewDeterministicPlanner()
+
+	plan, err := adapter.Plan(context.Background(), core.WorkspaceSnapshot{}, core.IntegrationStatus{
+		Issues: []core.Issue{
+			{Code: core.IssueCodeIntegrationTestMissing, Severity: core.SeverityError},
+			{Code: core.IssueCodeInputEncoderMissing, Severity: core.SeverityError},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+
+	if plan.Primary.ID != core.EnsureStepInputEncoders {
+		t.Fatalf("expected primary step %q, got %q", core.EnsureStepInputEncoders, plan.Primary.ID)
+	}
+}
+
+func TestPlannerKeepsModelContractAheadOfIntegrationTestContract(t *testing.T) {
+	adapter := NewDeterministicPlanner()
+
+	plan, err := adapter.Plan(context.Background(), core.WorkspaceSnapshot{}, core.IntegrationStatus{
+		Issues: []core.Issue{
+			{Code: core.IssueCodeIntegrationTestMissing, Severity: core.SeverityError},
+			{Code: core.IssueCodeModelLoadFailed, Severity: core.SeverityError},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+
+	if plan.Primary.ID != core.EnsureStepModelContract {
+		t.Fatalf("expected primary step %q, got %q", core.EnsureStepModelContract, plan.Primary.ID)
+	}
+}

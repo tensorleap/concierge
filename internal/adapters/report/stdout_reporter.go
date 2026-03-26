@@ -367,7 +367,19 @@ func warningFollowUpLines(stepID core.EnsureStepID, issues []core.Issue) []strin
 	lines := []string{
 		"This warning is advisory in the current run, so I did not apply a fix automatically.",
 	}
+	lines = append(lines, deferredWarningContextLines(stepID)...)
 	return append(lines, stepGuidanceLines(stepID, issues)...)
+}
+
+func deferredWarningContextLines(stepID core.EnsureStepID) []string {
+	switch stepID {
+	case core.EnsureStepLeapCLIAuth, core.EnsureStepServerConnectivity:
+		return []string{
+			"This warning is deferred for authoring right now and becomes blocking again before upload readiness and `leap push`.",
+		}
+	default:
+		return nil
+	}
 }
 
 func stepGuidanceLines(stepID core.EnsureStepID, issues []core.Issue) []string {

@@ -80,6 +80,35 @@ func TestSnapshotWorktreeFingerprintChangesWhenWorkingTreeChanges(t *testing.T) 
 	}
 }
 
+func TestSnapshotWorktreeFingerprintChangesWhenUntrackedFileContentsChange(t *testing.T) {
+	repo := initGitRepo(t)
+	snapshotter := NewGitSnapshotter()
+
+	writeFile(t, filepath.Join(repo, "untracked.txt"), "first version\n")
+
+	first, err := snapshotter.Snapshot(context.Background(), core.SnapshotRequest{RepoRoot: repo})
+	if err != nil {
+		t.Fatalf("first snapshot failed: %v", err)
+	}
+
+	writeFile(t, filepath.Join(repo, "untracked.txt"), "second version\n")
+
+	second, err := snapshotter.Snapshot(context.Background(), core.SnapshotRequest{RepoRoot: repo})
+	if err != nil {
+		t.Fatalf("second snapshot failed: %v", err)
+	}
+
+	if first.WorktreeFingerprint == second.WorktreeFingerprint {
+		t.Fatalf("expected worktree fingerprint to change for untracked content edit, got %q", first.WorktreeFingerprint)
+	}
+	if first.ID == second.ID {
+		t.Fatalf("expected snapshot ID to change for untracked content edit, got %q", first.ID)
+	}
+	if !first.Repository.Dirty || !second.Repository.Dirty {
+		t.Fatal("expected repository to stay dirty while file remains untracked")
+	}
+}
+
 func TestSnapshotIDStableForSameState(t *testing.T) {
 	repo := initGitRepo(t)
 	snapshotter := NewGitSnapshotter()

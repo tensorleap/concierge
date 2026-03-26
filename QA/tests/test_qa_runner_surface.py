@@ -48,7 +48,7 @@ class QARunnerSurfaceTest(unittest.TestCase):
 
         self.assertIn("actions/upload-artifact@v4", workflow)
         self.assertIn("GITHUB_STEP_SUMMARY", workflow)
-        self.assertIn("Artifact:", workflow)
+        self.assertIn("qa_workflow_summary.py", workflow)
         self.assertIn("issues: write", workflow)
         self.assertIn("pull-requests: write", workflow)
         self.assertIn("gh issue comment", workflow)

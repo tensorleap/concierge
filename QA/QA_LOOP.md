@@ -144,7 +144,7 @@ By default the harness writes:
 
 The harness prints the absolute path to the full-session transcript at the end of the run. The markdown report is still the easiest artifact to read first.
 
-For fixture runs, each `QA/runs/<run-id>/docker/` directory contains exported container artifacts such as `/workspace/.concierge`. If `--docker-snapshots` is enabled, it also includes per-turn `docker commit` metadata plus `docker diff` / `docker inspect` outputs.
+For fixture runs, each `QA/runs/<run-id>/docker/export/workspace/` directory contains exported container artifacts such as `/workspace/.concierge`, `leap.yaml`, `leap_integration.py`, and other common Tensorleap integration files when they exist. If `--docker-snapshots` is enabled, `QA/runs/<run-id>/docker/` also includes per-turn `docker commit` metadata plus `docker diff` / `docker inspect` outputs.
 
 ## GitHub Actions
 
@@ -157,7 +157,7 @@ Dispatch it with:
 - `step`: guide-native checkpoint step
 - optional `run_id`, `issue_number`, and `pr_number`
 
-The workflow installs Claude CLI, runs `scripts/qa_fixture_run.sh`, uploads the saved QA artifacts, writes a concise `GITHUB_STEP_SUMMARY`, and can post the same result summary back to the linked issue or PR.
+The workflow installs Claude CLI, runs `scripts/qa_fixture_run.sh`, uploads the saved QA artifacts, writes a richer `GITHUB_STEP_SUMMARY` with outcome and timeline details, and can post the same result summary back to the linked issue or PR.
 
 ## Exit Codes
 

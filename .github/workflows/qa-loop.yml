@@ -141,29 +141,13 @@ jobs:
         if: ${{ always() }}
         shell: bash
         run: |
-          summary_path="QA/runs/${RUN_ID}/summary.json"
           artifact_name="qa-loop-${RUN_ID}"
-          {
-            echo "## QA Loop"
-            echo
-            echo "- Ref: \`${{ inputs.ref }}\`"
-            echo "- Fixture: \`${QA_FIXTURE}\`"
-            echo "- Step: \`${QA_STEP}\`"
-            echo "- Resolved checkpoint: \`${QA_CHECKPOINT_KEY:-unresolved}\`"
-            echo "- Source: \`${QA_SOURCE_KIND:-unknown}:${QA_SOURCE_ID:-unknown}\`"
-            echo "- Run ID: \`${RUN_ID}\`"
-            echo "- Artifact: \`${artifact_name}\`"
-            if [[ -f "${summary_path}" ]]; then
-              loop_state="$(jq -r '.loop_state' "${summary_path}")"
-              stop_reason="$(jq -r '.stop_reason' "${summary_path}")"
-              echo "- Loop state: \`${loop_state}\`"
-              echo "- Stop reason: \`${stop_reason}\`"
-              echo "- Summary JSON: \`${summary_path}\`"
-              echo "- Markdown report: \`QA/reports/${RUN_ID}.md\`"
-            else
-              echo "- Summary JSON: missing"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          python3 scripts/qa_workflow_summary.py \
+            --repo-root "${GITHUB_WORKSPACE}" \
+            --artifacts-root "${GITHUB_WORKSPACE}/QA" \
+            --run-id "${RUN_ID}" \
+            --ref "${{ inputs.ref }}" \
+            --artifact-name "${artifact_name}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload QA artifacts
         if: ${{ always() }}

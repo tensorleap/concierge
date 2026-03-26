@@ -39,6 +39,13 @@ QA_DIR = Path(__file__).resolve().parent
 REPO_ROOT = QA_DIR.parent
 PROMPTS_DIR = QA_DIR / "prompts"
 EXTERNAL_COMMAND_TIMEOUT_FLOOR_SECONDS = 1.0
+EXPORTED_WORKSPACE_PATHS = (
+    ".concierge",
+    "leap.yaml",
+    "leap_integration.py",
+    "leap_binder.py",
+    "leap_custom_test.py",
+)
 
 
 @dataclass
@@ -1170,8 +1177,12 @@ class SupervisorLoop:
 
     def _export_container_artifacts(self, *, paths: RunPaths) -> list[dict[str, str]]:
         exported: list[dict[str, str]] = []
-        exists = subprocess.run(
-            self._docker_exec_command(["bash", "-lc", "test -d .concierge"], tty=False),
+        export_root = paths.docker_dir / "export" / "workspace"
+        check_script = "for path in " + " ".join(shlex.quote(path) for path in EXPORTED_WORKSPACE_PATHS) + (
+            '; do if test -e "$path"; then printf "%s\\n" "$path"; fi; done'
+        )
+        existing = subprocess.run(
+            self._docker_exec_command(["bash", "-lc", check_script], tty=False),
             cwd=str(self.config.host_cwd),
             env=os.environ.copy(),
             text=True,
@@ -1179,24 +1190,27 @@ class SupervisorLoop:
             timeout=15.0,
             check=False,
         )
-        if exists.returncode != 0:
-            return exported
+        if existing.returncode != 0:
+            detail = existing.stderr.strip() or existing.stdout.strip() or f"exit code {existing.returncode}"
+            raise DockerInvocationError(f"{shlex.join(self._docker_exec_command(['bash', '-lc', check_script], tty=False))} failed: {detail}")
 
-        source = f"{self.config.container_name}:{self.config.command_cwd}/.concierge"
-        destination = paths.docker_dir / "workspace.concierge"
-        completed = subprocess.run(
-            [self.config.docker_bin, "cp", source, str(destination)],
-            cwd=str(self.config.host_cwd),
-            env=os.environ.copy(),
-            text=True,
-            capture_output=True,
-            timeout=30.0,
-            check=False,
-        )
-        if completed.returncode != 0:
-            detail = completed.stderr.strip() or completed.stdout.strip() or f"exit code {completed.returncode}"
-            raise DockerInvocationError(f"{self.config.docker_bin} cp {source} {destination} failed: {detail}")
-        exported.append({"source": source, "destination": str(destination)})
+        for relative_path in [line.strip() for line in existing.stdout.splitlines() if line.strip()]:
+            destination = export_root / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            source = f"{self.config.container_name}:{self.config.command_cwd}/{relative_path}"
+            completed = subprocess.run(
+                [self.config.docker_bin, "cp", source, str(destination)],
+                cwd=str(self.config.host_cwd),
+                env=os.environ.copy(),
+                text=True,
+                capture_output=True,
+                timeout=30.0,
+                check=False,
+            )
+            if completed.returncode != 0:
+                detail = completed.stderr.strip() or completed.stdout.strip() or f"exit code {completed.returncode}"
+                raise DockerInvocationError(f"{self.config.docker_bin} cp {source} {destination} failed: {detail}")
+            exported.append({"source": source, "destination": str(destination)})
         return exported
 
     def _request_report(

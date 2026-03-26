@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -72,12 +73,15 @@ func (g *GitSnapshotter) Snapshot(ctx context.Context, request core.SnapshotRequ
 		return core.WorkspaceSnapshot{}, err
 	}
 
-	porcelain, err := g.gitOutputRaw(ctx, root, "snapshot.worktree_status", "status", "--porcelain")
+	porcelain, err := g.gitOutputRaw(ctx, root, "snapshot.worktree_status", "status", "--porcelain=v1", "--untracked-files=all", "-z")
 	if err != nil {
 		return core.WorkspaceSnapshot{}, err
 	}
 
-	worktreeFingerprint := sha256Hex(porcelain)
+	worktreeFingerprint, err := fingerprintWorktreeState(root, porcelain)
+	if err != nil {
+		return core.WorkspaceSnapshot{}, core.WrapError(core.KindUnknown, "snapshot.worktree_fingerprint", err)
+	}
 	snapshotID := sha256Hex([]byte(strings.Join([]string{
 		root,
 		gitRoot,
@@ -218,6 +222,150 @@ func runCommandInDir(ctx context.Context, dir string, name string, args ...strin
 func sha256Hex(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+func fingerprintWorktreeState(repoRoot string, porcelain []byte) (string, error) {
+	hasher := sha256.New()
+	hasher.Write(porcelain)
+
+	paths, err := parsePorcelainV1ZPaths(porcelain)
+	if err != nil {
+		return "", err
+	}
+
+	for _, path := range paths {
+		hasher.Write([]byte{0})
+		hasher.Write([]byte(path))
+		hasher.Write([]byte{0})
+
+		hash, err := hashWorktreePath(filepath.Join(repoRoot, filepath.FromSlash(path)))
+		if err != nil {
+			return "", err
+		}
+		hasher.Write([]byte(hash))
+	}
+
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func parsePorcelainV1ZPaths(porcelain []byte) ([]string, error) {
+	if len(porcelain) == 0 {
+		return nil, nil
+	}
+
+	paths := make([]string, 0)
+	for cursor := 0; cursor < len(porcelain); {
+		if cursor+3 > len(porcelain) {
+			return nil, fmt.Errorf("truncated porcelain entry at byte %d", cursor)
+		}
+		status := porcelain[cursor : cursor+2]
+		if porcelain[cursor+2] != ' ' {
+			return nil, fmt.Errorf("invalid porcelain entry at byte %d", cursor)
+		}
+		cursor += 3
+
+		nextNUL := bytes.IndexByte(porcelain[cursor:], 0)
+		if nextNUL < 0 {
+			return nil, fmt.Errorf("unterminated porcelain path at byte %d", cursor)
+		}
+		paths = append(paths, string(porcelain[cursor:cursor+nextNUL]))
+		cursor += nextNUL + 1
+
+		if status[0] == 'R' || status[0] == 'C' || status[1] == 'R' || status[1] == 'C' {
+			renameNUL := bytes.IndexByte(porcelain[cursor:], 0)
+			if renameNUL < 0 {
+				return nil, fmt.Errorf("unterminated porcelain rename source at byte %d", cursor)
+			}
+			cursor += renameNUL + 1
+		}
+	}
+
+	return paths, nil
+}
+
+func hashWorktreePath(path string) (string, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "missing", nil
+	}
+	if err != nil {
+		return "", err
+	}
+
+	switch {
+	case info.Mode()&os.ModeSymlink != 0:
+		target, err := os.Readlink(path)
+		if err != nil {
+			return "", err
+		}
+		return sha256Hex([]byte("symlink\x00" + target)), nil
+	case info.IsDir():
+		return hashDirectory(path)
+	default:
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			return "", err
+		}
+		return sha256Hex(contents), nil
+	}
+}
+
+func hashDirectory(root string) (string, error) {
+	hasher := sha256.New()
+
+	if err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+
+		relativePath, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if relativePath == "." {
+			return nil
+		}
+		relativePath = filepath.ToSlash(relativePath)
+		if relativePath == ".git" && entry.IsDir() {
+			return filepath.SkipDir
+		}
+
+		hasher.Write([]byte(relativePath))
+		hasher.Write([]byte{0})
+
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+
+		switch {
+		case info.Mode()&os.ModeSymlink != 0:
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			hasher.Write([]byte("symlink"))
+			hasher.Write([]byte{0})
+			hasher.Write([]byte(target))
+		case entry.IsDir():
+			hasher.Write([]byte("dir"))
+		default:
+			contents, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			hasher.Write([]byte("file"))
+			hasher.Write([]byte{0})
+			hasher.Write([]byte(sha256Hex(contents)))
+		}
+
+		hasher.Write([]byte{0})
+		return nil
+	}); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
 func captureFileHashes(repoRoot string) map[string]string {

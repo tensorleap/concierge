@@ -13,6 +13,13 @@ type changeReviewRenderOptions struct {
 	EnableColor bool
 }
 
+type reviewDecisionDefault int
+
+const (
+	reviewDecisionDefaultReject reviewDecisionDefault = iota
+	reviewDecisionDefaultKeep
+)
+
 func promptChangeReviewApproval(
 	in io.Reader,
 	out io.Writer,
@@ -104,22 +111,13 @@ func promptChangeReviewApproval(
 		}
 	}
 
-	keepPrompt := "Keep these changes in your working tree for local review? [Y/n]:"
-	keepDefault := true
+	reviewPrompt := "What should I do with these reviewed changes? [y] commit / [K] keep for local review / [n] restore:"
+	reviewDefault := reviewDecisionDefaultKeep
 	if review.Risk.IsRisky() {
-		keepPrompt = "Keep these risky changes in your working tree for local review? [y/N]:"
-		keepDefault = false
+		reviewPrompt = "What should I do with these risky reviewed changes? [y] commit / [k] keep / [N] restore:"
+		reviewDefault = reviewDecisionDefaultReject
 	}
-	keep, err := promptYesNo(in, out, keepPrompt, keepDefault)
-	if err != nil || !keep {
-		return gitmanager.ReviewDecision{KeepChanges: keep}, err
-	}
-
-	commit, err := promptYesNo(in, out, "Create a commit for these reviewed changes now? [y/N]:", false)
-	if err != nil {
-		return gitmanager.ReviewDecision{}, err
-	}
-	return gitmanager.ReviewDecision{KeepChanges: true, Commit: commit}, nil
+	return promptReviewDecision(in, out, reviewPrompt, reviewDefault)
 }
 
 func formatChangedFileLine(line string, enableColor bool) string {
@@ -160,4 +158,49 @@ func formatChangedFileLine(line string, enableColor bool) string {
 	}
 
 	return fmt.Sprintf("%s %s", paint(code, ansiBold+color, enableColor), path)
+}
+
+func promptReviewDecision(
+	in io.Reader,
+	out io.Writer,
+	prompt string,
+	defaultDecision reviewDecisionDefault,
+) (gitmanager.ReviewDecision, error) {
+	if out == nil {
+		out = io.Discard
+	}
+
+	promptText := strings.TrimSpace(prompt)
+	if promptText == "" {
+		promptText = "What should I do with these reviewed changes? [y] commit / [K] keep / [n] restore:"
+	}
+	if _, err := fmt.Fprintf(out, "%s ", promptText); err != nil {
+		return gitmanager.ReviewDecision{}, err
+	}
+
+	line, err := readPromptLine(in)
+	if err != nil {
+		return gitmanager.ReviewDecision{}, err
+	}
+
+	normalized := strings.ToLower(strings.TrimSpace(line))
+	if normalized == "" {
+		switch defaultDecision {
+		case reviewDecisionDefaultReject:
+			return gitmanager.ReviewDecision{}, nil
+		default:
+			return gitmanager.ReviewDecision{KeepChanges: true, Commit: false}, nil
+		}
+	}
+
+	switch normalized {
+	case "y", "yes", "c", "commit":
+		return gitmanager.ReviewDecision{KeepChanges: true, Commit: true}, nil
+	case "k", "keep", "review":
+		return gitmanager.ReviewDecision{KeepChanges: true, Commit: false}, nil
+	case "n", "no", "r", "reject", "restore":
+		return gitmanager.ReviewDecision{}, nil
+	default:
+		return gitmanager.ReviewDecision{}, fmt.Errorf("invalid review decision %q", line)
+	}
 }

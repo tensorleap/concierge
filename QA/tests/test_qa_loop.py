@@ -2421,6 +2421,159 @@ class QALoopTest(unittest.TestCase):
             self.assertIn("Next prompt [y/N]:", transcript)
             self.assertIn("Integration complete", transcript)
 
+    def test_supervisor_loop_does_not_spend_iterations_on_post_wait_auto_polling(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            artifacts_root = tmp / "artifacts"
+            command_cwd = tmp / "fixture"
+            artifacts_root.mkdir()
+            command_cwd.mkdir()
+            fake_docker = write_fake_docker(tmp)
+            container_name = "fixture"
+
+            concierge_script = tmp / "fake_concierge_post_wait_progress.py"
+            concierge_script.write_text(
+                textwrap.dedent(
+                    """
+                    import time
+
+                    print("Continue now? [y/N]: ", end="", flush=True)
+                    input()
+                    print("Running repo check", flush=True)
+                    time.sleep(0.3)
+                    print("Editing repository files", flush=True)
+                    time.sleep(0.3)
+                    print("Integration complete", flush=True)
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            codex_script = tmp / "fake_codex_post_wait_progress.py"
+            codex_script.write_text(
+                textwrap.dedent(
+                    """
+                    import json
+                    import os
+                    import sys
+                    from pathlib import Path
+
+                    args = sys.argv[1:]
+                    output_path = None
+                    for index, value in enumerate(args):
+                        if value == "-o":
+                            output_path = Path(args[index + 1])
+                            break
+                    if output_path is None:
+                        raise SystemExit("missing -o")
+
+                    prompt = sys.stdin.read()
+                    state_path = Path(os.environ["FAKE_CODEX_STATE"])
+                    if state_path.exists():
+                        state = json.loads(state_path.read_text(encoding="utf-8"))
+                    else:
+                        state = {"turn": 0}
+
+                    if "final qualitative QA report" in prompt:
+                        payload = {
+                            "title": "Post-WAIT progress report",
+                            "overall_outcome": "The supervisor let the active session finish after a WAIT decision.",
+                            "loop_state": "STOP_REPORT",
+                            "integration_progress": "The run kept surfacing progress after WAIT and reached completion without burning the control-turn budget.",
+                            "ux_clarity": [],
+                            "product_issues": [],
+                            "agent_interaction_issues": [],
+                            "suggestions": [],
+                            "notable_moments": ["Visible post-WAIT progress did not count as extra control turns."]
+                        }
+                    else:
+                        state["turn"] += 1
+                        if state["turn"] == 1:
+                            payload = {
+                                "action": "SEND_INPUT",
+                                "input_text": "y",
+                                "loop_state": "CONTINUE",
+                                "summary": "Approve the first prompt.",
+                                "issues": [],
+                                "next_focus": "Wait for the repo work to continue."
+                            }
+                        elif "Integration complete" in prompt:
+                            payload = {
+                                "action": "WAIT",
+                                "input_text": "",
+                                "loop_state": "STOP_REPORT",
+                                "summary": "The run completed after the active wait window.",
+                                "issues": [],
+                                "next_focus": "Write the final report."
+                            }
+                        else:
+                            payload = {
+                                "action": "WAIT",
+                                "input_text": "",
+                                "loop_state": "CONTINUE",
+                                "summary": "The session is still making visible progress; keep waiting.",
+                                "issues": [],
+                                "next_focus": "Let the active step finish."
+                            }
+                        state_path.write_text(json.dumps(state), encoding="utf-8")
+
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    output_path.write_text(json.dumps(payload), encoding="utf-8")
+                    print(json.dumps({"type": "thread.started", "thread_id": "fake-thread"}))
+                    print(json.dumps({"type": "item.completed", "item": {"id": "item-1", "type": "agent_message", "text": json.dumps(payload)}}))
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            codex_script.chmod(0o755)
+
+            env = os.environ.copy()
+            env["FAKE_CODEX_STATE"] = str(tmp / "fake_codex_post_wait_progress_state.json")
+            env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
+
+            completed = subprocess.run(
+                qa_loop_command(
+                    artifacts_root=artifacts_root,
+                    fake_docker=fake_docker,
+                    container_name=container_name,
+                    claude_command=f"{sys.executable} {codex_script}",
+                    target_command=[sys.executable, str(concierge_script)],
+                    extra_args=[
+                        "--max-iterations",
+                        "4",
+                        "--read-timeout-seconds",
+                        "0.15",
+                        "--settle-timeout-seconds",
+                        "0.2",
+                    ],
+                ),
+                cwd=str(ROOT),
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                msg=f"stdout:\n{completed.stdout}\n\nstderr:\n{completed.stderr}",
+            )
+
+            run_dir = next((artifacts_root / "runs").iterdir())
+            summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["loop_state"], "STOP_REPORT")
+            self.assertEqual(summary["stop_reason"], "supervisor_stop_report")
+            self.assertEqual(summary["iterations_completed"], 3)
+            self.assertFalse(summary["terminal_stopped_by_supervisor"])
+
+            transcript_path = artifacts_root / "transcripts" / f"{run_dir.name}.terminal.txt"
+            transcript = transcript_path.read_text(encoding="utf-8")
+            self.assertIn("Running repo check", transcript)
+            self.assertIn("Editing repository files", transcript)
+            self.assertIn("Integration complete", transcript)
+
 
 if __name__ == "__main__":
     unittest.main()

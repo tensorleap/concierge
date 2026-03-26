@@ -655,6 +655,65 @@ func TestGuideValidatorSkipsStaleInputEncoderStatusIssueWhenParserAlreadyValidat
 	}
 }
 
+func TestGuideValidatorSkipsStaleGTEncoderStatusIssueWhenParserAlreadyValidatedGT(t *testing.T) {
+	repoRoot := buildGuideValidationRepo(t)
+	validator := &GuideValidator{
+		runtimeRunner: &fakeGuideRuntimeRunner{
+			results: []PythonRuntimeCommandResult{
+				{
+					Command: "poetry run python leap_integration.py",
+					Stdout: strings.Join([]string{
+						"Decorator Name                     | Added to integration",
+						"-------------------------------------------------------",
+						"tensorleap_preprocess              | ✅",
+						"tensorleap_input_encoder           | ✅",
+						"tensorleap_load_model              | ❌",
+						"tensorleap_integration_test        | ❌",
+						"tensorleap_gt_encoder              | ❌",
+						"",
+						"Some mandatory components have not yet been added to the Integration test. Recommended next interface to add is: tensorleap_load_model",
+					}, "\n"),
+				},
+				{
+					Command: "poetry run python -c ...",
+					Stdout: strings.Join([]string{
+						"{",
+						`  "available": true,`,
+						`  "isValid": true,`,
+						`  "payloads": [`,
+						`    {"name":"preprocess","passed":true},`,
+						`    {"name":"image","passed":true,"shape":[640,640,3]},`,
+						`    {"name":"bbs","passed":true,"handlerType":"ground_truth","shape":[100,4]},`,
+						`    {"name":"classes","passed":true,"handlerType":"ground_truth","shape":[100]}`,
+						`  ],`,
+						`  "setup": {`,
+						`    "preprocess":{"trainingLength":4,"validationLength":2},`,
+						`    "inputs":[{"name":"image","channelDim":-1,"shape":[640,640,3]}]`,
+						`  }`,
+						"}",
+					}, "\n"),
+				},
+			},
+			errs: []error{nil, nil},
+		},
+		astAnalyzer: fakeIntegrationTestASTAnalyzer{},
+	}
+
+	result, err := validator.Run(context.Background(), guideValidationSnapshot(t, repoRoot))
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if containsIssueCode(result.Issues, core.IssueCodeGTEncoderMissing) {
+		t.Fatalf("did not expect stale gt_encoder status row to survive parser validation, got %+v", result.Issues)
+	}
+	if !containsIssueCode(result.Issues, core.IssueCodeLoadModelDecoratorMissing) {
+		t.Fatalf("expected load-model issue to remain, got %+v", result.Issues)
+	}
+	if got := result.Summary.Recommendation.Stage; got != "load_model" {
+		t.Fatalf("expected load_model recommendation after stale gt suppression, got %q", got)
+	}
+}
+
 type fakeGuideRuntimeRunner struct {
 	results []PythonRuntimeCommandResult
 	errs    []error

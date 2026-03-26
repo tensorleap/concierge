@@ -819,6 +819,18 @@ func parserClearsInputEncoder(parser core.GuideParserRunSummary) bool {
 	return len(parser.Setup.Inputs) > 0
 }
 
+func parserClearsGTEncoder(parser core.GuideParserRunSummary) bool {
+	if !parser.Available {
+		return false
+	}
+	for _, payload := range parser.Payloads {
+		if payload.Passed && strings.TrimSpace(payload.HandlerType) == string(guideHandlerGT) {
+			return true
+		}
+	}
+	return false
+}
+
 func selectPrimaryBlockingGuideStep(issues []core.Issue) (core.EnsureStep, bool) {
 	blocking := make([]core.Issue, 0, len(issues))
 	for _, issue := range issues {
@@ -856,6 +868,7 @@ func issuesFromGuideStatusRows(local core.GuideLocalRunSummary, parser core.Guid
 	var issues []core.Issue
 	preprocessCleared := parserClearsPreprocess(parser)
 	inputEncoderCleared := parserClearsInputEncoder(parser)
+	gtEncoderCleared := parserClearsGTEncoder(parser)
 	for _, row := range local.StatusRows {
 		if row.Status != "fail" {
 			continue
@@ -872,6 +885,12 @@ func issuesFromGuideStatusRows(local core.GuideLocalRunSummary, parser core.Guid
 			// Work around code-loader#273: the local status table can keep the
 			// generic input-encoder row at fail even after check_dataset() proves
 			// a real input encoder exists and runs successfully.
+			continue
+		}
+		if normalizedName == "tensorleap_gt_encoder" && gtEncoderCleared {
+			// Work around code-loader#273: the local status table can keep the
+			// generic GT-encoder row at fail even after parser payloads prove
+			// a real ground-truth encoder exists and runs successfully.
 			continue
 		}
 		code, ok := guideStatusRowIssueMap[normalizedName]

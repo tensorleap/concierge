@@ -304,6 +304,138 @@ class QALoopTest(unittest.TestCase):
 
             self.assertEqual(fake_client.calls[0]["timeout_seconds"], 120.0)
 
+    def test_request_report_uses_compact_context_without_artifact_tooling(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            artifacts_root = tmp / "artifacts"
+            artifacts_root.mkdir()
+            paths = qa_loop.prepare_run_paths(artifacts_root, "run-123")
+            live_io = qa_loop.LiveIO(transcript_path=paths.full_transcript)
+            paths.turns_jsonl.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "iteration": 1,
+                                "directive": {
+                                    "action": "SEND_INPUT",
+                                    "input_text": "y",
+                                    "loop_state": "CONTINUE",
+                                    "summary": "Accepted the environment repair step.",
+                                    "issues": [],
+                                    "next_focus": "Wait for validation.",
+                                },
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "iteration": 2,
+                                "directive": {
+                                    "action": "WAIT",
+                                    "input_text": "",
+                                    "loop_state": "STOP_FIX",
+                                    "summary": "Validation kept reporting the same missing decorator.",
+                                    "issues": ["The same encoder failure repeated after a commit."],
+                                    "next_focus": "Escalate the loop.",
+                                },
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            class FakeClaudeClient:
+                def __init__(self) -> None:
+                    self.calls: list[dict[str, object]] = []
+
+                def run_structured(self, **kwargs: object) -> dict[str, object]:
+                    self.calls.append(kwargs)
+                    return {
+                        "title": "Synthetic QA Report",
+                        "overall_outcome": "Reached the completion path.",
+                        "loop_state": "STOP_FIX",
+                        "integration_progress": "The report writer completed.",
+                        "ux_clarity": [],
+                        "product_issues": [],
+                        "agent_interaction_issues": [],
+                        "suggestions": [],
+                        "notable_moments": [],
+                    }
+
+            fake_client = FakeClaudeClient()
+            config = qa_loop.LoopConfig(
+                artifacts_root=artifacts_root,
+                docker_bin="docker",
+                host_cwd=tmp,
+                container_name="fixture",
+                container_image=None,
+                command=["/usr/local/bin/concierge", "run"],
+                command_cwd="/workspace",
+                claude_command="claude",
+                claude_model=None,
+                claude_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
+                max_iterations=qa_loop.DEFAULT_MAX_ITERATIONS,
+                max_idle_turns=qa_loop.DEFAULT_MAX_IDLE_TURNS,
+                max_runtime_seconds=qa_loop.DEFAULT_MAX_RUNTIME_SECONDS,
+                read_quiet_seconds=qa_loop.DEFAULT_READ_QUIET_SECONDS,
+                read_timeout_seconds=qa_loop.DEFAULT_READ_TIMEOUT_SECONDS,
+                settle_timeout_seconds=qa_loop.DEFAULT_SETTLE_TIMEOUT_SECONDS,
+                transcript_tail_chars=qa_loop.DEFAULT_TRANSCRIPT_TAIL_CHARS,
+                latest_output_chars=qa_loop.DEFAULT_LATEST_OUTPUT_CHARS,
+                fixture_post_path=None,
+                docker_snapshots_enabled=False,
+                fixture_id="ultralytics",
+                guide_step="pre",
+                ref_under_test="main@abc1234",
+                checkpoint_key="ultralytics:pre",
+                source_kind="variant",
+                source_id="pre",
+            )
+            supervisor = qa_loop.SupervisorLoop(
+                config=config,
+                claude_client=fake_client,
+                role_prompt="role",
+                nudge_prompt="nudge",
+            )
+
+            summary = {
+                "run_id": "run-123",
+                "loop_state": "STOP_FIX",
+                "stop_reason": "supervisor_stop_fix",
+                "iterations_completed": 2,
+                "idle_turns": 0,
+                "blind_first_released": False,
+                "qa_context": {
+                    "fixture_id": "ultralytics",
+                    "guide_step": "pre",
+                    "ref_under_test": "main@abc1234",
+                    "checkpoint_key": "ultralytics:pre",
+                    "source_kind": "variant",
+                    "source_id": "pre",
+                },
+            }
+
+            supervisor._request_report(
+                paths=paths,
+                summary=summary,
+                loop_state="STOP_FIX",
+                live_io=live_io,
+            )
+
+            call = fake_client.calls[0]
+            prompt = str(call["prompt"])
+
+            self.assertEqual(call["allowed_tools"], None)
+            self.assertEqual(list(call["add_dirs"]), [])
+            self.assertIn('"run_id": "run-123"', prompt)
+            self.assertIn("Accepted the environment repair step.", prompt)
+            self.assertIn("Validation kept reporting the same missing decorator.", prompt)
+            self.assertNotIn("Review these files if needed", prompt)
+            self.assertNotIn(str(paths.summary_json), prompt)
+            self.assertNotIn(str(paths.terminal_clean), prompt)
+
     def test_supervisor_loop_writes_transcript_and_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)

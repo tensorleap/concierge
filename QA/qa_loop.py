@@ -284,6 +284,7 @@ class ClaudeClient:
         event_log_path: Path,
         stderr_log_path: Path,
         add_dirs: Iterable[Path] = (),
+        allowed_tools: str | None = "Read,Grep,Glob,LS",
         timeout_seconds: float | None = None,
         live_io: LiveIO | None = None,
         session_label: str = "claude",
@@ -311,10 +312,10 @@ class ClaudeClient:
             schema_text,
             "--permission-mode",
             "bypassPermissions",
-            "--allowedTools",
-            "Read,Grep,Glob,LS",
             "--no-session-persistence",
         ]
+        if allowed_tools:
+            cmd.extend(["--allowedTools", allowed_tools])
         if self.model:
             cmd.extend(["--model", self.model])
         for path in unique_paths([self.artifacts_root, *add_dirs]):
@@ -1207,27 +1208,34 @@ class SupervisorLoop:
         loop_state: str,
         live_io: LiveIO,
     ) -> QAReport:
+        context = build_report_context(
+            summary=summary,
+            turns=load_jsonl(paths.turns_jsonl),
+            loop_state=loop_state,
+        )
         prompt = textwrap.dedent(
             f"""
             You are writing the final qualitative QA report for a Concierge terminal session.
-            Use the saved artifacts instead of asking the user questions.
+            Use only the structured context below. Do not use tools or external files.
+            Be concise:
+            - `integration_progress` should be one short paragraph.
+            - Each list should contain at most 4 items.
+            - Each item should be one sentence.
+            Return only JSON matching the provided schema with exactly these keys:
+            - `title`
+            - `overall_outcome`
+            - `loop_state`
+            - `integration_progress`
+            - `ux_clarity`
+            - `product_issues`
+            - `agent_interaction_issues`
+            - `suggestions`
+            - `notable_moments`
 
-            Review these files if needed:
-            - Summary JSON: {paths.summary_json}
-            - Turn log: {paths.turns_jsonl}
-            - Clean terminal transcript: {paths.terminal_clean}
-            - Raw terminal transcript: {paths.terminal_raw}
-            - Interaction log: {paths.interaction_log}
-
-            Focus on integration progress, UX clarity, product issues, agent interaction issues, and concrete suggestions.
-            Return only JSON matching the provided schema.
-
-            Run summary:
+            Context:
             ```json
-            {json.dumps(summary, indent=2)}
+            {json.dumps(context, indent=2)}
             ```
-
-            Final loop state: {loop_state}
             """
         ).strip()
         report_base = paths.claude_dir / "final-report"
@@ -1237,7 +1245,8 @@ class SupervisorLoop:
             output_path=report_base.with_suffix(".output.json"),
             event_log_path=report_base.with_suffix(".jsonl"),
             stderr_log_path=report_base.with_suffix(".stderr.log"),
-            add_dirs=qa_add_dirs(self.config.fixture_post_path if summary.get("blind_first_released") else None),
+            add_dirs=(),
+            allowed_tools=None,
             timeout_seconds=min(self.config.claude_timeout_seconds, DEFAULT_REPORT_TIMEOUT_SECONDS),
             live_io=live_io,
             session_label="claude-final-report",
@@ -1457,6 +1466,52 @@ def qa_add_dirs(fixture_post_path: Path | None) -> list[Path]:
     if fixture_post_path is not None:
         add_dirs.append(fixture_post_path if fixture_post_path.is_dir() else fixture_post_path.parent)
     return add_dirs
+
+
+def load_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+
+    records: list[dict[str, Any]] = []
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        payload = json.loads(line)
+        if isinstance(payload, dict):
+            records.append(payload)
+    return records
+
+
+def build_report_context(*, summary: dict[str, Any], turns: list[dict[str, Any]], loop_state: str) -> dict[str, Any]:
+    qa_context = summary.get("qa_context", {})
+    if not isinstance(qa_context, dict):
+        qa_context = {}
+
+    return {
+        "run": {
+            "run_id": str(summary.get("run_id", "")).strip(),
+            "fixture_id": str(qa_context.get("fixture_id", "")).strip(),
+            "guide_step": str(qa_context.get("guide_step", "")).strip(),
+            "ref_under_test": str(qa_context.get("ref_under_test", "")).strip(),
+            "loop_state": loop_state,
+            "stop_reason": str(summary.get("stop_reason", "")).strip(),
+            "iterations_completed": int(summary.get("iterations_completed", 0) or 0),
+            "idle_turns": int(summary.get("idle_turns", 0) or 0),
+        },
+        "turns": [
+            {
+                "iteration": int(turn.get("iteration", 0) or 0),
+                "action": str(directive.get("action", "")).strip(),
+                "loop_state": str(directive.get("loop_state", "")).strip(),
+                "summary": str(directive.get("summary", "")).strip(),
+                "issues": clean_string_list(directive.get("issues", [])),
+                "next_focus": str(directive.get("next_focus", "")).strip(),
+            }
+            for turn in turns
+            for directive in [turn.get("directive", {}) if isinstance(turn.get("directive", {}), dict) else {}]
+        ],
+    }
 
 
 def docker_tag_component(value: str) -> str:
@@ -1938,8 +1993,8 @@ def run_streaming_subprocess(
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait()
-        stdout_thread.join(timeout=0.5)
-        stderr_thread.join(timeout=0.5)
+        stdout_thread.join(timeout=2.0)
+        stderr_thread.join(timeout=2.0)
         raise subprocess.TimeoutExpired(
             cmd=cmd,
             timeout=timeout_seconds,
@@ -1947,8 +2002,8 @@ def run_streaming_subprocess(
             stderr="".join(stderr_chunks),
         )
 
-    stdout_thread.join(timeout=0.5)
-    stderr_thread.join(timeout=0.5)
+    stdout_thread.join(timeout=2.0)
+    stderr_thread.join(timeout=2.0)
 
     return {
         "returncode": returncode,

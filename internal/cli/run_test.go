@@ -202,7 +202,7 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	repo := initRunTestRepo(t, false)
 	withWorkingDir(t, repo)
 
-	output, err := executeCLIWithInput(t, "y\ny\ny\n", "run", "--max-iterations=1")
+	output, err := executeCLIWithInput(t, "y\ny\n", "run", "--max-iterations=1")
 	if err == nil {
 		t.Fatal("expected max-iterations stop to return error")
 	}
@@ -214,6 +214,9 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	}
 	if !strings.Contains(output, "Missing integration step: leap.yaml should be present and valid") {
 		t.Fatalf("expected missing-step heading in pre-change prompt, got output: %q", output)
+	}
+	if !strings.Contains(output, "After I attempt this step, I'll show you the exact diff so you can choose whether to commit it, keep it for local review, or restore it.") {
+		t.Fatalf("expected approval rationale describing the later diff review decision, got output: %q", output)
 	}
 	if !strings.Contains(output, "Proposed Changes") {
 		t.Fatalf("expected styled change review heading, got output: %q", output)
@@ -227,20 +230,20 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	if !strings.Contains(output, "Patch:") {
 		t.Fatalf("expected patch section, got output: %q", output)
 	}
-	if !strings.Contains(output, "Keep these changes in your working tree for local review? [Y/n]:") {
-		t.Fatalf("expected keep-changes prompt, got output: %q", output)
-	}
-	if !strings.Contains(output, "Create a commit for these reviewed changes now? [y/N]:") {
-		t.Fatalf("expected explicit commit prompt, got output: %q", output)
+	if !strings.Contains(output, "What should I do with these reviewed changes? [y] commit / [K] keep for local review / [n] restore:") {
+		t.Fatalf("expected unified review decision prompt, got output: %q", output)
 	}
 	if strings.Count(output, "Continue now? [y/N]:") != 1 {
 		t.Fatalf("expected exactly one pre-change approval prompt, got output: %q", output)
 	}
-	if strings.Count(output, "Keep these changes in your working tree for local review? [Y/n]:") != 1 {
-		t.Fatalf("expected exactly one keep-changes prompt, got output: %q", output)
+	if strings.Count(output, "What should I do with these reviewed changes? [y] commit / [K] keep for local review / [n] restore:") != 1 {
+		t.Fatalf("expected exactly one unified review decision prompt, got output: %q", output)
 	}
-	if strings.Count(output, "Create a commit for these reviewed changes now? [y/N]:") != 1 {
-		t.Fatalf("expected exactly one explicit commit prompt, got output: %q", output)
+	if strings.Contains(output, "Keep these changes in your working tree for local review? [Y/n]:") {
+		t.Fatalf("did not expect legacy keep-changes prompt, got output: %q", output)
+	}
+	if strings.Contains(output, "Create a commit for these reviewed changes now? [y/N]:") {
+		t.Fatalf("did not expect legacy commit prompt, got output: %q", output)
 	}
 	if strings.Contains(output, "Step:") {
 		t.Fatalf("expected internal step label to be omitted, got output: %q", output)
@@ -255,20 +258,20 @@ func TestRunFlowPromptsBeforeCommit(t *testing.T) {
 	}
 }
 
-func TestRunDeclineCommitApprovalKeepsChangesForLocalReview(t *testing.T) {
+func TestRunKeepsReviewedChangesForLocalReview(t *testing.T) {
 	disableHarness(t)
 	repo := initRunTestRepo(t, false)
 	withWorkingDir(t, repo)
 
-	output, err := executeCLIWithInput(t, "y\ny\nn\n", "run", "--max-iterations=1")
+	output, err := executeCLIWithInput(t, "y\nk\n", "run", "--max-iterations=1")
 	if err != nil {
 		t.Fatalf("expected clean handoff after declining commit, got err=%v output=%q", err, output)
 	}
-	if !strings.Contains(output, "Keep these changes in your working tree for local review? [Y/n]:") {
-		t.Fatalf("expected keep-changes prompt, got output: %q", output)
+	if !strings.Contains(output, "What should I do with these reviewed changes? [y] commit / [K] keep for local review / [n] restore:") {
+		t.Fatalf("expected unified review decision prompt, got output: %q", output)
 	}
-	if !strings.Contains(output, "Create a commit for these reviewed changes now? [y/N]:") {
-		t.Fatalf("expected explicit commit prompt, got output: %q", output)
+	if strings.Contains(output, "Create a commit for these reviewed changes now? [y/N]:") {
+		t.Fatalf("did not expect legacy commit prompt, got output: %q", output)
 	}
 	if !strings.Contains(output, "Changes are in your working tree for local review. After reviewing or committing them, rerun `concierge run`.") {
 		t.Fatalf("expected local-review handoff, got output: %q", output)
@@ -349,6 +352,9 @@ func TestStepApprovalMessageUsesMissingStepContext(t *testing.T) {
 	}
 	if strings.Contains(message, "(No changes will be made before approval.)") {
 		t.Fatalf("expected redundant approval note to be removed, got message: %q", message)
+	}
+	if !strings.Contains(message, "After I attempt this step, I'll show you the exact diff so you can choose whether to commit it, keep it for local review, or restore it.") {
+		t.Fatalf("expected prompt to explain the later diff review decision, got message: %q", message)
 	}
 	if !strings.Contains(message, "I can continue by addressing this missing step now.") {
 		t.Fatalf("expected journey-style continuation prompt, got message: %q", message)
@@ -531,8 +537,8 @@ func TestRunDeclineStepApprovalLeavesRepoUnchanged(t *testing.T) {
 	if !strings.Contains(output, "No changes were made because approval was not granted. Rerun `concierge run` when you're ready to continue.") {
 		t.Fatalf("expected clean approval-rejected handoff, got output: %q", output)
 	}
-	if strings.Contains(output, "Keep these changes in your working tree for local review? [Y/n]:") {
-		t.Fatalf("did not expect commit approval prompt after declining pre-change prompt, got output: %q", output)
+	if strings.Contains(output, "What should I do with these reviewed changes? [y] commit / [K] keep for local review / [n] restore:") {
+		t.Fatalf("did not expect review decision prompt after declining pre-change prompt, got output: %q", output)
 	}
 
 	status := runGit(t, repo, "status", "--porcelain")
@@ -599,8 +605,8 @@ func TestRunRepairsDeclaredCodeLoaderMissingWithoutCommitPrompt(t *testing.T) {
 	if !strings.Contains(output, "You > Continue now? [y/N]:") {
 		t.Fatalf("expected runtime repair approval prompt, got output: %q", output)
 	}
-	if strings.Contains(output, "Keep these changes in your working tree for local review? [Y/n]:") {
-		t.Fatalf("did not expect commit approval prompt for environment-only runtime repair, got output: %q", output)
+	if strings.Contains(output, "What should I do with these reviewed changes? [y] commit / [K] keep for local review / [n] restore:") {
+		t.Fatalf("did not expect review decision prompt for environment-only runtime repair, got output: %q", output)
 	}
 
 	status := runGit(t, repo, "status", "--porcelain")

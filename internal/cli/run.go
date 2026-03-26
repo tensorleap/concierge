@@ -527,6 +527,10 @@ func stepApprovalMessage(
 	} else {
 		checklist = append(checklist, "I can continue with this step now.")
 	}
+	checklist = append(
+		checklist,
+		"After I attempt this step, I'll show you the exact diff so you can choose whether to commit it, keep it for local review, or restore it.",
+	)
 	return strings.Join(checklist, "\n")
 }
 

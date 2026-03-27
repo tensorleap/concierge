@@ -164,6 +164,40 @@ func TestRunnerRunWritesTranscript(t *testing.T) {
 	}
 }
 
+func TestRunnerStreamingErrorIncludesTranscriptAndStderrDetails(t *testing.T) {
+	repoRoot := t.TempDir()
+	binDir := t.TempDir()
+	installMockClaude(t, binDir, "#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1-}\" == \"--help\" ]]; then\ncat <<'EOF'\n--output-format stream-json\n--include-partial-messages\nEOF\nexit 0\nfi\necho '{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"planning preprocess\"}]}}'\necho 'fatal preprocess failure' >&2\nexit 1\n")
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	transcriptPath := filepath.Join(repoRoot, ".concierge", "evidence", "snapshot-error", "agent.transcript.log")
+	rawStreamPath := filepath.Join(filepath.Dir(transcriptPath), "agent.stream.jsonl")
+	runner := NewRunner()
+	task := validAgentTask(repoRoot, transcriptPath)
+
+	_, err := runner.Run(context.Background(), task)
+	if err == nil {
+		t.Fatal("expected streaming run to fail")
+	}
+	if !strings.Contains(err.Error(), "fatal preprocess failure") {
+		t.Fatalf("expected stderr detail in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), transcriptPath) {
+		t.Fatalf("expected transcript path in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), rawStreamPath) {
+		t.Fatalf("expected raw stream path in error, got: %v", err)
+	}
+
+	raw, readErr := os.ReadFile(transcriptPath)
+	if readErr != nil {
+		t.Fatalf("ReadFile failed for transcript: %v", readErr)
+	}
+	if !strings.Contains(string(raw), "Run error: exit status 1") {
+		t.Fatalf("expected transcript to record wait error, got: %q", string(raw))
+	}
+}
+
 func TestRunnerUsesSanitizedRepoViewWithoutDotConcierge(t *testing.T) {
 	repoRoot := t.TempDir()
 	binDir := t.TempDir()

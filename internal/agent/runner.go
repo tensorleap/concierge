@@ -30,6 +30,7 @@ const (
 	heartbeatInterval    = 1 * time.Second
 	transcriptFileMode   = 0o644
 	transcriptFolderMode = 0o755
+	stderrTailLimit      = 8
 )
 
 var (
@@ -288,7 +289,11 @@ func (r *Runner) runStreaming(
 	stream.finish(waitErr)
 
 	if waitErr != nil && !interrupted.Load() {
-		return AgentResult{}, core.WrapError(core.KindUnknown, "agent.runner.run", waitErr)
+		return AgentResult{}, core.WrapError(
+			core.KindUnknown,
+			"agent.runner.run",
+			runnerExecutionError(waitErr, transcriptPath, rawStreamPath, stream.stderrSummary()),
+		)
 	}
 
 	lastActivity := stream.lastActivityAt()
@@ -439,6 +444,23 @@ func writeTranscript(path, command string, args []string, systemPrompt, taskProm
 	return os.WriteFile(path, []byte(b.String()), transcriptFileMode)
 }
 
+func runnerExecutionError(waitErr error, transcriptPath, rawStreamPath, stderrSummary string) error {
+	details := make([]string, 0, 3)
+	if stderrText := strings.TrimSpace(stderrSummary); stderrText != "" {
+		details = append(details, "stderr: "+stderrText)
+	}
+	if transcriptText := strings.TrimSpace(transcriptPath); transcriptText != "" {
+		details = append(details, "transcript: "+transcriptText)
+	}
+	if rawStreamText := strings.TrimSpace(rawStreamPath); rawStreamText != "" {
+		details = append(details, "raw stream: "+rawStreamText)
+	}
+	if len(details) == 0 {
+		return waitErr
+	}
+	return fmt.Errorf("%w (%s)", waitErr, strings.Join(details, "; "))
+}
+
 type claudeStream struct {
 	transcript *os.File
 	raw        *os.File
@@ -450,6 +472,7 @@ type claudeStream struct {
 	currentTool    string
 	currentDetail  string
 	currentMessage strings.Builder
+	stderrTail     []string
 }
 
 func newClaudeStream(transcript, raw *os.File, observer observe.Sink) *claudeStream {
@@ -481,6 +504,7 @@ func (s *claudeStream) consumeStderr(reader io.Reader) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		s.recordActivity()
+		s.recordStderr(line)
 		s.writeTranscriptLine("[stderr] " + line)
 		s.emit(observe.Event{Kind: observe.EventAgentStderr, Detail: line})
 	}
@@ -573,6 +597,25 @@ func (s *claudeStream) finish(waitErr error) {
 	if waitErr != nil {
 		s.writeTranscriptLine("Run error: " + waitErr.Error())
 	}
+}
+
+func (s *claudeStream) recordStderr(line string) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stderrTail = append(s.stderrTail, trimmed)
+	if len(s.stderrTail) > stderrTailLimit {
+		s.stderrTail = append([]string(nil), s.stderrTail[len(s.stderrTail)-stderrTailLimit:]...)
+	}
+}
+
+func (s *claudeStream) stderrSummary() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return strings.Join(s.stderrTail, " | ")
 }
 
 func (s *claudeStream) recordActivity() {

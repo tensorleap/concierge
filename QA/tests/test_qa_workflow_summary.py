@@ -41,6 +41,7 @@ class QAWorkflowSummaryTest(unittest.TestCase):
             self.assertIn("Checked repository layout.", markdown)
             self.assertIn("Repaired the root-level `leap.yaml` entrypoint.", markdown)
             self.assertIn("Validation failed at preprocess after the rerun.", markdown)
+            self.assertIn("No canonical step trajectory was exported for this run.", markdown)
             self.assertIn("Final Observed Step", markdown)
             self.assertIn("workspace/leap.yaml", markdown)
             self.assertIn("workspace/leap_integration.py", markdown)
@@ -77,7 +78,7 @@ class QAWorkflowSummaryTest(unittest.TestCase):
             self.assertIn("### Timeline", completed.stdout)
             self.assertIn("### Exported Evidence", completed.stdout)
 
-    def test_build_workflow_summary_markdown_renders_observed_step_trajectory(self) -> None:
+    def test_build_workflow_summary_markdown_renders_ultralytics_pre_rerun_trajectory(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             repo_root = Path(tmpdir)
             qa_root = repo_root / "QA"
@@ -102,6 +103,36 @@ class QAWorkflowSummaryTest(unittest.TestCase):
                     "ensure.ground_truth_encoders",
                     "ensure.model_acquisition",
                 ],
+                turns=[
+                    {
+                        "iteration": 1,
+                        "directive": {
+                            "summary": "Accepted the leap.yaml scaffold review.",
+                            "action": "SEND_INPUT",
+                            "loop_state": "CONTINUE",
+                        },
+                    },
+                    {
+                        "iteration": 2,
+                        "directive": {
+                            "summary": "Reran `concierge run` after the review-only stop.",
+                            "action": "RUN_COMMAND",
+                            "loop_state": "CONTINUE",
+                        },
+                    },
+                    {
+                        "iteration": 3,
+                        "directive": {
+                            "summary": "Validation advanced to ground-truth encoders after the rerun.",
+                            "action": "WAIT",
+                            "loop_state": "STOP_REPORT",
+                        },
+                    },
+                ],
+                report_overrides={
+                    "overall_outcome": "The rerun advanced through downstream ultralytics wiring without snapping back to early setup steps.",
+                    "integration_progress": "The rerun progressed from the integration scaffold into encoder and model work.",
+                },
             )
 
             markdown = build_workflow_summary_markdown(
@@ -117,6 +148,83 @@ class QAWorkflowSummaryTest(unittest.TestCase):
                 "ensure.python_runtime -> ensure.leap_yaml -> ensure.integration_test_contract -> ensure.preprocess_contract -> ensure.input_encoders -> ensure.ground_truth_encoders -> ensure.model_acquisition",
                 markdown,
             )
+            self.assertIn("Reran `concierge run` after the review-only stop.", markdown)
+            self.assertIn("No early-step fallback detected after downstream progress.", markdown)
+
+    def test_build_workflow_summary_markdown_flags_ultralytics_pre_fallback_after_rerun(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            qa_root = repo_root / "QA"
+            run_id = "ultralytics-pre-fallback-123"
+            self._write_run_artifacts(
+                qa_root,
+                run_id,
+                qa_context={
+                    "fixture_id": "ultralytics",
+                    "guide_step": "pre",
+                    "ref_under_test": "feature/issue-145@def5678",
+                    "checkpoint_key": "ultralytics:pre",
+                    "source_kind": "variant",
+                    "source_id": "pre",
+                },
+                observed_steps=[
+                    "ensure.python_runtime",
+                    "ensure.leap_yaml",
+                    "ensure.integration_test_contract",
+                    "ensure.preprocess_contract",
+                    "ensure.input_encoders",
+                    "ensure.ground_truth_encoders",
+                    "ensure.preprocess_contract",
+                ],
+                turns=[
+                    {
+                        "iteration": 1,
+                        "directive": {
+                            "summary": "Accepted the leap.yaml scaffold review.",
+                            "action": "SEND_INPUT",
+                            "loop_state": "CONTINUE",
+                        },
+                    },
+                    {
+                        "iteration": 2,
+                        "directive": {
+                            "summary": "Reran `concierge run` after the review-only stop.",
+                            "action": "RUN_COMMAND",
+                            "loop_state": "CONTINUE",
+                        },
+                    },
+                    {
+                        "iteration": 3,
+                        "directive": {
+                            "summary": "Validation snapped back to dataset preprocessing after downstream encoder work.",
+                            "action": "WAIT",
+                            "loop_state": "STOP_FIX",
+                        },
+                    },
+                ],
+                report_overrides={
+                    "overall_outcome": "The rerun regressed back to an early preprocessing blocker after downstream progress.",
+                    "integration_progress": "The flow reached downstream encoder work and then resurfaced preprocess again.",
+                    "product_issues": ["The rerun snapped back to `ensure.preprocess_contract` after downstream progress."],
+                },
+            )
+
+            markdown = build_workflow_summary_markdown(
+                repo_root=repo_root,
+                artifacts_root=qa_root,
+                run_id=run_id,
+                ref_under_test="feature/issue-145@def5678",
+                artifact_name=f"qa-loop-{run_id}",
+            )
+
+            self.assertIn(
+                "Early-step fallback detected: ensure.preprocess_contract after downstream progress at ensure.ground_truth_encoders.",
+                markdown,
+            )
+            self.assertIn(
+                "ensure.python_runtime -> ensure.leap_yaml -> ensure.integration_test_contract -> ensure.preprocess_contract -> ensure.input_encoders -> ensure.ground_truth_encoders -> ensure.preprocess_contract",
+                markdown,
+            )
 
     def _write_run_artifacts(
         self,
@@ -125,6 +233,8 @@ class QAWorkflowSummaryTest(unittest.TestCase):
         *,
         qa_context: dict[str, str] | None = None,
         observed_steps: list[str] | None = None,
+        turns: list[dict[str, object]] | None = None,
+        report_overrides: dict[str, object] | None = None,
     ) -> None:
         run_dir = qa_root / "runs" / run_id
         report_dir = qa_root / "reports"
@@ -169,10 +279,12 @@ class QAWorkflowSummaryTest(unittest.TestCase):
             "suggestions": ["Summarize the repaired step and blocked step directly in the run page."],
             "notable_moments": ["Concierge reran after accepting the repaired `leap.yaml` diff."],
         }
+        if report_overrides:
+            report.update(report_overrides)
         (report_dir / f"{run_id}.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         (report_dir / f"{run_id}.md").write_text("# Synthetic QA summary\n", encoding="utf-8")
 
-        turns = [
+        turns = turns or [
             {
                 "iteration": 1,
                 "directive": {

@@ -80,6 +80,33 @@ def load_observed_step_trajectory(run_root: Path) -> list[str]:
     return observed_steps
 
 
+def describe_trajectory_regression(observed_steps: list[str]) -> str:
+    early_steps = {
+        "ensure.leap_yaml",
+        "ensure.integration_script",
+        "ensure.integration_test_contract",
+        "ensure.preprocess_contract",
+    }
+    downstream_steps = {
+        "ensure.input_encoders",
+        "ensure.ground_truth_encoders",
+        "ensure.model_acquisition",
+        "ensure.model_contract",
+        "ensure.integration_test_wiring",
+    }
+
+    latest_downstream = ""
+    for step_id in observed_steps:
+        if step_id in downstream_steps:
+            latest_downstream = step_id
+            continue
+        if latest_downstream and step_id in early_steps:
+            return f"Early-step fallback detected: {step_id} after downstream progress at {latest_downstream}."
+    if observed_steps:
+        return "No early-step fallback detected after downstream progress."
+    return "No canonical step trajectory was exported for this run."
+
+
 def render_bullets(items: list[str]) -> list[str]:
     return [f"- {item}" for item in items] if items else ["- None recorded."]
 
@@ -115,6 +142,7 @@ def build_workflow_summary_markdown(
     report = load_json(report_json_path) if report_json_path.is_file() else {}
     turn_summaries = load_turn_summaries(turns_json_path)
     observed_trajectory = load_observed_step_trajectory(summary_path.parent)
+    trajectory_assessment = describe_trajectory_regression(observed_trajectory)
     final_observed_step = turn_summaries[-1][1] if turn_summaries else clean_text(report.get("integration_progress", ""))
     key_issues = clean_items(report.get("product_issues", []))[:3] + clean_items(report.get("agent_interaction_issues", []))[:2]
 
@@ -142,6 +170,9 @@ def build_workflow_summary_markdown(
         "",
         "### Observed Step Trajectory",
         " -> ".join(observed_trajectory) if observed_trajectory else "No canonical step trajectory was exported for this run.",
+        "",
+        "### Trajectory Assessment",
+        trajectory_assessment,
         "",
         "### Final Observed Step",
         final_observed_step or "No final step summary was recorded.",

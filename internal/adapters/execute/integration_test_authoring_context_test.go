@@ -56,3 +56,35 @@ func TestBuildIntegrationTestAuthoringRecommendationFallsBackToGenericRationale(
 		t.Fatal("expected default constraints")
 	}
 }
+
+func TestBuildIntegrationTestAuthoringRecommendationWarnsAgainstManualBatchingAndRuntimeCalls(t *testing.T) {
+	recommendation, err := BuildIntegrationTestAuthoringRecommendation(core.WorkspaceSnapshot{}, core.IntegrationStatus{
+		Issues: []core.Issue{
+			{
+				Code:     core.IssueCodeIntegrationTestManualBatchManipulation,
+				Message:  "Tensorleap adds the batch dimension automatically inside integration_test",
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopeIntegrationTest,
+				Location: &core.IssueLocation{Symbol: "manual_batching"},
+			},
+			{
+				Code:     core.IssueCodeIntegrationTestIllegalBodyLogic,
+				Message:  "integration_test should not call external-library transforms directly; move that logic into decorated interfaces",
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopeIntegrationTest,
+				Location: &core.IssueLocation{Symbol: "body_logic"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildIntegrationTestAuthoringRecommendation returned error: %v", err)
+	}
+
+	joined := strings.Join(recommendation.Constraints, " | ")
+	if !strings.Contains(joined, "np.expand_dims") || !strings.Contains(joined, "model.run") {
+		t.Fatalf("expected explicit runtime-call constraints, got %+v", recommendation.Constraints)
+	}
+	if !strings.Contains(joined, "Reject raw tensor/session logic") {
+		t.Fatalf("expected explicit illegal-body guidance, got %+v", recommendation.Constraints)
+	}
+}

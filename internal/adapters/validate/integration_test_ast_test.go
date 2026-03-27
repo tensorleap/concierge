@@ -87,6 +87,49 @@ func TestIntegrationTestASTAnalyzerFlagsHelperCallsDatasetAccessAndManualBatchin
 	}
 }
 
+func TestIntegrationTestASTAnalyzerFlagsTempMappingTransposePattern(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 is required for AST analyzer tests")
+	}
+
+	repoRoot := t.TempDir()
+	writeGuideFixtureFile(t, repoRoot, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeGuideFixtureFile(t, repoRoot, "leap_integration.py", strings.Join([]string{
+		"import numpy as np",
+		"",
+		"@tensorleap_input_encoder(name='image')",
+		"def image_input(sample_id, preprocess_response):",
+		"    return sample_id",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    return None",
+		"",
+		"@tensorleap_integration_test()",
+		"def integration_test(sample_id, preprocess_response):",
+		"    image = image_input(sample_id, preprocess_response)",
+		"    model = load_model()",
+		"    input_name = model.get_inputs()[0].name",
+		"    image_input = np.expand_dims(image.transpose(2, 0, 1), axis=0)",
+		"    return model.run(None, {input_name: image_input})",
+	}, "\n"))
+
+	analyzer := &IntegrationTestASTAnalyzer{runtimeRunner: scriptRuntimeRunner(t)}
+	result, err := analyzer.Analyze(context.Background(), guideValidationSnapshot(t, repoRoot))
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+
+	if !containsIssueCode(result.Issues, core.IssueCodeIntegrationTestManualBatchManipulation) {
+		t.Fatalf("expected manual-batch issue, got %+v", result.Issues)
+	}
+	if !containsIssueCode(result.Issues, core.IssueCodeIntegrationTestIllegalBodyLogic) {
+		t.Fatalf("expected illegal-body-logic issue, got %+v", result.Issues)
+	}
+	assertContainsIssueMessage(t, result.Issues, "batch dimension automatically")
+	assertContainsIssueMessage(t, result.Issues, "external-library transforms directly")
+}
+
 func TestIntegrationTestASTAnalyzerAllowsPredictionIndexing(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 is required for AST analyzer tests")

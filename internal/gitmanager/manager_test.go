@@ -355,6 +355,72 @@ func TestGitManagerBlocksArtifactOnlyDatasetDiffsBeforeApproval(t *testing.T) {
 	}
 }
 
+func TestGitManagerBlocksIllegalIntegrationTestPatchBeforeApproval(t *testing.T) {
+	repo := initGitRepo(t)
+	runGit(t, repo, "checkout", "-B", "feature/test")
+	writeFile(t, filepath.Join(repo, "leap_integration.py"), "bad integration test patch\n")
+
+	approvalCalled := false
+	manager := NewManager(func(step core.EnsureStep, review ChangeReview) (ReviewDecision, error) {
+		_ = step
+		_ = review
+		approvalCalled = true
+		return ReviewDecision{KeepChanges: true, Commit: false}, nil
+	})
+	manager.integrationTestPatchIssues = func(ctx context.Context, snapshot core.WorkspaceSnapshot) ([]core.Issue, error) {
+		_ = ctx
+		if snapshot.Repository.Root != repo {
+			t.Fatalf("expected guard to receive repo root %q, got %q", repo, snapshot.Repository.Root)
+		}
+		return []core.Issue{
+			{
+				Code:     core.IssueCodeIntegrationTestManualBatchManipulation,
+				Message:  "Tensorleap adds the batch dimension automatically inside integration_test",
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopeIntegrationTest,
+			},
+			{
+				Code:     core.IssueCodeIntegrationTestIllegalBodyLogic,
+				Message:  "integration_test should not call external-library transforms directly; move that logic into decorated interfaces",
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopeIntegrationTest,
+			},
+		}, nil
+	}
+
+	decision, err := manager.Handle(
+		context.Background(),
+		core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: repo}},
+		executionResult(core.EnsureStepIntegrationTestWiring),
+	)
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if approvalCalled {
+		t.Fatal("expected invalid integration_test patch to be blocked before approval")
+	}
+	if decision.FinalResult.Applied {
+		t.Fatalf("expected blocked patch to restore changes, got %+v", decision.FinalResult)
+	}
+	if !strings.Contains(decision.FinalResult.Summary, "invalid integration_test patch") {
+		t.Fatalf("expected invalid-patch summary, got %q", decision.FinalResult.Summary)
+	}
+	if !hasEvidence(decision.Evidence, "git.integration_test_guard", "rejected") {
+		t.Fatalf("expected integration-test guard evidence, got %+v", decision.Evidence)
+	}
+	if !hasEvidence(decision.Evidence, "git.review_action", "blocked_invalid_integration_test_patch") {
+		t.Fatalf("expected blocked review action evidence, got %+v", decision.Evidence)
+	}
+	if !containsNoteSubstring(decision.Notes, "Rejected findings") {
+		t.Fatalf("expected rejection notes, got %v", decision.Notes)
+	}
+
+	status := runGit(t, repo, "status", "--porcelain")
+	if strings.TrimSpace(status) != "" {
+		t.Fatalf("expected clean worktree after blocked invalid patch, got %q", status)
+	}
+}
+
 func executionResult(stepID core.EnsureStepID) core.ExecutionResult {
 	step, _ := core.EnsureStepByID(stepID)
 	return core.ExecutionResult{

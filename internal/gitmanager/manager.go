@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	validateadapter "github.com/tensorleap/concierge/internal/adapters/validate"
 	"github.com/tensorleap/concierge/internal/core"
 )
 
@@ -38,10 +39,11 @@ type ManagerOptions struct {
 
 // Manager enforces branch safety and audited commit/reject flow.
 type Manager struct {
-	approve    ApprovalFunc
-	runGit     func(ctx context.Context, dir string, args ...string) (string, error)
-	removePath func(path string) error
-	options    ManagerOptions
+	approve                    ApprovalFunc
+	runGit                     func(ctx context.Context, dir string, args ...string) (string, error)
+	removePath                 func(path string) error
+	options                    ManagerOptions
+	integrationTestPatchIssues func(ctx context.Context, snapshot core.WorkspaceSnapshot) ([]core.Issue, error)
 }
 
 // NewManager creates a git manager with approval callback.
@@ -60,10 +62,11 @@ func NewManager(approve ApprovalFunc, opts ...ManagerOptions) *Manager {
 	}
 
 	return &Manager{
-		approve:    approve,
-		runGit:     runGitCombined,
-		removePath: os.RemoveAll,
-		options:    options,
+		approve:                    approve,
+		runGit:                     runGitCombined,
+		removePath:                 os.RemoveAll,
+		options:                    options,
+		integrationTestPatchIssues: detectBlockedIntegrationTestPatchIssues,
 	}
 }
 
@@ -98,6 +101,35 @@ func (m *Manager) Handle(ctx context.Context, snapshot core.WorkspaceSnapshot, r
 			"gitmanager.handle.protected_branch",
 			"refusing to commit on protected branch main/master",
 		)
+	}
+
+	blockedIntegrationIssues, err := m.blockedIntegrationTestPatchIssues(ctx, snapshot, result)
+	if err != nil {
+		return core.GitDecision{}, core.WrapError(core.KindUnknown, "gitmanager.handle.integration_test_guard", err)
+	}
+	if len(blockedIntegrationIssues) > 0 {
+		if err := m.restoreWorkingTree(ctx, repoRoot); err != nil {
+			return core.GitDecision{}, err
+		}
+		decision.FinalResult = core.ExecutionResult{
+			Step:     result.Step,
+			Applied:  false,
+			Summary:  "invalid integration_test patch rejected and restored",
+			Evidence: append([]core.EvidenceItem(nil), result.Evidence...),
+		}
+		decision.Notes = append(decision.Notes,
+			"Concierge rejected this integration_test patch because it introduced non-declarative body logic that breaks mapping-mode execution.",
+		)
+		if messages := joinIssueMessages(blockedIntegrationIssues); messages != "" {
+			decision.Notes = append(decision.Notes, "Rejected findings:\n"+messages)
+		}
+		decision.Evidence = append(decision.Evidence,
+			core.EvidenceItem{Name: "git.integration_test_guard", Value: "rejected"},
+			core.EvidenceItem{Name: "git.integration_test_guard_issue_codes", Value: joinIssueCodes(blockedIntegrationIssues)},
+			core.EvidenceItem{Name: "git.integration_test_guard_issue_messages", Value: joinIssueMessages(blockedIntegrationIssues)},
+			core.EvidenceItem{Name: "git.review_action", Value: "blocked_invalid_integration_test_patch"},
+		)
+		return decision, nil
 	}
 
 	review, err := m.buildChangeReview(ctx, repoRoot, result.Step, statusPorcelain)
@@ -218,6 +250,20 @@ func (m *Manager) Handle(ctx context.Context, snapshot core.WorkspaceSnapshot, r
 	return decision, nil
 }
 
+func (m *Manager) blockedIntegrationTestPatchIssues(
+	ctx context.Context,
+	snapshot core.WorkspaceSnapshot,
+	result core.ExecutionResult,
+) ([]core.Issue, error) {
+	if result.Step.ID != core.EnsureStepIntegrationTestWiring {
+		return nil, nil
+	}
+	if m == nil || m.integrationTestPatchIssues == nil {
+		return nil, nil
+	}
+	return m.integrationTestPatchIssues(ctx, snapshot)
+}
+
 func (m *Manager) restoreWorkingTree(ctx context.Context, repoRoot string) error {
 	if _, err := m.runGit(ctx, repoRoot, "restore", "--staged", "--worktree", "--", "."); err != nil {
 		return core.WrapError(core.KindUnknown, "gitmanager.restore.restore", err)
@@ -253,6 +299,25 @@ func commitBranchNote(branch string) string {
 		return "changes committed in detached HEAD state"
 	}
 	return fmt.Sprintf("changes committed on branch %s", strings.TrimSpace(branch))
+}
+
+func detectBlockedIntegrationTestPatchIssues(ctx context.Context, snapshot core.WorkspaceSnapshot) ([]core.Issue, error) {
+	result, err := validateadapter.NewIntegrationTestASTAnalyzer().Analyze(ctx, snapshot)
+	if err != nil {
+		return nil, err
+	}
+
+	blocked := make([]core.Issue, 0, len(result.Issues))
+	for _, issue := range result.Issues {
+		switch issue.Code {
+		case core.IssueCodeIntegrationTestManualBatchManipulation,
+			core.IssueCodeIntegrationTestIllegalBodyLogic,
+			core.IssueCodeIntegrationTestCallsUnknownInterfaces,
+			core.IssueCodeIntegrationTestDirectDatasetAccess:
+			blocked = append(blocked, issue)
+		}
+	}
+	return blocked, nil
 }
 
 func (m *Manager) buildChangeReview(
@@ -318,6 +383,47 @@ func (m *Manager) collectChangedFiles(ctx context.Context, repoRoot string, fall
 	}
 
 	return merged
+}
+
+func joinIssueCodes(issues []core.Issue) string {
+	if len(issues) == 0 {
+		return ""
+	}
+
+	seen := make(map[core.IssueCode]struct{}, len(issues))
+	ordered := make([]string, 0, len(issues))
+	for _, issue := range issues {
+		if issue.Code == "" {
+			continue
+		}
+		if _, ok := seen[issue.Code]; ok {
+			continue
+		}
+		seen[issue.Code] = struct{}{}
+		ordered = append(ordered, string(issue.Code))
+	}
+	return strings.Join(ordered, ",")
+}
+
+func joinIssueMessages(issues []core.Issue) string {
+	if len(issues) == 0 {
+		return ""
+	}
+
+	seen := make(map[string]struct{}, len(issues))
+	ordered := make([]string, 0, len(issues))
+	for _, issue := range issues {
+		message := strings.TrimSpace(issue.Message)
+		if message == "" {
+			continue
+		}
+		if _, ok := seen[message]; ok {
+			continue
+		}
+		seen[message] = struct{}{}
+		ordered = append(ordered, message)
+	}
+	return strings.Join(ordered, "\n")
 }
 
 func (m *Manager) collectDiffStat(ctx context.Context, repoRoot string, fallback string) string {

@@ -220,6 +220,16 @@ func TestAgentExecutorSupportsIntegrationTestContractStep(t *testing.T) {
 	if runner.lastTask.Objective == "" {
 		t.Fatal("expected non-empty task objective")
 	}
+	foundManualBatchGuard := false
+	for _, constraint := range runner.lastTask.Constraints {
+		if strings.Contains(constraint, "np.expand_dims") && strings.Contains(constraint, "model.run") {
+			foundManualBatchGuard = true
+			break
+		}
+	}
+	if !foundManualBatchGuard {
+		t.Fatalf("expected integration-test task constraints to block raw tensor/session logic, got %+v", runner.lastTask.Constraints)
+	}
 	assertEvidencePresent(t, result.Evidence, "authoring.recommendation.integration_test.rationale")
 	assertEvidencePresent(t, result.Evidence, "agent.scope_policy.domain_sections")
 }
@@ -340,7 +350,7 @@ func TestAgentExecutorModelAcquisitionUsesSelectedPlanAndRecordsVerificationEvid
 	}
 
 	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
-		ID: "snapshot-model-plan",
+		ID:         "snapshot-model-plan",
 		Repository: core.RepositoryState{Root: repoRoot},
 		Runtime: core.RuntimeState{
 			ProbeRan: true,

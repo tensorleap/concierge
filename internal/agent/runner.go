@@ -292,7 +292,7 @@ func (r *Runner) runStreaming(
 		return AgentResult{}, core.WrapError(
 			core.KindUnknown,
 			"agent.runner.run",
-			runnerExecutionError(waitErr, transcriptPath, rawStreamPath, stream.stderrSummary()),
+			runnerExecutionError(waitErr, transcriptPath, rawStreamPath, stream.stderrSummary(), stream.resultSummary()),
 		)
 	}
 
@@ -444,8 +444,11 @@ func writeTranscript(path, command string, args []string, systemPrompt, taskProm
 	return os.WriteFile(path, []byte(b.String()), transcriptFileMode)
 }
 
-func runnerExecutionError(waitErr error, transcriptPath, rawStreamPath, stderrSummary string) error {
-	details := make([]string, 0, 3)
+func runnerExecutionError(waitErr error, transcriptPath, rawStreamPath, stderrSummary, resultSummary string) error {
+	details := make([]string, 0, 4)
+	if resultText := strings.TrimSpace(resultSummary); resultText != "" {
+		details = append(details, "result: "+resultText)
+	}
 	if stderrText := strings.TrimSpace(stderrSummary); stderrText != "" {
 		details = append(details, "stderr: "+stderrText)
 	}
@@ -473,6 +476,7 @@ type claudeStream struct {
 	currentDetail  string
 	currentMessage strings.Builder
 	stderrTail     []string
+	resultText     string
 }
 
 func newClaudeStream(transcript, raw *os.File, observer observe.Sink) *claudeStream {
@@ -523,7 +527,7 @@ func (s *claudeStream) handleJSONLine(line string) {
 	case "assistant":
 		s.handleAssistant(payload)
 	case "result":
-		s.writeTranscriptLine("[result] " + line)
+		s.handleResult(payload, line)
 	}
 }
 
@@ -593,6 +597,20 @@ func (s *claudeStream) handleAssistant(payload map[string]any) {
 	}
 }
 
+func (s *claudeStream) handleResult(payload map[string]any, line string) {
+	s.writeTranscriptLine("[result] " + line)
+	if !boolValue(payload["is_error"]) {
+		return
+	}
+	trimmed := strings.TrimSpace(stringValue(payload["result"]))
+	if trimmed == "" {
+		return
+	}
+	s.mu.Lock()
+	s.resultText = trimmed
+	s.mu.Unlock()
+}
+
 func (s *claudeStream) finish(waitErr error) {
 	if waitErr != nil {
 		s.writeTranscriptLine("Run error: " + waitErr.Error())
@@ -616,6 +634,12 @@ func (s *claudeStream) stderrSummary() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return strings.Join(s.stderrTail, " | ")
+}
+
+func (s *claudeStream) resultSummary() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.resultText
 }
 
 func (s *claudeStream) recordActivity() {
@@ -704,6 +728,17 @@ func stringValue(value any) string {
 		return typed
 	default:
 		return fmt.Sprintf("%v", value)
+	}
+}
+
+func boolValue(value any) bool {
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		return strings.EqualFold(strings.TrimSpace(typed), "true")
+	default:
+		return false
 	}
 }
 

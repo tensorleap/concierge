@@ -198,6 +198,25 @@ func TestRunnerStreamingErrorIncludesTranscriptAndStderrDetails(t *testing.T) {
 	}
 }
 
+func TestRunnerStreamingErrorIncludesStructuredResultDetails(t *testing.T) {
+	repoRoot := t.TempDir()
+	binDir := t.TempDir()
+	installMockClaude(t, binDir, "#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1-}\" == \"--help\" ]]; then\ncat <<'EOF'\n--output-format stream-json\n--include-partial-messages\nEOF\nexit 0\nfi\necho '{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"API Error: Repeated 529 Overloaded errors\"}]}}'\necho '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":true,\"result\":\"API Error: Repeated 529 Overloaded errors\"}'\nexit 1\n")
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	transcriptPath := filepath.Join(repoRoot, ".concierge", "evidence", "snapshot-result-error", "agent.transcript.log")
+	runner := NewRunner()
+	task := validAgentTask(repoRoot, transcriptPath)
+
+	_, err := runner.Run(context.Background(), task)
+	if err == nil {
+		t.Fatal("expected streaming run to fail")
+	}
+	if !strings.Contains(err.Error(), "API Error: Repeated 529 Overloaded errors") {
+		t.Fatalf("expected structured result detail in error, got: %v", err)
+	}
+}
+
 func TestRunnerUsesSanitizedRepoViewWithoutDotConcierge(t *testing.T) {
 	repoRoot := t.TempDir()
 	binDir := t.TempDir()

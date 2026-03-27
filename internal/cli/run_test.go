@@ -550,6 +550,26 @@ func TestRunDeclineStepApprovalLeavesRepoUnchanged(t *testing.T) {
 	}
 }
 
+func TestRunEOFAtApprovalPromptReturnsErrorInsteadOfImplicitRejection(t *testing.T) {
+	disableHarness(t)
+	repo := initRunTestRepo(t, false)
+	withWorkingDir(t, repo)
+
+	output, err := executeCLIWithInput(t, "", "run", "--max-iterations=3")
+	if err == nil {
+		t.Fatal("expected closed approval input to return error")
+	}
+	if !strings.Contains(err.Error(), "prompt input closed") {
+		t.Fatalf("expected closed-input error, got: %v", err)
+	}
+	if !strings.Contains(output, "You > Continue now? [y/N]:") {
+		t.Fatalf("expected approval prompt before failure, got output: %q", output)
+	}
+	if strings.Contains(output, "No changes were made because approval was not granted.") {
+		t.Fatalf("did not expect approval-rejected handoff on closed input, got output: %q", output)
+	}
+}
+
 func TestRunStopsAfterManualRuntimeSetupIsRequired(t *testing.T) {
 	t.Setenv("CONCIERGE_ENABLE_HARNESS", "0")
 	mockLeapCLIInstalled(t)

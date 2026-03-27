@@ -2,11 +2,14 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
 	"strings"
 )
+
+var errPromptInputClosed = errors.New("prompt input closed before a response was provided")
 
 func promptProjectRootSelection(in io.Reader, out io.Writer, candidates []string) (string, error) {
 	if len(candidates) == 0 {
@@ -176,6 +179,9 @@ func promptYesNo(in io.Reader, out io.Writer, prompt string, defaultYes bool) (b
 
 	line, err := readPromptLine(in)
 	if err != nil {
+		if errors.Is(err, errPromptInputClosed) && defaultYes {
+			return true, nil
+		}
 		return false, err
 	}
 
@@ -194,13 +200,17 @@ func promptYesNo(in io.Reader, out io.Writer, prompt string, defaultYes bool) (b
 
 func readPromptLine(in io.Reader) (string, error) {
 	if in == nil {
-		return "", io.EOF
+		return "", errPromptInputClosed
 	}
 	reader := bufio.NewReader(in)
 	line, err := reader.ReadString('\n')
 	if err != nil {
 		if err == io.EOF {
-			return strings.TrimSpace(line), nil
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" {
+				return "", errPromptInputClosed
+			}
+			return trimmed, nil
 		}
 		return "", err
 	}

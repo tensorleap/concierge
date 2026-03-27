@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -93,6 +94,13 @@ func TestPromptYesNoDefaultsToYesWhenConfigured(t *testing.T) {
 	}
 	if !approved {
 		t.Fatal("expected empty response to use default yes")
+	}
+}
+
+func TestPromptYesNoReturnsClosedInputErrorOnEOFWithoutResponse(t *testing.T) {
+	_, err := promptYesNo(bytes.NewBufferString(""), new(bytes.Buffer), "Continue now? [y/N]:", false)
+	if !errors.Is(err, errPromptInputClosed) {
+		t.Fatalf("expected errPromptInputClosed, got %v", err)
 	}
 }
 

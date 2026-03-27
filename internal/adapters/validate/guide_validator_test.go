@@ -782,6 +782,65 @@ func TestGuideValidatorSkipsStaleGTEncoderStatusIssueWhenParserAlreadyValidatedG
 	}
 }
 
+func TestGuideValidatorSkipsStaleLoadModelStatusIssueWhenParserAlreadyValidatedModel(t *testing.T) {
+	repoRoot := buildGuideValidationRepo(t)
+	validator := &GuideValidator{
+		runtimeRunner: &fakeGuideRuntimeRunner{
+			results: []PythonRuntimeCommandResult{
+				{
+					Command: "poetry run python leap_integration.py",
+					Stdout: strings.Join([]string{
+						"Decorator Name                     | Added to integration",
+						"-------------------------------------------------------",
+						"tensorleap_preprocess              | ✅",
+						"tensorleap_input_encoder           | ✅",
+						"tensorleap_load_model              | ❌",
+						"tensorleap_integration_test        | ❌",
+						"tensorleap_gt_encoder              | ✅",
+						"",
+						"Some mandatory components have not yet been added to the Integration test. Recommended next interface to add is: tensorleap_load_model",
+					}, "\n"),
+				},
+				{
+					Command: "poetry run python -c ...",
+					Stdout: strings.Join([]string{
+						"{",
+						`  "available": true,`,
+						`  "isValid": true,`,
+						`  "isValidForModel": true,`,
+						`  "payloads": [`,
+						`    {"name":"preprocess","passed":true},`,
+						`    {"name":"image","passed":true,"shape":[640,640,3]}`,
+						`  ],`,
+						`  "setup": {`,
+						`    "preprocess":{"trainingLength":4,"validationLength":2},`,
+						`    "inputs":[{"name":"image","channelDim":-1,"shape":[640,640,3]}],`,
+						`    "predictionTypes":[{"name":"detections","channelDim":-2}]`,
+						`  }`,
+						"}",
+					}, "\n"),
+				},
+			},
+			errs: []error{nil, nil},
+		},
+		astAnalyzer: fakeIntegrationTestASTAnalyzer{},
+	}
+
+	result, err := validator.Run(context.Background(), guideValidationSnapshot(t, repoRoot))
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if containsIssueCode(result.Issues, core.IssueCodeLoadModelDecoratorMissing) {
+		t.Fatalf("did not expect stale load_model status row to survive parser model validation, got %+v", result.Issues)
+	}
+	if !containsIssueCode(result.Issues, core.IssueCodeIntegrationTestMissing) {
+		t.Fatalf("expected integration-test issue to remain, got %+v", result.Issues)
+	}
+	if got := result.Summary.Recommendation.Stage; got != "thin_integration_test" {
+		t.Fatalf("expected integration-test contract recommendation after stale load_model suppression, got %q", got)
+	}
+}
+
 func TestGuideValidatorSkipsStaleEarlyStatusRowsWhenConcreteDownstreamIssuesExist(t *testing.T) {
 	summary := core.GuideValidationSummary{
 		LocalStatusTableSupported: true,
@@ -1015,5 +1074,28 @@ func TestIssuesFromGuideStatusRowsAllKnownDecorators(t *testing.T) {
 		if !seen {
 			t.Fatalf("expected issue code %q not found", code)
 		}
+	}
+}
+
+func TestIssuesFromGuideStatusRowsSkipsLoadModelWhenParserAlreadyValidatedModel(t *testing.T) {
+	local := core.GuideLocalRunSummary{
+		StatusRows: []core.GuideStatusRow{
+			{Name: "tensorleap_load_model", Status: "fail"},
+			{Name: "tensorleap_integration_test", Status: "fail"},
+		},
+	}
+
+	parser := core.GuideParserRunSummary{
+		Available:       true,
+		IsValid:         true,
+		IsValidForModel: true,
+	}
+
+	issues := issuesFromGuideStatusRows(local, parser)
+	if containsIssueCode(issues, core.IssueCodeLoadModelDecoratorMissing) {
+		t.Fatalf("did not expect stale load_model status row when parser already validated the model, got %+v", issues)
+	}
+	if !containsIssueCode(issues, core.IssueCodeIntegrationTestMissing) {
+		t.Fatalf("expected integration-test status row to remain, got %+v", issues)
 	}
 }

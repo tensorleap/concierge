@@ -55,6 +55,9 @@ func TestBuildIntegrationTestAuthoringRecommendationFallsBackToGenericRationale(
 	if len(recommendation.Constraints) == 0 {
 		t.Fatal("expected default constraints")
 	}
+	if !strings.Contains(strings.Join(recommendation.Constraints, " | "), "do not stop after load_model()") {
+		t.Fatalf("expected default constraints to require real inference wiring, got %+v", recommendation.Constraints)
+	}
 }
 
 func TestBuildIntegrationTestAuthoringRecommendationWarnsAgainstManualBatchingAndRuntimeCalls(t *testing.T) {

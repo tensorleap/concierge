@@ -20,6 +20,7 @@ func BuildIntegrationTestAuthoringRecommendation(
 			"Do not modify preprocess subset semantics, encoder implementations, or unrelated training/business logic in this step.",
 			"Never add manual batching, tensor reshaping, or raw runtime-session calls inside integration_test (`np.expand_dims`, `transpose`, `model.get_inputs`, `model.run`).",
 			"Tensorleap handles batching automatically around decorated calls inside integration_test.",
+			"If @tensorleap_load_model is present, integration_test must execute the returned model and route predictions into downstream decorated interfaces; do not stop after load_model().",
 		},
 	}
 

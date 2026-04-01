@@ -225,6 +225,28 @@ class QALoopTest(unittest.TestCase):
         self.assertEqual(args.source_kind, "case")
         self.assertEqual(args.source_id, "mnist_missing_entrypoint")
 
+    def test_parse_args_accepts_runtime_prerequisites_context(self) -> None:
+        runtime_prerequisites = json.dumps(
+            [
+                {
+                    "id": "customer_parquet",
+                    "description": "Private parquet dataset required by the fixture.",
+                    "mount_path": "/runtime-prerequisites/infineon_ts_v2/customer_parquet/customer.parquet",
+                    "operator_guidance": "If Concierge asks for the dataset path, answer with the mounted path.",
+                }
+            ]
+        )
+        args = qa_loop.parse_args(
+            [
+                "--container-name",
+                "fixture",
+                "--runtime-prerequisites-json",
+                runtime_prerequisites,
+            ]
+        )
+
+        self.assertEqual(args.runtime_prerequisites_json, runtime_prerequisites)
+
     def test_prepare_run_paths_uses_claude_artifact_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             paths = qa_loop.prepare_run_paths(Path(tmpdir), "run-123")
@@ -435,6 +457,99 @@ class QALoopTest(unittest.TestCase):
             self.assertNotIn("Review these files if needed", prompt)
             self.assertNotIn(str(paths.summary_json), prompt)
             self.assertNotIn(str(paths.terminal_clean), prompt)
+
+    def test_request_control_includes_runtime_prerequisites_in_session_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            artifacts_root = tmp / "artifacts"
+            artifacts_root.mkdir()
+            paths = qa_loop.prepare_run_paths(artifacts_root, "run-123")
+            live_io = qa_loop.LiveIO(transcript_path=paths.full_transcript)
+
+            class FakeClaudeClient:
+                def __init__(self) -> None:
+                    self.calls: list[dict[str, object]] = []
+
+                def run_structured(self, **kwargs: object) -> dict[str, object]:
+                    self.calls.append(kwargs)
+                    return {
+                        "action": "WAIT",
+                        "input_text": "",
+                        "loop_state": "CONTINUE",
+                        "summary": "Keep watching the container output.",
+                        "issues": [],
+                        "next_focus": "Wait for Concierge to react to the mounted dataset path.",
+                    }
+
+            class FakeDriver:
+                returncode = None
+
+                def is_running(self) -> bool:
+                    return True
+
+            fake_client = FakeClaudeClient()
+            config = qa_loop.LoopConfig(
+                artifacts_root=artifacts_root,
+                docker_bin="docker",
+                host_cwd=tmp,
+                container_name="fixture",
+                container_image=None,
+                command=["/usr/local/bin/concierge", "run"],
+                command_cwd="/workspace",
+                claude_command="claude",
+                claude_model=None,
+                claude_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
+                max_iterations=qa_loop.DEFAULT_MAX_ITERATIONS,
+                max_idle_turns=qa_loop.DEFAULT_MAX_IDLE_TURNS,
+                max_runtime_seconds=qa_loop.DEFAULT_MAX_RUNTIME_SECONDS,
+                read_quiet_seconds=qa_loop.DEFAULT_READ_QUIET_SECONDS,
+                read_timeout_seconds=qa_loop.DEFAULT_READ_TIMEOUT_SECONDS,
+                settle_timeout_seconds=qa_loop.DEFAULT_SETTLE_TIMEOUT_SECONDS,
+                transcript_tail_chars=qa_loop.DEFAULT_TRANSCRIPT_TAIL_CHARS,
+                latest_output_chars=qa_loop.DEFAULT_LATEST_OUTPUT_CHARS,
+                fixture_post_path=None,
+                docker_snapshots_enabled=False,
+                fixture_id="infineon_ts_v2",
+                guide_step="pre",
+                ref_under_test="feature/issue-156@abc1234",
+                checkpoint_key="infineon_ts_v2:pre",
+                source_kind="variant",
+                source_id="pre",
+                runtime_prerequisites=[
+                    {
+                        "id": "customer_parquet",
+                        "description": "Private parquet dataset required by the fixture.",
+                        "mount_path": "/runtime-prerequisites/infineon_ts_v2/customer_parquet/customer.parquet",
+                        "operator_guidance": "If Concierge asks for the dataset path, answer with the mounted path.",
+                    }
+                ],
+            )
+            supervisor = qa_loop.SupervisorLoop(
+                config=config,
+                claude_client=fake_client,
+                driver=FakeDriver(),
+                role_prompt="role",
+                nudge_prompt="nudge",
+            )
+
+            supervisor._request_control(
+                iteration=1,
+                paths=paths,
+                transcript_clean="Concierge asked for the dataset path.",
+                latest_output="Dataset missing. Please provide the parquet path.\n",
+                idle_turns=0,
+                elapsed_seconds=5,
+                turns=[],
+                blind_first_active=False,
+                released_blind_first=False,
+                live_io=live_io,
+            )
+
+            prompt = str(fake_client.calls[0]["prompt"])
+            self.assertIn('"runtime_prerequisites": [', prompt)
+            self.assertIn('"id": "customer_parquet"', prompt)
+            self.assertIn('"/runtime-prerequisites/infineon_ts_v2/customer_parquet/customer.parquet"', prompt)
+            self.assertIn("If Concierge asks for the dataset path", prompt)
 
     def test_supervisor_loop_writes_transcript_and_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

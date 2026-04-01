@@ -103,6 +103,21 @@ resolve_checkpoint_json() {
   python3 "${args[@]}"
 }
 
+stage_runtime_prerequisites_json() {
+  local fixture_id="$1"
+  local stage_root="$2"
+  local backend="$3"
+  local args=(
+    "${CHECKPOINT_RESOLVER_PATH}"
+    stage-runtime-prerequisites
+    --repo-root "${REPO_ROOT}"
+    --fixture-id "${fixture_id}"
+    --stage-root "${stage_root}"
+    --backend "${backend}"
+  )
+  python3 "${args[@]}"
+}
+
 compute_image_key() {
   python3 "${CHECKPOINT_RESOLVER_PATH}" image-key "$@"
 }
@@ -273,6 +288,27 @@ trap cleanup EXIT
 
 context_dir="${tmpdir}/context"
 mkdir -p "${context_dir}/workspace" "${context_dir}/bin"
+runtime_prereq_stage_root="${tmpdir}/runtime-prerequisites"
+
+runtime_prereq_backend="local"
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  runtime_prereq_backend="github_actions"
+fi
+staged_runtime_prereqs_json="$(stage_runtime_prerequisites_json "${fixture_id}" "${runtime_prereq_stage_root}" "${runtime_prereq_backend}")"
+selected_runtime_prereqs_json="$(jq -c '.runtime_prerequisites // []' <<<"${staged_runtime_prereqs_json}")"
+runtime_prereq_count="$(jq -r '.runtime_prerequisites | length' <<<"${staged_runtime_prereqs_json}")"
+runtime_prereq_mount_source="$(jq -r '.stage_root' <<<"${staged_runtime_prereqs_json}")"
+runtime_prereq_mount_target="$(jq -r '.docker_mount_target' <<<"${staged_runtime_prereqs_json}")"
+if (( runtime_prereq_count > 0 )); then
+  log "Staged ${runtime_prereq_count} runtime prerequisite(s) for backend '${runtime_prereq_backend}'"
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] || continue
+    log "  ${line}"
+  done < <(
+    jq -r '.runtime_prerequisites[] | "\(.id) -> \(.mount_path) [\(.resolution_source)]"' \
+      <<<"${staged_runtime_prereqs_json}"
+  )
+fi
 
 log "Copying checkpoint workspace into Docker build context"
 bash "${SANITIZER_PATH}" "${selected_repo_dir}" "${context_dir}/workspace"
@@ -335,10 +371,19 @@ fi
 
 container_name="concierge-qa-${safe_fixture_id}-$(date -u +%Y%m%d%H%M%S)-$$"
 log "Starting fixture container ${container_name}"
-docker run -d \
-  --name "${container_name}" \
-  --env "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}" \
-  "${image_ref}" >/dev/null
+docker_run_args=(
+  docker run -d
+  --name "${container_name}"
+  --env "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}"
+)
+if (( runtime_prereq_count > 0 )); then
+  docker_run_args+=(
+    --mount
+    "type=bind,src=${runtime_prereq_mount_source},dst=${runtime_prereq_mount_target},readonly"
+  )
+fi
+docker_run_args+=("${image_ref}")
+"${docker_run_args[@]}" >/dev/null
 
 log "Starting QA loop for fixture '${fixture_id}'"
 log "Requested step: ${step}"
@@ -358,4 +403,5 @@ python3 "${REPO_ROOT}/QA/qa_loop.py" \
   --checkpoint-key "${checkpoint_key}" \
   --source-kind "${selected_source_kind}" \
   --source-id "${selected_source_id}" \
+  --runtime-prerequisites-json "${selected_runtime_prereqs_json}" \
   "${qa_args[@]}"

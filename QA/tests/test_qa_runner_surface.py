@@ -67,6 +67,11 @@ class QARunnerSurfaceTest(unittest.TestCase):
         self.assertIn('bash scripts/fixtures_mutate_cases.sh --case "${QA_PREPARE_CASE_ID}"', workflow)
         self.assertIn("--require-explicit-setup", workflow)
 
+    def test_qa_workflow_exposes_runtime_prerequisite_secret_for_private_fetches(self) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "qa-loop.yml").read_text(encoding="utf-8")
+
+        self.assertIn("QA_RUNTIME_PREREQ_GITHUB_TOKEN", workflow)
+
     def test_qa_workflow_generates_case_repos_only_when_resolution_requires_it(self) -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / "qa-loop.yml").read_text(encoding="utf-8")
 
@@ -104,6 +109,15 @@ class QARunnerSurfaceTest(unittest.TestCase):
         self.assertIn("--checkpoint-key", script)
         self.assertIn("--source-kind", script)
         self.assertIn("--source-id", script)
+
+    def test_runner_script_stages_and_mounts_runtime_prerequisites(self) -> None:
+        script = (REPO_ROOT / "scripts" / "qa_fixture_run.sh").read_text(encoding="utf-8")
+
+        self.assertIn("stage-runtime-prerequisites", script)
+        self.assertIn("runtime_prereq_backend", script)
+        self.assertIn("/runtime-prerequisites", script)
+        self.assertIn("--runtime-prerequisites-json", script)
+        self.assertIn("--mount", script)
 
     def test_runner_script_tracks_selected_warmup_script(self) -> None:
         script = (REPO_ROOT / "scripts" / "qa_fixture_run.sh").read_text(encoding="utf-8")

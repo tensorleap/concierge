@@ -19,6 +19,7 @@ tmp.benchmarks/
 .docker_bash_history
 bin/
 .fixtures/
+fixtures/runtime_prerequisites.local.json
 .concierge/
 __pycache__/
 QA/runs/*

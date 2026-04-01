@@ -13,7 +13,7 @@ func inspectRequiredUploadBoundary(repoRoot string, contract *leapYAMLContract, 
 		return
 	}
 
-	required := core.RequiredUploadBoundaryPaths(repoRoot, contract.EntryFile)
+	required := core.DirectRepoUploadBoundaryDependencies(repoRoot, contract.EntryFile)
 	if len(required) == 0 {
 		return
 	}

@@ -9,8 +9,6 @@ import (
 )
 
 var (
-	pythonImportPattern              = regexp.MustCompile(`(?m)^\s*import\s+([^\n#]+)`)
-	pythonFromImportPattern          = regexp.MustCompile(`(?m)^\s*from\s+([A-Za-z_][A-Za-z0-9_\.]*)\s+import\s+([^\n#]+)`)
 	repoRootAssignmentPattern        = regexp.MustCompile(`(?m)^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:Path|pathlib\.Path)\s*\(\s*__file__\s*\)[^\n#]*\bparent(?:\b|\s*\[)`)
 	repoRootAliasAssignmentPattern   = regexp.MustCompile(`(?m)^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*$`)
 	repoRootPathReferencePattern     = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\b((?:\s*/\s*(?:"[^"\n]+"|'[^'\n]+'))+)`)
@@ -44,9 +42,27 @@ func RequiredUploadBoundaryPaths(repoRoot string, entryFile string) []string {
 		return dedupeUploadBoundaryPaths(required)
 	}
 
-	required = append(required, discoverDirectRepoImportDependencies(repoRoot, string(source))...)
-	required = append(required, discoverDirectRepoPathDependencies(repoRoot, string(source))...)
+	required = append(required, discoverDirectRepoPathDependencies(string(source), repoRoot)...)
 	return dedupeUploadBoundaryPaths(required)
+}
+
+// DirectRepoUploadBoundaryDependencies returns only the direct repo-local file
+// references rooted from leap_integration.py itself. It intentionally excludes
+// the static leap.yaml/requirements baseline so inspectors can surface the
+// new boundary gap without reclassifying older fixtures around legacy static
+// upload-rule mismatches.
+func DirectRepoUploadBoundaryDependencies(repoRoot string, entryFile string) []string {
+	entryPath := resolveUploadBoundaryEntryPath(repoRoot, entryFile)
+	if entryPath == "" {
+		return nil
+	}
+
+	source, err := os.ReadFile(entryPath)
+	if err != nil {
+		return nil
+	}
+
+	return discoverDirectRepoPathDependencies(string(source), repoRoot)
 }
 
 func resolveUploadBoundaryEntryPath(repoRoot string, entryFile string) string {
@@ -61,97 +77,7 @@ func resolveUploadBoundaryEntryPath(repoRoot string, entryFile string) string {
 	return entryPath
 }
 
-func discoverDirectRepoImportDependencies(repoRoot string, source string) []string {
-	if strings.TrimSpace(source) == "" {
-		return nil
-	}
-
-	dependencies := make([]string, 0, 8)
-
-	for _, match := range pythonImportPattern.FindAllStringSubmatch(source, -1) {
-		for _, module := range splitPythonImportTargets(match[1]) {
-			if resolved := resolveRepoLocalPythonModule(repoRoot, module); resolved != "" {
-				dependencies = append(dependencies, resolved)
-			}
-		}
-	}
-
-	for _, match := range pythonFromImportPattern.FindAllStringSubmatch(source, -1) {
-		baseModule := strings.TrimSpace(match[1])
-		if resolved := resolveRepoLocalPythonModule(repoRoot, baseModule); resolved != "" {
-			dependencies = append(dependencies, resolved)
-		}
-
-		for _, imported := range splitPythonImportTargets(match[2]) {
-			if imported == "*" {
-				continue
-			}
-			submodule := strings.TrimSpace(baseModule + "." + imported)
-			if resolved := resolveRepoLocalPythonModule(repoRoot, submodule); resolved != "" {
-				dependencies = append(dependencies, resolved)
-			}
-		}
-	}
-
-	return dedupeUploadBoundaryPaths(dependencies)
-}
-
-func splitPythonImportTargets(raw string) []string {
-	trimmed := strings.TrimSpace(raw)
-	trimmed = strings.TrimPrefix(trimmed, "(")
-	trimmed = strings.TrimSuffix(trimmed, ")")
-	if trimmed == "" {
-		return nil
-	}
-
-	parts := strings.Split(trimmed, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		candidate := strings.TrimSpace(part)
-		if candidate == "" {
-			continue
-		}
-		fields := strings.Fields(candidate)
-		if len(fields) == 0 {
-			continue
-		}
-		module := strings.TrimSpace(fields[0])
-		if module == "" {
-			continue
-		}
-		out = append(out, module)
-	}
-	return out
-}
-
-func resolveRepoLocalPythonModule(repoRoot string, module string) string {
-	module = strings.TrimSpace(module)
-	if module == "" || strings.HasPrefix(module, ".") {
-		return ""
-	}
-
-	relPath := filepath.ToSlash(filepath.Join(strings.Split(module, ".")...))
-	if relPath == "" {
-		return ""
-	}
-
-	candidates := []string{
-		relPath + ".py",
-		filepath.ToSlash(filepath.Join(relPath, "__init__.py")),
-	}
-	for _, candidate := range candidates {
-		if shouldIgnoreUploadBoundaryDependency(candidate) {
-			continue
-		}
-		if uploadBoundaryFileExists(filepath.Join(repoRoot, filepath.FromSlash(candidate))) {
-			return normalizeUploadBoundaryPath(candidate)
-		}
-	}
-
-	return ""
-}
-
-func discoverDirectRepoPathDependencies(repoRoot string, source string) []string {
+func discoverDirectRepoPathDependencies(source string, repoRoot string) []string {
 	if strings.TrimSpace(source) == "" {
 		return nil
 	}

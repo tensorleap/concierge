@@ -633,15 +633,9 @@ func TestExecutorAddsDirectRepoDependenciesReferencedByEntryFile(t *testing.T) {
 	repoRoot := t.TempDir()
 	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
 
-	writeFixtureFile(t, repoRoot, "leap_binder.py", "def preprocess_func_leap():\n    return []\n")
-	writeFixtureFile(t, repoRoot, "ultralytics/tensorleap_folder/global_params.py", "all_clss = {}\ncfg = {}\n")
-	writeFixtureFile(t, repoRoot, "ultralytics/tensorleap_folder/utils.py", "def set_leap_yaml2root():\n    return None\n")
 	writeFixtureFile(t, repoRoot, "ultralytics/cfg/datasets/coco8.yaml", "path: coco8\n")
 	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), strings.Join([]string{
 		"from pathlib import Path",
-		"from leap_binder import preprocess_func_leap",
-		"from ultralytics.tensorleap_folder.global_params import all_clss, cfg",
-		"from ultralytics.tensorleap_folder.utils import set_leap_yaml2root",
 		"",
 		"_REPO_ROOT = Path(__file__).resolve().parent",
 		"_DATASET_MANIFEST = _REPO_ROOT / \"ultralytics\" / \"cfg\" / \"datasets\" / \"coco8.yaml\"",
@@ -666,12 +660,7 @@ func TestExecutorAddsDirectRepoDependenciesReferencedByEntryFile(t *testing.T) {
 	}
 
 	contract := readLeapYAMLContract(t, filepath.Join(repoRoot, "leap.yaml"))
-	assertContainsAll(t, contract.Include, []string{
-		"leap_binder.py",
-		"ultralytics/tensorleap_folder/global_params.py",
-		"ultralytics/tensorleap_folder/utils.py",
-		"ultralytics/cfg/datasets/coco8.yaml",
-	})
+	assertContainsAll(t, contract.Include, []string{"ultralytics/cfg/datasets/coco8.yaml"})
 }
 
 func snapshotForRepo(root string) core.WorkspaceSnapshot {

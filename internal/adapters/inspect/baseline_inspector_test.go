@@ -375,6 +375,47 @@ func TestInspectorDetectsServerInfoFailures(t *testing.T) {
 	}
 }
 
+func TestInspectorFlagsMissingRepoFilesReferencedByEntryFileBoundary(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "ultralytics/cfg/datasets/coco8.yaml", "path: coco8\n")
+	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
+		"entryFile: leap_integration.py",
+		"include:",
+		"  - leap.yaml",
+		"  - leap_integration.py",
+		"",
+	}, "\n"))
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
+		"from pathlib import Path",
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_integration_test, tensorleap_load_model, tensorleap_preprocess",
+		"",
+		"_REPO_ROOT = Path(__file__).resolve().parent",
+		"_DATASET_MANIFEST = _REPO_ROOT / \"ultralytics\" / \"cfg\" / \"datasets\" / \"coco8.yaml\"",
+		"",
+		"@tensorleap_preprocess()",
+		"def preprocess():",
+		"    return []",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    return None",
+		"",
+		"@tensorleap_integration_test()",
+		"def integration_test(sample_id, preprocess_response):",
+		"    return None",
+		"",
+	}, "\n"))
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if !hasIssueCode(status.Issues, core.IssueCodeLeapYAMLIncludeMissingRequiredFiles) {
+		t.Fatalf("expected %q issue, got %+v", core.IssueCodeLeapYAMLIncludeMissingRequiredFiles, status.Issues)
+	}
+}
+
 func snapshotForRoot(root string) core.WorkspaceSnapshot {
 	return core.WorkspaceSnapshot{
 		Repository: core.RepositoryState{Root: root},

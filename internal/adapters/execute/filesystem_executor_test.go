@@ -628,6 +628,41 @@ func TestExecutorPreservesBroadExcludeGlob(t *testing.T) {
 	}
 }
 
+func TestExecutorAddsDirectRepoDependenciesReferencedByEntryFile(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
+
+	writeFixtureFile(t, repoRoot, "ultralytics/cfg/datasets/coco8.yaml", "path: coco8\n")
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), strings.Join([]string{
+		"from pathlib import Path",
+		"",
+		"_REPO_ROOT = Path(__file__).resolve().parent",
+		"_DATASET_MANIFEST = _REPO_ROOT / \"ultralytics\" / \"cfg\" / \"datasets\" / \"coco8.yaml\"",
+		"",
+	}, "\n"))
+	writeFile(t, filepath.Join(repoRoot, "leap.yaml"), strings.Join([]string{
+		fmt.Sprintf("entryFile: %s", core.CanonicalIntegrationEntryFile),
+		"include:",
+		"  - leap.yaml",
+		"  - leap_integration.py",
+		"exclude:",
+		"  - .git/**",
+		"",
+	}, "\n"))
+
+	result, err := executor.Execute(context.Background(), snapshotForRepo(repoRoot), step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("expected leap.yaml to be updated with direct repo dependencies")
+	}
+
+	contract := readLeapYAMLContract(t, filepath.Join(repoRoot, "leap.yaml"))
+	assertContainsAll(t, contract.Include, []string{"ultralytics/cfg/datasets/coco8.yaml"})
+}
+
 func snapshotForRepo(root string) core.WorkspaceSnapshot {
 	return core.WorkspaceSnapshot{Repository: core.RepositoryState{Root: root}}
 }
@@ -671,6 +706,17 @@ func readLeapYAMLContract(t *testing.T, path string) leapYAMLContract {
 
 func writeFile(t *testing.T, path string, contents string) {
 	t.Helper()
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+}
+
+func writeFixtureFile(t *testing.T, root, relativePath, contents string) {
+	t.Helper()
+	path := filepath.Join(root, relativePath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}

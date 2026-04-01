@@ -54,6 +54,7 @@ jobs:
     timeout-minutes: 120
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      QA_RUNTIME_PREREQ_GITHUB_TOKEN: ${{ secrets.QA_RUNTIME_PREREQ_GITHUB_TOKEN }}
       QA_FIXTURE: ${{ inputs.fixture }}
       QA_STEP: ${{ inputs.step }}
     steps:

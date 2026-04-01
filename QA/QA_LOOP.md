@@ -47,12 +47,15 @@ What this does:
 
 - runs Concierge against `.fixtures/<fixture-id>/pre`
 - copies only the clean `pre` repo into a fixture-specific Docker image
+- stages any declared runtime prerequisites into a temporary host directory and mounts them read-only under `/runtime-prerequisites`
 - keeps Claude in blind-first mode at the start
 - only exposes the `post` repo path if progress stalls
 - when using `make qa`, resets the chosen built-in fixture back to a clean pinned `pre`/`post` state first
 - starts a long-lived fixture container and runs Concierge inside it with `docker exec`
 - keeps per-turn transcripts, turn logs, and `docker diff` / exported `.concierge` artifacts
 - renders live Claude control/report events as readable terminal text while keeping the raw JSON event logs under `QA/runs/<run-id>/claude/`
+
+If a fixture declares runtime prerequisites, configure them locally with env vars or `fixtures/runtime_prerequisites.local.json` as described in `fixtures/README.md`. The QA supervisor receives the safe prerequisite facts, including mounted container paths and operator guidance, from the beginning of the run.
 
 ## Using A Running Container
 

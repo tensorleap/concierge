@@ -376,23 +376,8 @@ func reconcileLeapYAML(contents []byte, repoRoot string, modelPath string) ([]by
 	}
 }
 
-func fileExistsOnDisk(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
-}
-
 func requiredLeapYAMLPaths(repoRoot string, entryFile string, modelPath string) []string {
-	required := []string{"leap.yaml", normalizeUploadPath(entryFile)}
-	for _, candidate := range core.RequirementsFileCandidates {
-		if fileExistsOnDisk(filepath.Join(repoRoot, candidate)) {
-			required = append(required, candidate)
-		}
-	}
-	for _, pair := range core.RequirementsFilePairs {
-		if fileExistsOnDisk(filepath.Join(repoRoot, pair[0])) && fileExistsOnDisk(filepath.Join(repoRoot, pair[1])) {
-			required = append(required, pair[0], pair[1])
-		}
-	}
+	required := core.RequiredUploadBoundaryPaths(repoRoot, entryFile)
 	if normalizedModelPath := normalizeRequiredModelUploadPath(repoRoot, modelPath); normalizedModelPath != "" {
 		required = append(required, normalizedModelPath)
 	}

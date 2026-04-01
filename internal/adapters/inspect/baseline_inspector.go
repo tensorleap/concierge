@@ -73,6 +73,7 @@ func (i *BaselineInspector) Inspect(ctx context.Context, snapshot core.Workspace
 			return core.IntegrationStatus{}, err
 		}
 		inspectCanonicalIntegrationLayout(contract, &status)
+		inspectRequiredUploadBoundary(repoRoot, contract, &status)
 		if err := inspectIntegrationContracts(repoRoot, contract, &status); err != nil {
 			return core.IntegrationStatus{}, err
 		}

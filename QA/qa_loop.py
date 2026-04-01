@@ -113,6 +113,7 @@ class LoopConfig:
     checkpoint_key: str
     source_kind: str
     source_id: str
+    runtime_prerequisites: list[dict[str, Any]] | tuple[dict[str, Any], ...] = ()
 
 
 @dataclass
@@ -893,6 +894,7 @@ class SupervisorLoop:
                 "checkpoint_key": self.config.checkpoint_key,
                 "source_kind": self.config.source_kind,
                 "source_id": self.config.source_id,
+                "runtime_prerequisites": list(self.config.runtime_prerequisites),
             },
             "docker": {
                 "docker_bin": self.config.docker_bin,
@@ -1003,6 +1005,7 @@ class SupervisorLoop:
             "blind_first_active": blind_first_active,
             "post_fixture_path_available": bool(self.config.fixture_post_path and not blind_first_active),
             "post_fixture_path": str(self.config.fixture_post_path) if self.config.fixture_post_path and not blind_first_active else "",
+            "runtime_prerequisites": list(self.config.runtime_prerequisites),
             "recent_turn_summaries": [
                 {
                     "iteration": item["iteration"],
@@ -1313,6 +1316,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--checkpoint-key", default="")
     parser.add_argument("--source-kind", default="")
     parser.add_argument("--source-id", default="")
+    parser.add_argument("--runtime-prerequisites-json", default="[]")
     parser.add_argument(
         "--docker-snapshots",
         action="store_true",
@@ -1330,6 +1334,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     artifacts_root = Path(args.artifacts_root).resolve()
     fixture_post_path = Path(args.fixture_post_path).resolve() if args.fixture_post_path else None
+    runtime_prerequisites = parse_runtime_prerequisites(args.runtime_prerequisites_json)
     command = list(args.command)
     if command and command[0] == "--":
         command = command[1:]
@@ -1363,6 +1368,7 @@ def main(argv: list[str] | None = None) -> int:
         checkpoint_key=args.checkpoint_key,
         source_kind=args.source_kind,
         source_id=args.source_id,
+        runtime_prerequisites=runtime_prerequisites,
     )
     role_prompt = (PROMPTS_DIR / "role_prompt.md").read_text(encoding="utf-8")
     nudge_prompt = (PROMPTS_DIR / "nudge_prompt.md").read_text(encoding="utf-8")
@@ -1473,6 +1479,24 @@ def unique_paths(paths: Iterable[Path]) -> list[Path]:
         seen.add(resolved)
         ordered.append(Path(resolved))
     return ordered
+
+
+def parse_runtime_prerequisites(raw_value: str) -> list[dict[str, Any]]:
+    candidate = str(raw_value or "").strip() or "[]"
+    try:
+        payload = json.loads(candidate)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid runtime prerequisites JSON: {exc}") from exc
+    if payload is None:
+        return []
+    if not isinstance(payload, list):
+        raise ValueError("runtime prerequisites JSON must decode to a list")
+    normalized: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("runtime prerequisite entries must be objects")
+        normalized.append(item)
+    return normalized
 
 
 def qa_add_dirs(fixture_post_path: Path | None) -> list[Path]:

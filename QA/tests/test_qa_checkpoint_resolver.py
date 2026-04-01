@@ -11,7 +11,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.qa_checkpoint_resolver import compute_image_key, resolve_checkpoint
+from scripts.qa_checkpoint_resolver import (
+    compute_image_key,
+    resolve_checkpoint,
+    stage_runtime_prerequisites,
+)
 
 
 class QACheckpointResolverTest(unittest.TestCase):
@@ -342,6 +346,235 @@ class QACheckpointResolverTest(unittest.TestCase):
                 str((repo_root / "fixtures" / "checkpoints" / "warmup" / "ultralytics_input_encoders.sh").resolve()),
             )
 
+    def test_resolve_checkpoint_includes_fixture_runtime_prerequisites(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            self._write_fixture_manifest(
+                repo_root,
+                fixtures=[
+                    {
+                        "id": "infineon_ts_v2",
+                        "runtime_prerequisites": [
+                            {
+                                "id": "customer_parquet",
+                                "kind": "local_file",
+                                "required": True,
+                                "mount_path": "/runtime-prerequisites/infineon_ts_v2/customer_parquet/customer.parquet",
+                                "description": "Private parquet dataset required by the infineon fixture.",
+                                "operator_guidance": "If Concierge asks where the dataset lives, answer with the mounted path.",
+                                "local_resolution": {
+                                    "env_vars": ["INFINEON_TS_V2_PARQUET"],
+                                    "config_keys": ["infineon_ts_v2_parquet"],
+                                },
+                                "github_actions": {
+                                    "fetch_kind": "git_repo_file",
+                                    "repo": "https://github.com/example/private-assets.git",
+                                    "ref": "deadbeef",
+                                    "path": "infineon/customer.parquet",
+                                    "auth_env_vars": ["QA_RUNTIME_PREREQ_GITHUB_TOKEN"],
+                                },
+                                "validation": {
+                                    "extension": ".parquet",
+                                    "filename_hint": "customer.parquet",
+                                },
+                            }
+                        ],
+                    }
+                ],
+            )
+            self._write_checkpoint_manifest(repo_root, [])
+
+            resolution = resolve_checkpoint(repo_root, fixture_id="infineon_ts_v2", step="pre")
+
+            self.assertEqual(len(resolution["runtime_prerequisites"]), 1)
+            prerequisite = resolution["runtime_prerequisites"][0]
+            self.assertEqual(prerequisite["id"], "customer_parquet")
+            self.assertEqual(prerequisite["kind"], "local_file")
+            self.assertEqual(
+                prerequisite["mount_path"],
+                "/runtime-prerequisites/infineon_ts_v2/customer_parquet/customer.parquet",
+            )
+            self.assertEqual(prerequisite["local_resolution"]["env_vars"], ["INFINEON_TS_V2_PARQUET"])
+            self.assertEqual(prerequisite["github_actions"]["fetch_kind"], "git_repo_file")
+
+    def test_stage_runtime_prerequisites_prefers_env_var_and_stages_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            fixture_root = repo_root / "fixtures"
+            fixture_root.mkdir(parents=True, exist_ok=True)
+            dataset_path = repo_root / "trusted" / "customer.parquet"
+            dataset_path.parent.mkdir(parents=True, exist_ok=True)
+            dataset_path.write_text("fixture parquet bytes\n", encoding="utf-8")
+            self._write_fixture_manifest(
+                repo_root,
+                fixtures=[
+                    {
+                        "id": "infineon_ts_v2",
+                        "runtime_prerequisites": [
+                            {
+                                "id": "customer_parquet",
+                                "kind": "local_file",
+                                "required": True,
+                                "mount_path": "/runtime-prerequisites/infineon_ts_v2/customer_parquet/customer.parquet",
+                                "description": "Private parquet dataset required by the infineon fixture.",
+                                "operator_guidance": "Use the mounted path if Concierge asks for the dataset.",
+                                "local_resolution": {
+                                    "env_vars": ["INFINEON_TS_V2_PARQUET"],
+                                    "config_keys": ["infineon_ts_v2_parquet"],
+                                },
+                                "validation": {
+                                    "extension": ".parquet",
+                                    "filename_hint": "customer.parquet",
+                                },
+                            }
+                        ],
+                    }
+                ],
+            )
+            stage_root = repo_root / "staged-runtime-prereqs"
+
+            payload = stage_runtime_prerequisites(
+                repo_root,
+                fixture_id="infineon_ts_v2",
+                stage_root=stage_root,
+                backend="local",
+                env={"INFINEON_TS_V2_PARQUET": str(dataset_path)},
+            )
+
+            staged_path = stage_root / "infineon_ts_v2" / "customer_parquet" / "customer.parquet"
+            self.assertTrue(staged_path.is_file())
+            self.assertEqual(staged_path.read_text(encoding="utf-8"), "fixture parquet bytes\n")
+            self.assertEqual(payload["docker_mount_target"], "/runtime-prerequisites")
+            self.assertEqual(payload["runtime_prerequisites"][0]["resolution_source"], "env:INFINEON_TS_V2_PARQUET")
+
+    def test_stage_runtime_prerequisites_uses_gitignored_local_config_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            dataset_path = repo_root / "trusted" / "fallback.parquet"
+            dataset_path.parent.mkdir(parents=True, exist_ok=True)
+            dataset_path.write_text("fallback parquet bytes\n", encoding="utf-8")
+            self._write_fixture_manifest(
+                repo_root,
+                fixtures=[
+                    {
+                        "id": "infineon_ts_v2",
+                        "runtime_prerequisites": [
+                            {
+                                "id": "customer_parquet",
+                                "kind": "local_file",
+                                "required": True,
+                                "mount_path": "/runtime-prerequisites/infineon_ts_v2/customer_parquet/fallback.parquet",
+                                "description": "Private parquet dataset required by the infineon fixture.",
+                                "operator_guidance": "Use the mounted path if Concierge asks for the dataset.",
+                                "local_resolution": {
+                                    "env_vars": ["INFINEON_TS_V2_PARQUET"],
+                                    "config_keys": ["infineon_ts_v2_parquet"],
+                                },
+                                "validation": {
+                                    "extension": ".parquet",
+                                    "filename_hint": "fallback.parquet",
+                                },
+                            }
+                        ],
+                    }
+                ],
+            )
+            (repo_root / "fixtures" / "runtime_prerequisites.local.json").write_text(
+                json.dumps({"runtime_prerequisites": {"infineon_ts_v2_parquet": str(dataset_path)}}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            payload = stage_runtime_prerequisites(
+                repo_root,
+                fixture_id="infineon_ts_v2",
+                stage_root=repo_root / "staged-runtime-prereqs",
+                backend="local",
+                env={},
+            )
+
+            self.assertEqual(payload["runtime_prerequisites"][0]["resolution_source"], "config:infineon_ts_v2_parquet")
+
+    def test_stage_runtime_prerequisites_supports_github_actions_git_file_fetch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            asset_repo = repo_root / "private-assets"
+            asset_repo.mkdir(parents=True, exist_ok=True)
+            subprocess.run(["git", "init"], cwd=asset_repo, check=True, capture_output=True, text=True)
+            subprocess.run(
+                ["git", "config", "user.name", "QA Test"],
+                cwd=asset_repo,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "qa@example.com"],
+                cwd=asset_repo,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            private_asset_path = asset_repo / "infineon" / "customer.parquet"
+            private_asset_path.parent.mkdir(parents=True, exist_ok=True)
+            private_asset_path.write_text("private parquet bytes\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=asset_repo, check=True, capture_output=True, text=True)
+            subprocess.run(
+                ["git", "commit", "-m", "Add private asset"],
+                cwd=asset_repo,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            asset_ref = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=asset_repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            self._write_fixture_manifest(
+                repo_root,
+                fixtures=[
+                    {
+                        "id": "infineon_ts_v2",
+                        "runtime_prerequisites": [
+                            {
+                                "id": "customer_parquet",
+                                "kind": "local_file",
+                                "required": True,
+                                "mount_path": "/runtime-prerequisites/infineon_ts_v2/customer_parquet/customer.parquet",
+                                "description": "Private parquet dataset required by the infineon fixture.",
+                                "operator_guidance": "Use the mounted path if Concierge asks for the dataset.",
+                                "github_actions": {
+                                    "fetch_kind": "git_repo_file",
+                                    "repo": str(asset_repo),
+                                    "ref": asset_ref,
+                                    "path": "infineon/customer.parquet",
+                                    "auth_env_vars": ["QA_RUNTIME_PREREQ_GITHUB_TOKEN"],
+                                },
+                                "validation": {
+                                    "extension": ".parquet",
+                                    "filename_hint": "customer.parquet",
+                                },
+                            }
+                        ],
+                    }
+                ],
+            )
+
+            payload = stage_runtime_prerequisites(
+                repo_root,
+                fixture_id="infineon_ts_v2",
+                stage_root=repo_root / "staged-runtime-prereqs",
+                backend="github_actions",
+                env={},
+            )
+
+            staged_path = repo_root / "staged-runtime-prereqs" / "infineon_ts_v2" / "customer_parquet" / "customer.parquet"
+            self.assertTrue(staged_path.is_file())
+            self.assertEqual(staged_path.read_text(encoding="utf-8"), "private parquet bytes\n")
+            self.assertEqual(payload["runtime_prerequisites"][0]["resolution_source"], "github_actions:git_repo_file")
+
     def test_compute_image_key_changes_when_requested_step_changes(self) -> None:
         base_payload = {
             "fixture_id": "mnist",
@@ -459,11 +692,16 @@ class QACheckpointResolverTest(unittest.TestCase):
         self.assertEqual(entry["expected_primary_step"], "ensure.ground_truth_encoders")
         self.assertEqual(entry["warmup_script"], "fixtures/checkpoints/warmup/ultralytics_input_encoders.sh")
 
-    def _write_fixture_manifest(self, repo_root: Path) -> None:
+    def _write_fixture_manifest(
+        self,
+        repo_root: Path,
+        *,
+        fixtures: list[dict[str, object]] | None = None,
+    ) -> None:
         fixtures_dir = repo_root / "fixtures"
         fixtures_dir.mkdir(parents=True, exist_ok=True)
         (fixtures_dir / "manifest.json").write_text(
-            json.dumps({"fixtures": [{"id": "mnist"}, {"id": "ultralytics"}]}, indent=2) + "\n",
+            json.dumps({"fixtures": fixtures or [{"id": "mnist"}, {"id": "ultralytics"}]}, indent=2) + "\n",
             encoding="utf-8",
         )
 

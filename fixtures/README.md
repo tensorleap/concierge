@@ -22,6 +22,53 @@ Each fixture creates:
 
 `pre` is committed locally so both `post` and `pre` remain clean git trees.
 
+## Runtime Prerequisites
+
+Fixtures may also declare optional `runtime_prerequisites` metadata in `fixtures/manifest.json` when successful QA depends on a private file that cannot be committed to this repository.
+
+Current scope:
+
+- kind: `local_file`
+- staged host root: a temporary run-scoped directory created by `scripts/qa_fixture_run.sh`
+- mounted container root: `/runtime-prerequisites`
+- container path contract: every prerequisite `mount_path` must stay under `/runtime-prerequisites/...`
+
+Each prerequisite entry is metadata only. It can describe:
+
+- `id`
+- `kind`
+- `required`
+- `mount_path`
+- `description`
+- `operator_guidance`
+- `local_resolution.env_vars`
+- `local_resolution.config_keys`
+- `github_actions.fetch_kind`
+- `github_actions.repo`
+- `github_actions.ref`
+- `github_actions.path`
+- `github_actions.auth_env_vars`
+- `validation.extension`
+- `validation.filename_hint`
+- `validation.checksum_sha256`
+
+Local QA resolution order:
+
+1. the first populated env var listed in `local_resolution.env_vars`
+2. the first populated key listed in `local_resolution.config_keys` from `fixtures/runtime_prerequisites.local.json`
+
+Example local config:
+
+```json
+{
+  "runtime_prerequisites": {
+    "infineon_ts_v2_parquet": "/absolute/path/to/customer.parquet"
+  }
+}
+```
+
+GitHub Actions uses the same manifest contract but resolves required files through the `github_actions` section before the fixture container starts. The staged files are mounted read-only into the container, and `QA/qa_loop.py` receives the safe user-facing facts from the start of the run.
+
 ## Usage
 
 ```bash

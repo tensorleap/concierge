@@ -46,7 +46,7 @@ func BuildModelAuthoringRecommendation(snapshot core.WorkspaceSnapshot, status c
 	constraints := []string{
 		"Bind @tensorleap_load_model to one concrete supported model artifact path.",
 		"Model artifact path must end with .onnx or .h5.",
-		"Model binaries are uploaded by leap CLI; leap.yaml include/exclude governs integration code.",
+		"If load_model depends on a repo-local model artifact, keep that artifact path inside leap.yaml's upload boundary.",
 		"Do not modify unrelated training/business logic.",
 	}
 

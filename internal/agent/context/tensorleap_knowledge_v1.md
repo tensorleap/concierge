@@ -19,8 +19,9 @@ include:
   - leap_integration.py
 exclude:
   - .git/**
-  - .concierge/**
 ```
+
+- If `load_model()` depends on a repo-local model artifact, that artifact path must be covered by `include`; do not blanket-exclude `.concierge/**` when Concierge materializes the selected model under `.concierge/materialized_models/`.
 
 ## preprocess_contract
 

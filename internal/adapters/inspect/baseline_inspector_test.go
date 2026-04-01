@@ -375,6 +375,53 @@ func TestInspectorDetectsServerInfoFailures(t *testing.T) {
 	}
 }
 
+func TestInspectorFlagsMissingRepoFilesReferencedByEntryFileBoundary(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap_binder.py", "def preprocess_func_leap():\n    return []\n")
+	writeFixtureFile(t, root, "ultralytics/tensorleap_folder/global_params.py", "all_clss = {}\ncfg = {}\n")
+	writeFixtureFile(t, root, "ultralytics/tensorleap_folder/utils.py", "def set_leap_yaml2root():\n    return None\n")
+	writeFixtureFile(t, root, "ultralytics/cfg/datasets/coco8.yaml", "path: coco8\n")
+	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
+		"entryFile: leap_integration.py",
+		"include:",
+		"  - leap.yaml",
+		"  - leap_integration.py",
+		"",
+	}, "\n"))
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
+		"from pathlib import Path",
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_integration_test, tensorleap_load_model, tensorleap_preprocess",
+		"from leap_binder import preprocess_func_leap",
+		"from ultralytics.tensorleap_folder.global_params import all_clss, cfg",
+		"from ultralytics.tensorleap_folder.utils import set_leap_yaml2root",
+		"",
+		"_REPO_ROOT = Path(__file__).resolve().parent",
+		"_DATASET_MANIFEST = _REPO_ROOT / \"ultralytics\" / \"cfg\" / \"datasets\" / \"coco8.yaml\"",
+		"",
+		"@tensorleap_preprocess()",
+		"def preprocess():",
+		"    return []",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    return None",
+		"",
+		"@tensorleap_integration_test()",
+		"def integration_test(sample_id, preprocess_response):",
+		"    return None",
+		"",
+	}, "\n"))
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), snapshotForRoot(root))
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if !hasIssueCode(status.Issues, core.IssueCodeLeapYAMLIncludeMissingRequiredFiles) {
+		t.Fatalf("expected %q issue, got %+v", core.IssueCodeLeapYAMLIncludeMissingRequiredFiles, status.Issues)
+	}
+}
+
 func snapshotForRoot(root string) core.WorkspaceSnapshot {
 	return core.WorkspaceSnapshot{
 		Repository: core.RepositoryState{Root: root},

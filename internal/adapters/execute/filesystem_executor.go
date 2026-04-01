@@ -358,24 +358,8 @@ func reconcileLeapYAML(contents []byte, repoRoot string) ([]byte, bool, string, 
 	}
 }
 
-func fileExistsOnDisk(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
-}
-
 func requiredLeapYAMLPaths(repoRoot string, entryFile string) []string {
-	required := []string{"leap.yaml", normalizeUploadPath(entryFile)}
-	for _, candidate := range core.RequirementsFileCandidates {
-		if fileExistsOnDisk(filepath.Join(repoRoot, candidate)) {
-			required = append(required, candidate)
-		}
-	}
-	for _, pair := range core.RequirementsFilePairs {
-		if fileExistsOnDisk(filepath.Join(repoRoot, pair[0])) && fileExistsOnDisk(filepath.Join(repoRoot, pair[1])) {
-			required = append(required, pair[0], pair[1])
-		}
-	}
-	return dedupeStrings(required)
+	return core.RequiredUploadBoundaryPaths(repoRoot, entryFile)
 }
 
 func ensureIntegrationTestScaffold(repoRoot string, step core.EnsureStep) (core.ExecutionResult, error) {

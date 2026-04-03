@@ -93,6 +93,53 @@ def _call_name(node):
     return ""
 
 
+def _annotation_name(node):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    if isinstance(node, ast.Subscript):
+        return _annotation_name(node.value)
+    return ""
+
+
+def _bind_names(target):
+    if isinstance(target, ast.Name):
+        return [target.id]
+    if isinstance(target, (ast.Tuple, ast.List)):
+        names = []
+        for item in target.elts:
+            names.extend(_bind_names(item))
+        return names
+    return []
+
+
+def _load_model_runtime(function_node):
+    annotation = _annotation_name(getattr(function_node, "returns", None)).strip().lower()
+    if annotation == "inferencesession":
+        return "onnx_session"
+
+    session_values = set()
+    for node in ast.walk(function_node):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) and _call_name(node.value.func).lower() == "inferencesession":
+            for target in node.targets:
+                session_values.update(_bind_names(target))
+        if isinstance(node, ast.AnnAssign) and isinstance(node.value, ast.Call) and _call_name(node.value.func).lower() == "inferencesession":
+            session_values.update(_bind_names(node.target))
+
+    for node in ast.walk(function_node):
+        if not isinstance(node, ast.Return) or node.value is None:
+            continue
+        if isinstance(node.value, ast.Call) and _call_name(node.value.func).lower() == "inferencesession":
+            return "onnx_session"
+        if isinstance(node.value, ast.Name) and node.value.id in session_values:
+            return "onnx_session"
+
+    return ""
+
+
 def _infer_symbol(function_name):
     value = (function_name or "").strip().lower()
     for prefix in ("encode_", "input_", "gt_", "label_", "target_", "metadata_"):
@@ -153,6 +200,10 @@ def _decorated_functions(tree):
                 "kind": kind,
                 "line": getattr(node, "lineno", 0) or 0,
             }
+            if kind == "load_model":
+                runtime = _load_model_runtime(node)
+                if runtime:
+                    entry["runtime"] = runtime
             if kind in {"input_encoder", "gt_encoder", "metadata", "custom_metric", "custom_loss", "custom_visualizer"}:
                 entry["symbol"] = _extract_symbol(decorator, node.name)
             functions.append(entry)
@@ -174,6 +225,11 @@ class _IntegrationFunctionAnalyzer:
             for entry in decorated_functions
             if entry["kind"] == "load_model"
         }
+        self.load_model_runtime = {
+            entry["function"]: entry.get("runtime", "")
+            for entry in decorated_functions
+            if entry["kind"] == "load_model"
+        }
         self.sample_arg = ""
         self.preprocess_arg = ""
         positional_args = list(getattr(node.args, "args", []) or [])
@@ -184,6 +240,8 @@ class _IntegrationFunctionAnalyzer:
 
         self.allowed_values = set()
         self.model_values = set()
+        self.model_runtime_by_value = {}
+        self.model_metadata_values = set()
         self.prediction_values = set()
         self.calls = []
         self.prediction_uses = []
@@ -275,6 +333,11 @@ class _IntegrationFunctionAnalyzer:
             self.allowed_values.add(target.id)
             if kind == "model":
                 self.model_values.add(target.id)
+            if kind.startswith("model:"):
+                self.model_values.add(target.id)
+                self.model_runtime_by_value[target.id] = kind.split(":", 1)[1]
+            if kind == "model_metadata":
+                self.model_metadata_values.add(target.id)
             if kind == "prediction":
                 self.prediction_values.add(target.id)
             return
@@ -300,6 +363,8 @@ class _IntegrationFunctionAnalyzer:
                 )
             if expr.id in self.model_values:
                 return "model"
+            if expr.id in self.model_metadata_values:
+                return "model_metadata"
             if expr.id in self.prediction_values:
                 return "prediction"
             return "value"
@@ -322,11 +387,15 @@ class _IntegrationFunctionAnalyzer:
                         "prediction_attribute_access",
                         "integration_test reads attributes from model predictions",
                     )
+                if base_kind == "model_metadata":
+                    return "model_metadata"
             return "value"
 
         if isinstance(expr, ast.Subscript):
             base_kind = self.visit_expr(expr.value, False)
             self.visit_slice(expr.slice)
+            if base_kind == "model_metadata":
+                return "model_metadata"
             if base_kind != "prediction":
                 self.record(
                     self.illegal_body_logic,
@@ -341,7 +410,9 @@ class _IntegrationFunctionAnalyzer:
                     "prediction_indexing",
                     "integration_test indexes into model predictions",
                 )
-            return "prediction" if base_kind == "prediction" else "value"
+            if base_kind == "prediction":
+                return "prediction"
+            return "value"
 
         if isinstance(expr, (ast.List, ast.Tuple, ast.Set)):
             for item in expr.elts:
@@ -471,7 +542,67 @@ class _IntegrationFunctionAnalyzer:
                     "category": "decorated_load_model",
                 }
             )
+            runtime = self.load_model_runtime.get(callee_name, "")
+            if runtime:
+                return "model:" + runtime
             return "model"
+
+        model_runtime = ""
+        if isinstance(call.func, ast.Name):
+            model_runtime = self.model_runtime_by_value.get(call.func.id, "")
+        elif isinstance(call.func, ast.Attribute):
+            model_runtime = self.model_runtime_by_value.get(_root_name(call.func), "")
+
+        if model_runtime == "onnx_session":
+            if isinstance(call.func, ast.Name):
+                self.calls.append(
+                    {
+                        "name": callee_name or root_name,
+                        "line": getattr(call, "lineno", 0),
+                        "category": "model_call",
+                    }
+                )
+                self.record(
+                    self.illegal_body_logic,
+                    callee_name or root_name,
+                    getattr(call, "lineno", 0),
+                    "invalid_model_call",
+                    "integration_test calls a raw ONNX Runtime session as a callable; use model.run(...) with the session input mapping",
+                )
+                for arg in call.args:
+                    self.visit_expr(arg, False)
+                for keyword in call.keywords:
+                    self.visit_expr(keyword.value, False)
+                return "prediction"
+
+            method = lower_callee
+            if method in {"get_inputs", "get_outputs"}:
+                self.calls.append(
+                    {
+                        "name": callee_name or root_name,
+                        "line": getattr(call, "lineno", 0),
+                        "category": "model_metadata",
+                    }
+                )
+                for arg in call.args:
+                    self.visit_expr(arg, False)
+                for keyword in call.keywords:
+                    self.visit_expr(keyword.value, False)
+                return "model_metadata"
+
+            if method == "run":
+                self.calls.append(
+                    {
+                        "name": callee_name or root_name,
+                        "line": getattr(call, "lineno", 0),
+                        "category": "model_call",
+                    }
+                )
+                for arg in call.args:
+                    self.visit_expr(arg, False)
+                for keyword in call.keywords:
+                    self.visit_expr(keyword.value, False)
+                return "prediction"
 
         if self.is_model_call(call.func):
             self.calls.append(
@@ -606,6 +737,7 @@ type IntegrationTestASTSummary struct {
 type IntegrationTestDecoratedFunction struct {
 	Function string `json:"function,omitempty"`
 	Kind     string `json:"kind,omitempty"`
+	Runtime  string `json:"runtime,omitempty"`
 	Symbol   string `json:"symbol,omitempty"`
 	Line     int    `json:"line,omitempty"`
 }

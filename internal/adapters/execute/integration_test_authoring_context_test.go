@@ -60,7 +60,7 @@ func TestBuildIntegrationTestAuthoringRecommendationFallsBackToGenericRationale(
 	}
 }
 
-func TestBuildIntegrationTestAuthoringRecommendationWarnsAgainstManualBatchingAndRuntimeCalls(t *testing.T) {
+func TestBuildIntegrationTestAuthoringRecommendationWarnsAgainstManualBatchingAndTensorTransforms(t *testing.T) {
 	recommendation, err := BuildIntegrationTestAuthoringRecommendation(core.WorkspaceSnapshot{}, core.IntegrationStatus{
 		Issues: []core.Issue{
 			{
@@ -84,10 +84,13 @@ func TestBuildIntegrationTestAuthoringRecommendationWarnsAgainstManualBatchingAn
 	}
 
 	joined := strings.Join(recommendation.Constraints, " | ")
-	if !strings.Contains(joined, "np.expand_dims") || !strings.Contains(joined, "model.run") {
-		t.Fatalf("expected explicit runtime-call constraints, got %+v", recommendation.Constraints)
+	if !strings.Contains(joined, "np.expand_dims") || !strings.Contains(joined, "transpose") {
+		t.Fatalf("expected explicit batching/transform constraints, got %+v", recommendation.Constraints)
 	}
-	if !strings.Contains(joined, "Reject raw tensor/session logic") {
-		t.Fatalf("expected explicit illegal-body guidance, got %+v", recommendation.Constraints)
+	if strings.Contains(joined, "raw runtime-session calls") {
+		t.Fatalf("did not expect final ONNX runtime calls to be forbidden, got %+v", recommendation.Constraints)
+	}
+	if !strings.Contains(joined, "runtime-correct inference wiring") {
+		t.Fatalf("expected explicit runtime-correct inference guidance, got %+v", recommendation.Constraints)
 	}
 }

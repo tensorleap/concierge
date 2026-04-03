@@ -222,13 +222,16 @@ func TestAgentExecutorSupportsIntegrationTestContractStep(t *testing.T) {
 	}
 	foundManualBatchGuard := false
 	for _, constraint := range runner.lastTask.Constraints {
-		if strings.Contains(constraint, "np.expand_dims") && strings.Contains(constraint, "model.run") {
+		if strings.Contains(constraint, "np.expand_dims") && strings.Contains(constraint, "transpose") {
 			foundManualBatchGuard = true
+			if strings.Contains(constraint, "raw tensor/session calls") {
+				t.Fatalf("did not expect agent constraints to forbid final ONNX runtime calls, got %+v", runner.lastTask.Constraints)
+			}
 			break
 		}
 	}
 	if !foundManualBatchGuard {
-		t.Fatalf("expected integration-test task constraints to block raw tensor/session logic, got %+v", runner.lastTask.Constraints)
+		t.Fatalf("expected integration-test task constraints to block manual batching and transforms, got %+v", runner.lastTask.Constraints)
 	}
 	assertEvidencePresent(t, result.Evidence, "authoring.recommendation.integration_test.rationale")
 	assertEvidencePresent(t, result.Evidence, "agent.scope_policy.domain_sections")

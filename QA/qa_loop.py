@@ -113,8 +113,6 @@ class LoopConfig:
     claude_command: str
     claude_model: str | None
     claude_timeout_seconds: float
-    review_command: str
-    review_model: str | None
     review_timeout_seconds: float
     max_iterations: int
     max_idle_turns: int
@@ -504,14 +502,12 @@ class SupervisorLoop:
         *,
         config: LoopConfig,
         claude_client: ClaudeClient,
-        codex_client: CodexClient | None = None,
         driver: PTYDriver | None = None,
         role_prompt: str,
         nudge_prompt: str,
     ) -> None:
         self.config = config
         self.claude_client = claude_client
-        self.codex_client = codex_client
         self.driver = driver or PTYDriver()
         self.role_prompt = role_prompt.strip()
         self.nudge_prompt = nudge_prompt.strip()
@@ -945,9 +941,9 @@ class SupervisorLoop:
             if candidate_workspace is not None:
                 try:
                     review = self._request_integration_review(paths=paths, summary=summary, live_io=live_io)
-                except CodexInvocationError as exc:
+                except ClaudeInvocationError as exc:
                     review = integration_review_error(
-                        f"Codex integration review failed: {exc}",
+                        f"Claude integration review failed: {exc}",
                         issues=["The exported integration could not be reviewed against the post fixture."],
                     )
                 summary["integration_review"] = asdict(review)
@@ -1328,9 +1324,6 @@ class SupervisorLoop:
         summary: dict[str, Any],
         live_io: LiveIO,
     ) -> IntegrationReview:
-        if self.codex_client is None:
-            raise CodexInvocationError("integration review requested without a configured Codex client")
-
         candidate_workspace = exported_workspace_review_root(paths)
         if candidate_workspace is None:
             return integration_review_error(
@@ -1380,16 +1373,17 @@ class SupervisorLoop:
             """
         ).strip()
         review_base = paths.claude_dir / "integration-review"
-        payload = self.codex_client.run_structured(
+        payload = self.claude_client.run_structured(
             prompt=prompt,
             schema_path=PROMPTS_DIR / "integration_review_schema.json",
             output_path=review_base.with_suffix(".output.json"),
             event_log_path=review_base.with_suffix(".jsonl"),
             stderr_log_path=review_base.with_suffix(".stderr.log"),
             add_dirs=[candidate_workspace, self.config.fixture_post_path],
+            allowed_tools="Read,Grep,Glob,LS",
             timeout_seconds=self.config.review_timeout_seconds,
             live_io=live_io,
-            session_label="codex-integration-review",
+            session_label="claude-integration-review",
         )
         return normalize_integration_review(payload)
 
@@ -1409,7 +1403,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--container-image", default=None)
     parser.add_argument("--claude-command", default=os.environ.get("CLAUDE_BIN", "claude"))
     parser.add_argument("--claude-timeout-seconds", type=float, default=DEFAULT_CODEX_TIMEOUT_SECONDS)
-    parser.add_argument("--review-command", default=os.environ.get("CODEX_BIN", "codex"))
     parser.add_argument("--review-timeout-seconds", type=float, default=DEFAULT_CODEX_TIMEOUT_SECONDS)
     parser.add_argument(
         "--codex-command",
@@ -1477,8 +1470,6 @@ def main(argv: list[str] | None = None) -> int:
         claude_command=args.claude_command,
         claude_model=args.model,
         claude_timeout_seconds=args.claude_timeout_seconds,
-        review_command=args.review_command,
-        review_model=args.model,
         review_timeout_seconds=args.review_timeout_seconds,
         max_iterations=args.max_iterations,
         max_idle_turns=args.max_idle_turns,
@@ -1508,17 +1499,9 @@ def main(argv: list[str] | None = None) -> int:
         model=config.claude_model,
         timeout_seconds=config.claude_timeout_seconds,
     )
-    codex_client = CodexClient(
-        workspace_root=artifacts_root,
-        artifacts_root=artifacts_root,
-        command=config.review_command,
-        model=config.review_model,
-        timeout_seconds=config.review_timeout_seconds,
-    )
     loop = SupervisorLoop(
         config=config,
         claude_client=client,
-        codex_client=codex_client,
         role_prompt=role_prompt,
         nudge_prompt=nudge_prompt,
     )

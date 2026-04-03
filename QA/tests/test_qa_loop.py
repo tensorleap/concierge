@@ -293,8 +293,6 @@ class QALoopTest(unittest.TestCase):
                 claude_command="claude",
                 claude_model=None,
                 claude_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
-                review_command="codex",
-                review_model=None,
                 review_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
                 max_iterations=qa_loop.DEFAULT_MAX_ITERATIONS,
                 max_idle_turns=qa_loop.DEFAULT_MAX_IDLE_TURNS,
@@ -401,8 +399,6 @@ class QALoopTest(unittest.TestCase):
                 claude_command="claude",
                 claude_model=None,
                 claude_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
-                review_command="codex",
-                review_model=None,
                 review_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
                 max_iterations=qa_loop.DEFAULT_MAX_ITERATIONS,
                 max_idle_turns=qa_loop.DEFAULT_MAX_IDLE_TURNS,
@@ -483,10 +479,6 @@ class QALoopTest(unittest.TestCase):
             (fixture_post / "leap_integration.py").write_text("print('post fixture')\n", encoding="utf-8")
 
             class FakeClaudeClient:
-                def run_structured(self, **_: object) -> dict[str, object]:
-                    raise AssertionError("report client should not be used for integration review")
-
-            class FakeCodexClient:
                 def __init__(self) -> None:
                     self.calls: list[dict[str, object]] = []
 
@@ -501,7 +493,7 @@ class QALoopTest(unittest.TestCase):
                         "confidence": "high",
                     }
 
-            fake_codex = FakeCodexClient()
+            fake_claude = FakeClaudeClient()
             config = qa_loop.LoopConfig(
                 artifacts_root=artifacts_root,
                 docker_bin="docker",
@@ -513,8 +505,6 @@ class QALoopTest(unittest.TestCase):
                 claude_command="claude",
                 claude_model=None,
                 claude_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
-                review_command="codex",
-                review_model=None,
                 review_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
                 max_iterations=qa_loop.DEFAULT_MAX_ITERATIONS,
                 max_idle_turns=qa_loop.DEFAULT_MAX_IDLE_TURNS,
@@ -535,8 +525,7 @@ class QALoopTest(unittest.TestCase):
             )
             supervisor = qa_loop.SupervisorLoop(
                 config=config,
-                claude_client=FakeClaudeClient(),
-                codex_client=fake_codex,
+                claude_client=fake_claude,
                 role_prompt="role",
                 nudge_prompt="nudge",
             )
@@ -570,13 +559,15 @@ class QALoopTest(unittest.TestCase):
 
             self.assertEqual(review.status, "pass")
             self.assertEqual(review.confidence, "high")
-            call = fake_codex.calls[0]
+            call = fake_claude.calls[0]
             prompt = str(call["prompt"])
             self.assertIn(str(export_root), prompt)
             self.assertIn(str(fixture_post), prompt)
             self.assertIn('"fixture_id": "ultralytics"', prompt)
             self.assertIn('"guide_step": "input_encoders"', prompt)
             self.assertEqual(list(call["add_dirs"]), [export_root, fixture_post])
+            self.assertEqual(call["allowed_tools"], "Read,Grep,Glob,LS")
+            self.assertEqual(call["session_label"], "claude-integration-review")
 
     def test_build_report_context_includes_integration_review(self) -> None:
         context = qa_loop.build_report_context(
@@ -696,8 +687,6 @@ class QALoopTest(unittest.TestCase):
                 claude_command="claude",
                 claude_model=None,
                 claude_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
-                review_command="codex",
-                review_model=None,
                 review_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
                 max_iterations=qa_loop.DEFAULT_MAX_ITERATIONS,
                 max_idle_turns=qa_loop.DEFAULT_MAX_IDLE_TURNS,
@@ -1662,13 +1651,22 @@ class QALoopTest(unittest.TestCase):
                     from pathlib import Path
 
                     prompt = sys.stdin.read()
-                    state_path = Path(os.environ["FAKE_CODEX_STATE"])
+                    state_path = Path(os.environ["FAKE_CLAUDE_REVIEW_STATE"])
                     if state_path.exists():
                         state = json.loads(state_path.read_text(encoding="utf-8"))
                     else:
                         state = {"turn": 0}
 
-                    if "final qualitative QA report" in prompt:
+                    if "final expert reviewer for a Tensorleap integration QA run" in prompt:
+                        payload = {
+                            "status": "fail",
+                            "verdict": "The generated integration is not functionally equivalent to the post fixture.",
+                            "functional_equivalence": "The generated code diverges from the fixture in behaviorally significant ways.",
+                            "quality_assessment": "The authored integration contains incorrect wiring and should not be accepted.",
+                            "issues": ["The generated integration does not preserve the fixture's expected encoder behavior."],
+                            "confidence": "high"
+                        }
+                    elif "final qualitative QA report" in prompt:
                         payload = {
                             "title": "Synthetic QA Report",
                             "overall_outcome": "Concierge finished, but the expert review rejected the generated integration.",
@@ -1710,45 +1708,8 @@ class QALoopTest(unittest.TestCase):
             )
             claude_script.chmod(0o755)
 
-            review_script = tmp / "fake_codex_integration_review.py"
-            review_script.write_text(
-                textwrap.dedent(
-                    """
-                    #!/usr/bin/env python3
-                    import json
-                    import sys
-                    from pathlib import Path
-
-                    args = sys.argv[1:]
-                    output_path = None
-                    for index, value in enumerate(args):
-                        if value == "-o":
-                            output_path = Path(args[index + 1])
-                            break
-                    if output_path is None:
-                        raise SystemExit("missing -o")
-
-                    payload = {
-                        "status": "fail",
-                        "verdict": "The generated integration is not functionally equivalent to the post fixture.",
-                        "functional_equivalence": "The generated code diverges from the fixture in behaviorally significant ways.",
-                        "quality_assessment": "The authored integration contains incorrect wiring and should not be accepted.",
-                        "issues": ["The generated integration does not preserve the fixture's expected encoder behavior."],
-                        "confidence": "high"
-                    }
-                    output_path.parent.mkdir(parents=True, exist_ok=True)
-                    output_path.write_text(json.dumps(payload), encoding="utf-8")
-                    print(json.dumps({"type": "thread.started", "thread_id": "integration-review-thread"}))
-                    print(json.dumps({"type": "item.completed", "item": {"id": "item-1", "type": "agent_message", "text": json.dumps(payload)}}))
-                    """
-                ).strip()
-                + "\n",
-                encoding="utf-8",
-            )
-            review_script.chmod(0o755)
-
             env = os.environ.copy()
-            env["FAKE_CODEX_STATE"] = str(tmp / "fake_code_review_state.json")
+            env["FAKE_CLAUDE_REVIEW_STATE"] = str(tmp / "fake_claude_review_state.json")
             env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
 
             completed = subprocess.run(
@@ -1761,8 +1722,6 @@ class QALoopTest(unittest.TestCase):
                     extra_args=[
                         "--fixture-post-path",
                         str(fixture_post),
-                        "--review-command",
-                        f"{sys.executable} {review_script}",
                     ],
                 ),
                 cwd=str(ROOT),

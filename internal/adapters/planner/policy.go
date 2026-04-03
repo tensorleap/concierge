@@ -194,7 +194,7 @@ func deferModelStepWhileAuthoring(status core.IntegrationStatus, steps []core.En
 	if len(steps) == 0 {
 		return steps
 	}
-	if steps[0].ID != core.EnsureStepModelAcquisition && steps[0].ID != core.EnsureStepModelContract {
+	if steps[0].ID != core.EnsureStepModelAcquisition {
 		return steps
 	}
 	if !hasExistingSupportedModelCandidate(status.Contracts) {

@@ -62,7 +62,7 @@ Example local config:
 ```json
 {
   "runtime_prerequisites": {
-    "infineon_ts_v2_parquet": "/absolute/path/to/customer.parquet"
+    "private_fixture_parquet": "/absolute/path/to/customer.parquet"
   }
 }
 ```

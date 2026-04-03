@@ -18,7 +18,6 @@ on:
           - mnist
           - cifar10_resnet
           - imdb
-          - infineon_ts_v2
       step:
         description: QA starting point. Use pre to start from the clean pre repo without a checkpoint.
         required: true

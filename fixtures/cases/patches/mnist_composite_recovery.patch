@@ -15,7 +15,7 @@ diff --git a/leap_integration.py b/leap_integration.py
 index e1316ae..c83adeb 100644
 --- a/leap_integration.py
 +++ b/leap_integration.py
-@@ -1,59 +1,48 @@
+@@ -1,59 +1,49 @@
  import os
 -from code_loader.contract.datasetclasses import PredictionTypeHandler
 -from code_loader.plot_functions.visualize import visualize
@@ -102,8 +102,9 @@ index e1316ae..c83adeb 100644
 +    classes = gt_encoder(idx, subset)
 +    label = encode_label(idx, subset)
 +    model = load_model()
-+    _ = meta, label, model
-+    return image, classes
++    predictions = model(image)
++    _ = meta, label, predictions[0]
++    return classes
  
  
 +if __name__ == "__main__":
@@ -113,7 +114,7 @@ new file mode 100644
 index 0000000..152c63c
 --- /dev/null
 +++ b/legacy_entry.py
-@@ -0,0 +1,80 @@
+@@ -0,0 +1,81 @@
 +import os
 +
 +import numpy as np
@@ -188,8 +189,9 @@ index 0000000..152c63c
 +    classes = gt_encoder(idx, subset)
 +    label = encode_label(idx, subset)
 +    model = load_model()
-+    _ = meta, label, model
-+    return image, classes
++    predictions = model(image)
++    _ = meta, label, predictions[0]
++    return classes
 +
 +
 +if __name__ == "__main__":

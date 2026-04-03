@@ -186,6 +186,7 @@ class _IntegrationFunctionAnalyzer:
         self.model_values = set()
         self.prediction_values = set()
         self.calls = []
+        self.prediction_uses = []
         self.unknown_calls = []
         self.direct_dataset_access = []
         self.manual_batch = []
@@ -197,6 +198,7 @@ class _IntegrationFunctionAnalyzer:
             "line": getattr(self.node, "lineno", 0) or 0,
             "arguments": [arg.arg for arg in getattr(self.node.args, "args", []) or []],
             "calls": self.calls,
+            "predictionUses": self.prediction_uses,
             "unknownCalls": self.unknown_calls,
             "directDatasetAccess": self.direct_dataset_access,
             "manualBatchManipulations": self.manual_batch,
@@ -211,6 +213,24 @@ class _IntegrationFunctionAnalyzer:
                 "kind": (kind or "").strip(),
                 "detail": (detail or "").strip(),
             }
+        )
+
+    def record_prediction_use(self, expr, kind, detail):
+        name = ""
+        if isinstance(expr, ast.Name):
+            name = expr.id
+        elif isinstance(expr, ast.Attribute):
+            name = expr.attr
+        elif isinstance(expr, ast.Call):
+            name = _call_name(expr.func)
+        elif isinstance(expr, ast.Subscript):
+            name = _leaf_name(expr.value)
+        self.record(
+            self.prediction_uses,
+            name,
+            getattr(expr, "lineno", 0),
+            kind,
+            detail,
         )
 
     def analyze(self):
@@ -232,7 +252,13 @@ class _IntegrationFunctionAnalyzer:
             return
         if isinstance(statement, ast.Return):
             if statement.value is not None:
-                self.visit_expr(statement.value, False)
+                kind = self.visit_expr(statement.value, False)
+                if kind == "prediction":
+                    self.record_prediction_use(
+                        statement.value,
+                        "return_prediction",
+                        "integration_test should thread model predictions into downstream surfaces instead of discarding them",
+                    )
             return
 
         detail = "integration_test should stay declarative and should not contain control flow or other plain Python statements"
@@ -289,7 +315,13 @@ class _IntegrationFunctionAnalyzer:
                     "integration_test should not read fields from sample/preprocess objects directly",
                 )
             else:
-                self.visit_expr(expr.value, False)
+                base_kind = self.visit_expr(expr.value, False)
+                if base_kind == "prediction":
+                    self.record_prediction_use(
+                        expr,
+                        "prediction_attribute_access",
+                        "integration_test reads attributes from model predictions",
+                    )
             return "value"
 
         if isinstance(expr, ast.Subscript):
@@ -302,6 +334,12 @@ class _IntegrationFunctionAnalyzer:
                     getattr(expr, "lineno", 0),
                     "non_prediction_indexing",
                     "indexing is only allowed on model predictions inside integration_test",
+                )
+            else:
+                self.record_prediction_use(
+                    expr,
+                    "prediction_indexing",
+                    "integration_test indexes into model predictions",
                 )
             return "prediction" if base_kind == "prediction" else "value"
 
@@ -326,8 +364,16 @@ class _IntegrationFunctionAnalyzer:
                 "expression",
                 "integration_test should not perform arithmetic or boolean logic; move that work into decorated interfaces",
             )
+            saw_prediction = False
             for child in ast.iter_child_nodes(expr):
-                self.visit_expr(child, False)
+                if self.visit_expr(child, False) == "prediction":
+                    saw_prediction = True
+            if saw_prediction:
+                self.record_prediction_use(
+                    expr,
+                    "prediction_expression",
+                    "integration_test uses model predictions inside plain Python expressions",
+                )
             return "value"
 
         if isinstance(expr, (ast.IfExp, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp, ast.Lambda, ast.NamedExpr, ast.JoinedStr, ast.FormattedValue)):
@@ -338,8 +384,16 @@ class _IntegrationFunctionAnalyzer:
                 "expression",
                 "integration_test should stay declarative; avoid inline Python transformations or formatting",
             )
+            saw_prediction = False
             for child in ast.iter_child_nodes(expr):
-                self.visit_expr(child, False)
+                if self.visit_expr(child, False) == "prediction":
+                    saw_prediction = True
+            if saw_prediction:
+                self.record_prediction_use(
+                    expr,
+                    "prediction_expression",
+                    "integration_test uses model predictions inside inline Python logic",
+                )
             return "value"
 
         for child in ast.iter_child_nodes(expr):
@@ -384,6 +438,16 @@ class _IntegrationFunctionAnalyzer:
         callee_name = _call_name(call.func)
         root_name = _root_name(call.func)
         lower_callee = callee_name.lower()
+        receiver_kind = ""
+
+        if isinstance(call.func, ast.Attribute):
+            receiver_kind = self.visit_expr(call.func.value, False)
+            if receiver_kind == "prediction":
+                self.record_prediction_use(
+                    call,
+                    "prediction_method_call",
+                    "integration_test calls methods on model predictions",
+                )
 
         if self.is_manual_batch_call(call):
             self.record(
@@ -432,10 +496,19 @@ class _IntegrationFunctionAnalyzer:
                     "category": "decorated_" + decorated_kind,
                 }
             )
+            used_prediction = False
             for arg in call.args:
-                self.visit_expr(arg, True)
+                if self.visit_expr(arg, True) == "prediction":
+                    used_prediction = True
             for keyword in call.keywords:
-                self.visit_expr(keyword.value, True)
+                if self.visit_expr(keyword.value, True) == "prediction":
+                    used_prediction = True
+            if used_prediction:
+                self.record_prediction_use(
+                    call,
+                    "prediction_argument",
+                    "integration_test passes model predictions into a decorated interface",
+                )
             return "decorator"
 
         if self.is_transform_call(call):
@@ -455,10 +528,19 @@ class _IntegrationFunctionAnalyzer:
                 "integration_test should only call Tensorleap decorators and the model inference path",
             )
 
+        used_prediction = receiver_kind == "prediction"
         for arg in call.args:
-            self.visit_expr(arg, False)
+            if self.visit_expr(arg, False) == "prediction":
+                used_prediction = True
         for keyword in call.keywords:
-            self.visit_expr(keyword.value, False)
+            if self.visit_expr(keyword.value, False) == "prediction":
+                used_prediction = True
+        if used_prediction:
+            self.record_prediction_use(
+                call,
+                "prediction_argument",
+                "integration_test passes model predictions into a helper or transform call",
+            )
         return "value"
 
 
@@ -534,6 +616,7 @@ type IntegrationTestFunctionAnalysis struct {
 	Line                     int                         `json:"line,omitempty"`
 	Arguments                []string                    `json:"arguments,omitempty"`
 	Calls                    []IntegrationTestCall       `json:"calls,omitempty"`
+	PredictionUses           []IntegrationTestASTFinding `json:"predictionUses,omitempty"`
 	UnknownCalls             []IntegrationTestASTFinding `json:"unknownCalls,omitempty"`
 	DirectDatasetAccess      []IntegrationTestASTFinding `json:"directDatasetAccess,omitempty"`
 	ManualBatchManipulations []IntegrationTestASTFinding `json:"manualBatchManipulations,omitempty"`
@@ -707,7 +790,42 @@ func integrationTestASTIssues(summary IntegrationTestASTSummary, snapshot core.W
 		})
 	}
 
+	requiredLoadModels := requiredIntegrationTestFunctions(summary, snapshot, "load_model")
 	for _, analysis := range summary.IntegrationTests {
+		modelCallLine := 0
+		calledRequiredLoadModel := false
+		for _, call := range analysis.Calls {
+			if call.Category == "model_call" && modelCallLine == 0 {
+				modelCallLine = call.Line
+			}
+			if calledRequiredLoadModel {
+				continue
+			}
+			for _, function := range requiredLoadModels {
+				if strings.EqualFold(call.Name, function.Function) {
+					calledRequiredLoadModel = true
+					break
+				}
+			}
+		}
+		if len(requiredLoadModels) > 0 && calledRequiredLoadModel && modelCallLine == 0 {
+			issues = append(issues, core.Issue{
+				Code:     core.IssueCodeIntegrationTestMissingRequiredCalls,
+				Message:  "integration_test calls load_model() but never executes model inference",
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopeIntegrationTest,
+				Location: locationFor("model_inference", analysis.Line),
+			})
+		}
+		if modelCallLine > 0 && len(analysis.PredictionUses) == 0 {
+			issues = append(issues, core.Issue{
+				Code:     core.IssueCodeIntegrationTestMissingRequiredCalls,
+				Message:  "integration_test executes model inference but never consumes model outputs",
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopeIntegrationTest,
+				Location: locationFor("prediction_outputs", modelCallLine),
+			})
+		}
 		for _, finding := range analysis.UnknownCalls {
 			target := strings.TrimSpace(finding.Name)
 			if target == "" {

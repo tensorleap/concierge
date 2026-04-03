@@ -578,6 +578,7 @@ func objectiveForStep(
 			"Keep integration_test thin and declarative so mapping-mode re-execution succeeds.",
 			"Never add manual batching or raw tensor/session calls inside integration_test (`transpose`, `np.expand_dims`, `model.get_inputs`, `model.run`).",
 			"Tensorleap handles batching automatically around decorated calls inside integration_test.",
+			"If @tensorleap_load_model is present, integration_test must execute the returned model and route predictions into downstream decorated interfaces; do not stop after load_model().",
 			"Do not modify preprocess subset semantics, encoder implementations, or unrelated project logic.",
 		}
 		for _, recommendation := range recommendations {

@@ -116,16 +116,35 @@ jobs:
           retention-days: 30
 
       - name: Sync rolling nightly regression issue
+        id: nightly_sync
         if: ${{ always() }}
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           artifact_name="qa-loop-${RUN_ID}"
+          result_json="${RUNNER_TEMP}/nightly-sync-result.json"
           python3 scripts/qa_nightly_issue.py sync-issue \
             --repo-root "${GITHUB_WORKSPACE}" \
             --artifacts-root "${GITHUB_WORKSPACE}/QA" \
             --run-id "${RUN_ID}" \
             --issue-title "${NIGHTLY_ISSUE_TITLE}" \
             --workflow-run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --artifact-name "${artifact_name}"
+            --artifact-name "${artifact_name}" \
+            --result-json "${result_json}"
+          echo "result_json=${result_json}" >> "$GITHUB_OUTPUT"
+          echo "notification_action=$(jq -r '.notification_action' "${result_json}")" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Slack for nightly regression transitions
+        if: ${{ always() && github.ref_name == 'main' && secrets.SLACK_NIGHTLY_WEBHOOK_URL != '' && (steps.nightly_sync.outputs.notification_action == 'regression_opened' || steps.nightly_sync.outputs.notification_action == 'recovered') }}
+        env:
+          SLACK_NIGHTLY_WEBHOOK_URL: ${{ secrets.SLACK_NIGHTLY_WEBHOOK_URL }}
+        shell: bash
+        run: |
+          payload_json="${RUNNER_TEMP}/nightly-slack-payload.json"
+          python3 scripts/qa_nightly_issue.py build-slack-payload \
+            --result-json "${{ steps.nightly_sync.outputs.result_json }}" > "${payload_json}"
+          curl -fsS -X POST \
+            -H 'Content-type: application/json' \
+            --data @"${payload_json}" \
+            "${SLACK_NIGHTLY_WEBHOOK_URL}"

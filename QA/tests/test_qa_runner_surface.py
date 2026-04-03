@@ -35,6 +35,15 @@ class QARunnerSurfaceTest(unittest.TestCase):
         self.assertIn("qa_workflow_summary.py", workflow)
         self.assertIn("actions/upload-artifact@v4", workflow)
 
+    def test_nightly_ultralytics_workflow_wires_slack_transition_notifications(self) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "nightly-ultralytics-qa.yml").read_text(encoding="utf-8")
+
+        self.assertIn("SLACK_NIGHTLY_WEBHOOK_URL", workflow)
+        self.assertIn("build-slack-payload", workflow)
+        self.assertIn("curl -fsS", workflow)
+        self.assertIn("notification_action", workflow)
+        self.assertIn("github.ref_name == 'main'", workflow)
+
     def test_qa_workflow_supports_manual_dispatch_inputs(self) -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / "qa-loop.yml").read_text(encoding="utf-8")
 

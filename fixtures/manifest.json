@@ -92,6 +92,23 @@
         "leap_mapping_densenet.yaml",
         "leap_test.py"
       ]
+    },
+    {
+      "id": "infineon_ts_v2",
+      "repo": "https://github.com/tensorleap-hub/infineon-ts-v2.git",
+      "post_ref": "92e113cf12548507a4df6b9ba73a3e9f1e60dd37",
+      "strip_for_pre": [
+        "README.md",
+        "setup_guide.md",
+        "leap.yaml",
+        "leap_integration.py",
+        "infineon/data_preprocess.py",
+        "infineon/encoders.py",
+        "infineon/latent_space.py",
+        "infineon/metadata.py",
+        "infineon/metrics.py",
+        "infineon/visualizers.py"
+      ]
     }
   ]
 }

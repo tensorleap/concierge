@@ -8,6 +8,33 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class QARunnerSurfaceTest(unittest.TestCase):
+    def test_nightly_ultralytics_workflow_is_scheduled_and_dispatchable(self) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "nightly-ultralytics-qa.yml").read_text(encoding="utf-8")
+
+        self.assertIn("schedule:", workflow)
+        self.assertIn('- cron: "17 3 * * *"', workflow)
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("ref:", workflow)
+
+    def test_nightly_ultralytics_workflow_targets_fixed_fixture_and_step(self) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "nightly-ultralytics-qa.yml").read_text(encoding="utf-8")
+
+        self.assertIn("QA_FIXTURE: ultralytics", workflow)
+        self.assertIn("QA_STEP: pre", workflow)
+        self.assertIn('bash scripts/qa_fixture_run.sh \\', workflow)
+        self.assertIn('--repo "${QA_FIXTURE}" \\', workflow)
+        self.assertIn('--step "${QA_STEP}" \\', workflow)
+        self.assertIn("--require-explicit-setup", workflow)
+
+    def test_nightly_ultralytics_workflow_uses_nightly_issue_helper(self) -> None:
+        workflow = (REPO_ROOT / ".github" / "workflows" / "nightly-ultralytics-qa.yml").read_text(encoding="utf-8")
+
+        self.assertIn("qa_nightly_issue.py", workflow)
+        self.assertIn("Nightly QA regression: ultralytics/pre", workflow)
+        self.assertIn("issues: write", workflow)
+        self.assertIn("qa_workflow_summary.py", workflow)
+        self.assertIn("actions/upload-artifact@v4", workflow)
+
     def test_qa_workflow_supports_manual_dispatch_inputs(self) -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / "qa-loop.yml").read_text(encoding="utf-8")
 

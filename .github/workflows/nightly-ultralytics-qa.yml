@@ -1,0 +1,131 @@
+name: Nightly Ultralytics QA
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Optional same-repo ref to test. Defaults to main.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  nightly-ultralytics-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      QA_RUNTIME_PREREQ_GITHUB_TOKEN: ${{ secrets.QA_RUNTIME_PREREQ_GITHUB_TOKEN }}
+      QA_FIXTURE: ultralytics
+      QA_STEP: pre
+      QA_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || 'main' }}
+      NIGHTLY_ISSUE_TITLE: Nightly QA regression: ultralytics/pre
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.QA_REF }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install QA prerequisites
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "poetry>=2,<3"
+          npm install -g @anthropic-ai/claude-code
+          sudo apt-get update
+          sudo apt-get install -y git-lfs jq ripgrep
+          git lfs install --skip-smudge
+
+      - name: Resolve run id
+        shell: bash
+        run: |
+          run_date="$(date -u +%Y%m%d)"
+          echo "RUN_ID=nightly-ultralytics-pre-${run_date}-${GITHUB_RUN_ID}" >> "$GITHUB_ENV"
+
+      - name: Verify QA toolchain
+        run: |
+          go version
+          python --version
+          poetry --version
+          docker version
+          jq --version
+          rg --version
+          claude --version
+
+      - name: Prepare selected fixture
+        shell: bash
+        run: |
+          bash scripts/fixtures_prepare.sh --fixture "${QA_FIXTURE}"
+
+      - name: Run QA loop
+        shell: bash
+        run: |
+          bash scripts/qa_fixture_run.sh \
+            --repo "${QA_FIXTURE}" \
+            --step "${QA_STEP}" \
+            --require-explicit-setup \
+            -- \
+            --run-id "${RUN_ID}"
+
+      - name: Write QA summary
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          artifact_name="qa-loop-${RUN_ID}"
+          python3 scripts/qa_workflow_summary.py \
+            --repo-root "${GITHUB_WORKSPACE}" \
+            --artifacts-root "${GITHUB_WORKSPACE}/QA" \
+            --run-id "${RUN_ID}" \
+            --ref "${QA_REF}" \
+            --artifact-name "${artifact_name}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload QA artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-loop-${{ env.RUN_ID }}
+          path: |
+            QA/reports/${{ env.RUN_ID }}.md
+            QA/reports/${{ env.RUN_ID }}.json
+            QA/runs/${{ env.RUN_ID }}
+            QA/transcripts/${{ env.RUN_ID }}.full.txt
+            QA/transcripts/${{ env.RUN_ID }}.interaction.jsonl
+            QA/transcripts/${{ env.RUN_ID }}.terminal.raw.txt
+            QA/transcripts/${{ env.RUN_ID }}.terminal.txt
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Sync rolling nightly regression issue
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          artifact_name="qa-loop-${RUN_ID}"
+          python3 scripts/qa_nightly_issue.py sync-issue \
+            --repo-root "${GITHUB_WORKSPACE}" \
+            --artifacts-root "${GITHUB_WORKSPACE}/QA" \
+            --run-id "${RUN_ID}" \
+            --issue-title "${NIGHTLY_ISSUE_TITLE}" \
+            --workflow-run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --artifact-name "${artifact_name}"

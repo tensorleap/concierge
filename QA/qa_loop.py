@@ -1178,7 +1178,7 @@ class SupervisorLoop:
             requested = shlex.split(command_text)
         except ValueError:
             return False
-        return requested == self.config.command
+        return any(requested == candidate for candidate in self._target_command_variants())
 
     def _extract_target_rerun_prelude(self, command_text: str) -> str | None:
         stripped = command_text.strip()
@@ -1186,12 +1186,14 @@ class SupervisorLoop:
             return None
         if self._command_matches_target(stripped):
             return ""
-        target_text = re.escape(shlex.join(self.config.command))
-        match = re.match(rf"(?s)^(?P<prefix>.*?)(?:&&|;|\n)\s*{target_text}\s*$", stripped)
-        if not match:
-            return None
-        prefix = str(match.group("prefix") or "").strip()
-        return prefix or None
+        for variant in self._target_command_variants():
+            target_text = re.escape(shlex.join(variant))
+            match = re.match(rf"(?s)^(?P<prefix>.*?)(?:&&|;|\n)\s*{target_text}\s*$", stripped)
+            if not match:
+                continue
+            prefix = str(match.group("prefix") or "").strip()
+            return prefix or None
+        return None
 
     def _restart_target_process(
         self,
@@ -1216,6 +1218,14 @@ class SupervisorLoop:
             f"{shlex.join(self.config.command)}\n"
         )
         self.driver.start(self._target_command(), cwd=self.config.host_cwd, env=os.environ.copy())
+
+    def _target_command_variants(self) -> list[list[str]]:
+        variants = [list(self.config.command)]
+        executable = self.config.command[0]
+        basename = Path(executable).name
+        if basename and basename != executable:
+            variants.append([basename, *self.config.command[1:]])
+        return variants
 
     def _docker_capture(self, command: list[str], *, timeout_seconds: float = 30.0) -> subprocess.CompletedProcess[str]:
         completed = subprocess.run(

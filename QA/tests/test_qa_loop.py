@@ -2023,7 +2023,19 @@ class QALoopTest(unittest.TestCase):
             )
             codex_script.chmod(0o755)
 
-            target_command = [sys.executable, str(concierge_script)]
+            concierge_wrapper = tmp / "concierge"
+            concierge_wrapper.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/bin/sh
+                    exec {shlex.quote(sys.executable)} {shlex.quote(str(concierge_script))} "$@"
+                    """
+                ),
+                encoding="utf-8",
+            )
+            concierge_wrapper.chmod(0o755)
+
+            target_command = [str(concierge_wrapper), "run"]
 
             env = os.environ.copy()
             env["FAKE_CODEX_STATE"] = str(tmp / "fake_codex_rerun_state.json")
@@ -2187,13 +2199,25 @@ class QALoopTest(unittest.TestCase):
             )
             codex_script.chmod(0o755)
 
-            target_command = [sys.executable, str(concierge_script)]
+            concierge_wrapper = tmp / "concierge"
+            concierge_wrapper.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/bin/sh
+                    exec {shlex.quote(sys.executable)} {shlex.quote(str(concierge_script))} "$@"
+                    """
+                ),
+                encoding="utf-8",
+            )
+            concierge_wrapper.chmod(0o755)
+
+            target_command = [str(concierge_wrapper), "run"]
 
             env = os.environ.copy()
             env["FAKE_CODEX_STATE"] = str(tmp / "fake_codex_compound_rerun_state.json")
             env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
-            env["FAKE_TARGET_COMMAND"] = shlex.join(target_command)
-            env["FAKE_TARGET_COMPOUND_COMMAND"] = f"touch prepared.txt && {shlex.join(target_command)}"
+            env["FAKE_TARGET_COMMAND"] = "concierge run"
+            env["FAKE_TARGET_COMPOUND_COMMAND"] = "touch prepared.txt && concierge run"
 
             completed = subprocess.run(
                 qa_loop_command(
@@ -2241,7 +2265,7 @@ class QALoopTest(unittest.TestCase):
             command_cwd.mkdir()
             fake_docker = write_fake_docker(tmp)
             container_name = "fixture"
-            target_command = [sys.executable, "fake-concierge.py"]
+            target_command = ["/usr/local/bin/concierge", "run"]
 
             env = os.environ.copy()
             env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
@@ -2271,7 +2295,7 @@ class QALoopTest(unittest.TestCase):
                     if self.turn == 1:
                         return {
                             "action": "RUN_COMMAND",
-                            "input_text": shlex.join(target_command),
+                            "input_text": "concierge run",
                             "loop_state": "CONTINUE",
                             "summary": "Rerun Concierge immediately after the failure output appears.",
                             "issues": [],

@@ -293,6 +293,7 @@ class QALoopTest(unittest.TestCase):
                 claude_command="claude",
                 claude_model=None,
                 claude_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
+                review_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
                 max_iterations=qa_loop.DEFAULT_MAX_ITERATIONS,
                 max_idle_turns=qa_loop.DEFAULT_MAX_IDLE_TURNS,
                 max_runtime_seconds=qa_loop.DEFAULT_MAX_RUNTIME_SECONDS,
@@ -398,6 +399,7 @@ class QALoopTest(unittest.TestCase):
                 claude_command="claude",
                 claude_model=None,
                 claude_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
+                review_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
                 max_iterations=qa_loop.DEFAULT_MAX_ITERATIONS,
                 max_idle_turns=qa_loop.DEFAULT_MAX_IDLE_TURNS,
                 max_runtime_seconds=qa_loop.DEFAULT_MAX_RUNTIME_SECONDS,
@@ -458,6 +460,192 @@ class QALoopTest(unittest.TestCase):
             self.assertNotIn(str(paths.summary_json), prompt)
             self.assertNotIn(str(paths.terminal_clean), prompt)
 
+    def test_request_integration_review_uses_exported_workspace_and_post_fixture(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            artifacts_root = tmp / "artifacts"
+            artifacts_root.mkdir()
+            paths = qa_loop.prepare_run_paths(artifacts_root, "run-123")
+            live_io = qa_loop.LiveIO(transcript_path=paths.full_transcript)
+
+            export_root = paths.docker_dir / "export" / "workspace"
+            export_root.mkdir(parents=True)
+            (export_root / "leap.yaml").write_text("entryFile: leap_integration.py\n", encoding="utf-8")
+            (export_root / "leap_integration.py").write_text("print('generated')\n", encoding="utf-8")
+
+            fixture_post = tmp / "post"
+            fixture_post.mkdir()
+            (fixture_post / "leap.yaml").write_text("entryFile: leap_integration.py\n", encoding="utf-8")
+            (fixture_post / "leap_integration.py").write_text("print('post fixture')\n", encoding="utf-8")
+
+            class FakeClaudeClient:
+                def __init__(self) -> None:
+                    self.calls: list[dict[str, object]] = []
+
+                def run_structured(self, **kwargs: object) -> dict[str, object]:
+                    self.calls.append(kwargs)
+                    return {
+                        "status": "pass",
+                        "verdict": "The generated integration is functionally equivalent to the post fixture.",
+                        "functional_equivalence": "Equivalent for the scoped checkpoint.",
+                        "quality_assessment": "The generated files are appropriate and well wired.",
+                        "issues": [],
+                        "confidence": "high",
+                    }
+
+            fake_claude = FakeClaudeClient()
+            config = qa_loop.LoopConfig(
+                artifacts_root=artifacts_root,
+                docker_bin="docker",
+                host_cwd=tmp,
+                container_name="fixture",
+                container_image=None,
+                command=["/usr/local/bin/concierge", "run"],
+                command_cwd="/workspace",
+                claude_command="claude",
+                claude_model=None,
+                claude_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
+                review_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
+                max_iterations=qa_loop.DEFAULT_MAX_ITERATIONS,
+                max_idle_turns=qa_loop.DEFAULT_MAX_IDLE_TURNS,
+                max_runtime_seconds=qa_loop.DEFAULT_MAX_RUNTIME_SECONDS,
+                read_quiet_seconds=qa_loop.DEFAULT_READ_QUIET_SECONDS,
+                read_timeout_seconds=qa_loop.DEFAULT_READ_TIMEOUT_SECONDS,
+                settle_timeout_seconds=qa_loop.DEFAULT_SETTLE_TIMEOUT_SECONDS,
+                transcript_tail_chars=qa_loop.DEFAULT_TRANSCRIPT_TAIL_CHARS,
+                latest_output_chars=qa_loop.DEFAULT_LATEST_OUTPUT_CHARS,
+                fixture_post_path=fixture_post,
+                docker_snapshots_enabled=False,
+                fixture_id="ultralytics",
+                guide_step="input_encoders",
+                ref_under_test="main@abc1234",
+                checkpoint_key="ultralytics:input_encoders",
+                source_kind="variant",
+                source_id="pre",
+            )
+            supervisor = qa_loop.SupervisorLoop(
+                config=config,
+                claude_client=fake_claude,
+                role_prompt="role",
+                nudge_prompt="nudge",
+            )
+
+            summary = {
+                "run_id": "run-123",
+                "loop_state": "STOP_REPORT",
+                "stop_reason": "supervisor_stop_report",
+                "iterations_completed": 2,
+                "idle_turns": 0,
+                "docker": {
+                    "exported_artifacts": [
+                        {"source": "fixture:/workspace/leap.yaml", "destination": str(export_root / "leap.yaml")},
+                        {
+                            "source": "fixture:/workspace/leap_integration.py",
+                            "destination": str(export_root / "leap_integration.py"),
+                        },
+                    ]
+                },
+                "qa_context": {
+                    "fixture_id": "ultralytics",
+                    "guide_step": "input_encoders",
+                    "ref_under_test": "main@abc1234",
+                    "checkpoint_key": "ultralytics:input_encoders",
+                    "source_kind": "variant",
+                    "source_id": "pre",
+                },
+            }
+
+            review = supervisor._request_integration_review(paths=paths, summary=summary, live_io=live_io)
+
+            self.assertEqual(review.status, "pass")
+            self.assertEqual(review.confidence, "high")
+            call = fake_claude.calls[0]
+            prompt = str(call["prompt"])
+            self.assertIn(str(export_root), prompt)
+            self.assertIn(str(fixture_post), prompt)
+            self.assertIn('"fixture_id": "ultralytics"', prompt)
+            self.assertIn('"guide_step": "input_encoders"', prompt)
+            self.assertEqual(list(call["add_dirs"]), [export_root, fixture_post])
+            self.assertEqual(call["allowed_tools"], "Read,Grep,Glob,LS")
+            self.assertEqual(call["session_label"], "claude-integration-review")
+
+    def test_build_report_context_includes_integration_review(self) -> None:
+        context = qa_loop.build_report_context(
+            summary={
+                "run_id": "run-123",
+                "stop_reason": "integration_review_failed",
+                "iterations_completed": 3,
+                "idle_turns": 0,
+                "qa_context": {
+                    "fixture_id": "ultralytics",
+                    "guide_step": "input_encoders",
+                    "ref_under_test": "feature/qa@abc1234",
+                },
+                "integration_review": {
+                    "status": "fail",
+                    "verdict": "The generated integration is not functionally equivalent.",
+                    "functional_equivalence": "The encoder wiring diverges from the post fixture.",
+                    "quality_assessment": "The generated code contains incorrect semantics.",
+                    "issues": ["The generated integration omits the required encoder mapping."],
+                    "confidence": "high",
+                },
+            },
+            turns=[
+                {
+                    "iteration": 1,
+                    "directive": {
+                        "action": "WAIT",
+                        "loop_state": "STOP_REPORT",
+                        "summary": "Concierge reported success.",
+                        "issues": [],
+                        "next_focus": "Review the integration.",
+                    },
+                }
+            ],
+            loop_state="STOP_FIX",
+        )
+
+        self.assertEqual(context["integration_review"]["status"], "fail")
+        self.assertEqual(context["integration_review"]["confidence"], "high")
+        self.assertIn("encoder wiring diverges", context["integration_review"]["functional_equivalence"])
+
+    def test_render_markdown_report_includes_integration_review_section(self) -> None:
+        report = qa_loop.QAReport(
+            title="Synthetic QA Report",
+            overall_outcome="The run completed but the generated integration did not pass review.",
+            loop_state="STOP_FIX",
+            integration_progress="Concierge reached its terminal success path before the review gate failed the run.",
+            ux_clarity=[],
+            product_issues=[],
+            agent_interaction_issues=[],
+            suggestions=[],
+            notable_moments=[],
+        )
+
+        body = qa_loop.render_markdown_report(
+            "run-123",
+            {
+                "loop_state": "STOP_FIX",
+                "stop_reason": "integration_review_failed",
+                "command_cwd": "/workspace",
+                "docker": {"container_name": "fixture"},
+                "integration_review": {
+                    "status": "fail",
+                    "verdict": "The generated integration is not functionally equivalent to the post fixture.",
+                    "functional_equivalence": "The generated encoder wiring differs in a behaviorally significant way.",
+                    "quality_assessment": "The authored integration is not appropriate for the fixture.",
+                    "issues": ["The generated integration omits a required encoder mapping."],
+                    "confidence": "high",
+                },
+            },
+            report,
+        )
+
+        self.assertIn("## Integration Review", body)
+        self.assertIn("Status: `fail`", body)
+        self.assertIn("The generated integration is not functionally equivalent to the post fixture.", body)
+        self.assertIn("The generated integration omits a required encoder mapping.", body)
+
     def test_request_control_includes_runtime_prerequisites_in_session_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
@@ -499,6 +687,7 @@ class QALoopTest(unittest.TestCase):
                 claude_command="claude",
                 claude_model=None,
                 claude_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
+                review_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
                 max_iterations=qa_loop.DEFAULT_MAX_ITERATIONS,
                 max_idle_turns=qa_loop.DEFAULT_MAX_IDLE_TURNS,
                 max_runtime_seconds=qa_loop.DEFAULT_MAX_RUNTIME_SECONDS,
@@ -1417,6 +1606,149 @@ class QALoopTest(unittest.TestCase):
                     report_body = report_path.read_text(encoding="utf-8")
                     self.assertIn(f"Loop state: `{loop_state}`", report_body)
                     self.assertIn(f"Stop reason: `{expected_reason}`", report_body)
+
+    def test_supervisor_loop_rewrites_stop_report_to_stop_fix_when_integration_review_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            artifacts_root = tmp / "artifacts"
+            command_cwd = tmp / "fixture"
+            fixture_post = tmp / "post"
+            artifacts_root.mkdir()
+            command_cwd.mkdir()
+            fixture_post.mkdir()
+            fake_docker = write_fake_docker(tmp)
+            container_name = "fixture"
+
+            (command_cwd / ".concierge" / "reports").mkdir(parents=True)
+            (command_cwd / ".concierge" / "reports" / "snapshot.json").write_text("{}\n", encoding="utf-8")
+            (command_cwd / "leap.yaml").write_text("entryFile: leap_integration.py\n", encoding="utf-8")
+            (command_cwd / "leap_integration.py").write_text("print('generated integration')\n", encoding="utf-8")
+            (fixture_post / "leap.yaml").write_text("entryFile: leap_integration.py\n", encoding="utf-8")
+            (fixture_post / "leap_integration.py").write_text("print('known good integration')\n", encoding="utf-8")
+
+            concierge_script = tmp / "fake_concierge_review_gate.py"
+            concierge_script.write_text(
+                textwrap.dedent(
+                    """
+                    print("Type YES to continue:", flush=True)
+                    answer = input()
+                    print(f"Input received: {answer}", flush=True)
+                    print("Integration complete", flush=True)
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            claude_script = tmp / "fake_claude_review_gate.py"
+            claude_script.write_text(
+                textwrap.dedent(
+                    """
+                    #!/usr/bin/env python3
+                    import json
+                    import os
+                    import sys
+                    from pathlib import Path
+
+                    prompt = sys.stdin.read()
+                    state_path = Path(os.environ["FAKE_CLAUDE_REVIEW_STATE"])
+                    if state_path.exists():
+                        state = json.loads(state_path.read_text(encoding="utf-8"))
+                    else:
+                        state = {"turn": 0}
+
+                    if "final expert reviewer for a Tensorleap integration QA run" in prompt:
+                        payload = {
+                            "status": "fail",
+                            "verdict": "The generated integration is not functionally equivalent to the post fixture.",
+                            "functional_equivalence": "The generated code diverges from the fixture in behaviorally significant ways.",
+                            "quality_assessment": "The authored integration contains incorrect wiring and should not be accepted.",
+                            "issues": ["The generated integration does not preserve the fixture's expected encoder behavior."],
+                            "confidence": "high"
+                        }
+                    elif "final qualitative QA report" in prompt:
+                        payload = {
+                            "title": "Synthetic QA Report",
+                            "overall_outcome": "Concierge finished, but the expert review rejected the generated integration.",
+                            "loop_state": "STOP_FIX",
+                            "integration_progress": "The run reached Concierge's completion message before the review gate failed the session.",
+                            "ux_clarity": [],
+                            "product_issues": ["The generated integration did not match the fixture's functional behavior."],
+                            "agent_interaction_issues": [],
+                            "suggestions": ["Inspect the integration review section before trusting the generated code."],
+                            "notable_moments": ["The review gate overrode Concierge's success signal."]
+                        }
+                    else:
+                        state["turn"] += 1
+                        if state["turn"] == 1:
+                            payload = {
+                                "action": "SEND_INPUT",
+                                "input_text": "YES",
+                                "loop_state": "CONTINUE",
+                                "summary": "Advance through the prompt.",
+                                "issues": [],
+                                "next_focus": "Wait for the completion output."
+                            }
+                        else:
+                            payload = {
+                                "action": "WAIT",
+                                "input_text": "",
+                                "loop_state": "STOP_REPORT",
+                                "summary": "Concierge reached a clean completion point.",
+                                "issues": [],
+                                "next_focus": "Review the generated integration."
+                            }
+                        state_path.write_text(json.dumps(state), encoding="utf-8")
+
+                    print(json.dumps({"type": "result", "subtype": "success", "structured_output": payload}))
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            claude_script.chmod(0o755)
+
+            env = os.environ.copy()
+            env["FAKE_CLAUDE_REVIEW_STATE"] = str(tmp / "fake_claude_review_state.json")
+            env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
+
+            completed = subprocess.run(
+                qa_loop_command(
+                    artifacts_root=artifacts_root,
+                    fake_docker=fake_docker,
+                    container_name=container_name,
+                    claude_command=str(claude_script),
+                    target_command=[sys.executable, str(concierge_script)],
+                    extra_args=[
+                        "--fixture-post-path",
+                        str(fixture_post),
+                    ],
+                ),
+                cwd=str(ROOT),
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                completed.returncode,
+                2,
+                msg=f"stdout:\n{completed.stdout}\n\nstderr:\n{completed.stderr}",
+            )
+
+            run_dir = next((artifacts_root / "runs").iterdir())
+            summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["loop_state"], "STOP_FIX")
+            self.assertEqual(summary["stop_reason"], "integration_review_failed")
+            self.assertEqual(summary["integration_review"]["status"], "fail")
+            self.assertEqual(summary["integration_review"]["confidence"], "high")
+            self.assertIn("not functionally equivalent", summary["integration_review"]["verdict"])
+
+            report_path = artifacts_root / "reports" / f"{run_dir.name}.md"
+            report_body = report_path.read_text(encoding="utf-8")
+            self.assertIn("## Integration Review", report_body)
+            self.assertIn("Status: `fail`", report_body)
+            self.assertIn("The generated integration does not preserve the fixture's expected encoder behavior.", report_body)
 
     def test_supervisor_loop_runs_manual_command_and_restarts_concierge(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

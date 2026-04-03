@@ -46,6 +46,12 @@ EXPORTED_WORKSPACE_PATHS = (
     "leap_binder.py",
     "leap_custom_test.py",
 )
+EXPORTED_REVIEW_PATHS = (
+    "leap.yaml",
+    "leap_integration.py",
+    "leap_binder.py",
+    "leap_custom_test.py",
+)
 
 
 @dataclass
@@ -86,6 +92,16 @@ class QAReport:
 
 
 @dataclass
+class IntegrationReview:
+    status: str
+    verdict: str
+    functional_equivalence: str
+    quality_assessment: str
+    issues: list[str]
+    confidence: str
+
+
+@dataclass
 class LoopConfig:
     artifacts_root: Path
     docker_bin: str
@@ -97,6 +113,7 @@ class LoopConfig:
     claude_command: str
     claude_model: str | None
     claude_timeout_seconds: float
+    review_timeout_seconds: float
     max_iterations: int
     max_idle_turns: int
     max_runtime_seconds: int
@@ -919,6 +936,36 @@ class SupervisorLoop:
         exported_artifacts = self._export_container_artifacts(paths=paths)
         if exported_artifacts:
             summary["docker"]["exported_artifacts"] = exported_artifacts
+        if loop_state == "STOP_REPORT" and self.config.fixture_post_path is not None:
+            candidate_workspace = exported_workspace_review_root(paths)
+            if candidate_workspace is not None:
+                try:
+                    review = self._request_integration_review(paths=paths, summary=summary, live_io=live_io)
+                except ClaudeInvocationError as exc:
+                    review = integration_review_error(
+                        f"Claude integration review failed: {exc}",
+                        issues=["The exported integration could not be reviewed against the post fixture."],
+                    )
+                summary["integration_review"] = asdict(review)
+                append_jsonl(
+                    paths.interaction_log,
+                    {
+                        "time": utc_now(),
+                        "iteration": len(turns),
+                        "kind": "integration_review",
+                        "status": review.status,
+                        "confidence": review.confidence,
+                        "verdict": review.verdict,
+                    },
+                )
+                if review.status == "fail":
+                    loop_state = "STOP_FIX"
+                    stop_reason = "integration_review_failed"
+                elif review.status == "error":
+                    loop_state = "STOP_FIX"
+                    stop_reason = "integration_review_error"
+        summary["loop_state"] = loop_state
+        summary["stop_reason"] = stop_reason
         paths.summary_json.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
         write_report_artifacts(paths=paths, run_id=run_id, summary=summary, report=provisional_report(summary=summary, turns=turns))
 
@@ -1270,6 +1317,76 @@ class SupervisorLoop:
         )
         return normalize_qa_report(payload, default_loop_state=loop_state)
 
+    def _request_integration_review(
+        self,
+        *,
+        paths: RunPaths,
+        summary: dict[str, Any],
+        live_io: LiveIO,
+    ) -> IntegrationReview:
+        candidate_workspace = exported_workspace_review_root(paths)
+        if candidate_workspace is None:
+            return integration_review_error(
+                "No exported integration files were available for comparison.",
+                issues=["The QA loop did not export a generated integration bundle to compare against the post fixture."],
+            )
+        if self.config.fixture_post_path is None:
+            return integration_review_error(
+                "No post fixture path was available for comparison.",
+                issues=["The QA loop could not find the ground-truth fixture checkout for expert review."],
+            )
+
+        context = build_integration_review_context(
+            summary=summary,
+            turns=load_jsonl(paths.turns_jsonl),
+            candidate_workspace=candidate_workspace,
+            fixture_post_path=self.config.fixture_post_path,
+        )
+        prompt = textwrap.dedent(
+            f"""
+            You are the final expert reviewer for a Tensorleap integration QA run.
+            Compare the generated integration against the known-good post fixture and decide whether
+            the generated code is functionally equivalent and appropriate for the scoped checkpoint.
+
+            Rules:
+            - Ground your judgment in the exported candidate workspace and the post fixture files.
+            - Literal code identity is not required.
+            - Functional equivalence and correct integration wiring are required.
+            - Mark `status` as `pass` only when the generated integration is clearly correct for the scope.
+            - Mark `status` as `fail` when the generated integration has literal bugs, missing wiring, incorrect semantics, or material divergence from the post fixture.
+            - Mark `status` as `error` only when you genuinely cannot judge from the available artifacts.
+            - Keep `verdict`, `functional_equivalence`, and `quality_assessment` concise.
+            - Keep `issues` to at most 5 concrete items.
+
+            Return only JSON matching the provided schema with exactly these keys:
+            - `status`
+            - `verdict`
+            - `functional_equivalence`
+            - `quality_assessment`
+            - `issues`
+            - `confidence`
+
+            Context:
+            ```json
+            {json.dumps(context, indent=2)}
+            ```
+            """
+        ).strip()
+        review_base = paths.claude_dir / "integration-review"
+        payload = self.claude_client.run_structured(
+            prompt=prompt,
+            schema_path=PROMPTS_DIR / "integration_review_schema.json",
+            output_path=review_base.with_suffix(".output.json"),
+            event_log_path=review_base.with_suffix(".jsonl"),
+            stderr_log_path=review_base.with_suffix(".stderr.log"),
+            add_dirs=[candidate_workspace, self.config.fixture_post_path],
+            allowed_tools="Read,Grep,Glob,LS",
+            timeout_seconds=self.config.review_timeout_seconds,
+            live_io=live_io,
+            session_label="claude-integration-review",
+        )
+        return normalize_integration_review(payload)
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -1286,6 +1403,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--container-image", default=None)
     parser.add_argument("--claude-command", default=os.environ.get("CLAUDE_BIN", "claude"))
     parser.add_argument("--claude-timeout-seconds", type=float, default=DEFAULT_CODEX_TIMEOUT_SECONDS)
+    parser.add_argument("--review-timeout-seconds", type=float, default=DEFAULT_CODEX_TIMEOUT_SECONDS)
     parser.add_argument(
         "--codex-command",
         dest="claude_command",
@@ -1352,6 +1470,7 @@ def main(argv: list[str] | None = None) -> int:
         claude_command=args.claude_command,
         claude_model=args.model,
         claude_timeout_seconds=args.claude_timeout_seconds,
+        review_timeout_seconds=args.review_timeout_seconds,
         max_iterations=args.max_iterations,
         max_idle_turns=args.max_idle_turns,
         max_runtime_seconds=args.max_runtime_seconds,
@@ -1526,7 +1645,7 @@ def build_report_context(*, summary: dict[str, Any], turns: list[dict[str, Any]]
     if not isinstance(qa_context, dict):
         qa_context = {}
 
-    return {
+    context = {
         "run": {
             "run_id": str(summary.get("run_id", "")).strip(),
             "fixture_id": str(qa_context.get("fixture_id", "")).strip(),
@@ -1550,6 +1669,65 @@ def build_report_context(*, summary: dict[str, Any], turns: list[dict[str, Any]]
             for directive in [turn.get("directive", {}) if isinstance(turn.get("directive", {}), dict) else {}]
         ],
     }
+    integration_review = summary.get("integration_review")
+    if isinstance(integration_review, dict):
+        context["integration_review"] = {
+            "status": str(integration_review.get("status", "")).strip(),
+            "verdict": str(integration_review.get("verdict", "")).strip(),
+            "functional_equivalence": str(integration_review.get("functional_equivalence", "")).strip(),
+            "quality_assessment": str(integration_review.get("quality_assessment", "")).strip(),
+            "issues": clean_string_list(integration_review.get("issues", [])),
+            "confidence": str(integration_review.get("confidence", "")).strip(),
+        }
+    return context
+
+
+def build_integration_review_context(
+    *,
+    summary: dict[str, Any],
+    turns: list[dict[str, Any]],
+    candidate_workspace: Path,
+    fixture_post_path: Path,
+) -> dict[str, Any]:
+    qa_context = summary.get("qa_context", {})
+    if not isinstance(qa_context, dict):
+        qa_context = {}
+
+    return {
+        "run": {
+            "run_id": str(summary.get("run_id", "")).strip(),
+            "fixture_id": str(qa_context.get("fixture_id", "")).strip(),
+            "guide_step": str(qa_context.get("guide_step", "")).strip(),
+            "ref_under_test": str(qa_context.get("ref_under_test", "")).strip(),
+            "checkpoint_key": str(qa_context.get("checkpoint_key", "")).strip(),
+            "source_kind": str(qa_context.get("source_kind", "")).strip(),
+            "source_id": str(qa_context.get("source_id", "")).strip(),
+            "stop_reason": str(summary.get("stop_reason", "")).strip(),
+        },
+        "candidate_workspace": str(candidate_workspace),
+        "fixture_post_path": str(fixture_post_path),
+        "recent_turn_summaries": [
+            {
+                "iteration": int(turn.get("iteration", 0) or 0),
+                "action": str(directive.get("action", "")).strip(),
+                "loop_state": str(directive.get("loop_state", "")).strip(),
+                "summary": str(directive.get("summary", "")).strip(),
+                "issues": clean_string_list(directive.get("issues", [])),
+            }
+            for turn in turns[-5:]
+            for directive in [turn.get("directive", {}) if isinstance(turn.get("directive", {}), dict) else {}]
+        ],
+    }
+
+
+def exported_workspace_review_root(paths: RunPaths) -> Path | None:
+    export_root = paths.docker_dir / "export" / "workspace"
+    if not export_root.is_dir():
+        return None
+    for relative_path in EXPORTED_REVIEW_PATHS:
+        if (export_root / relative_path).exists():
+            return export_root
+    return None
 
 
 def docker_tag_component(value: str) -> str:
@@ -1716,6 +1894,28 @@ def normalize_integration_progress(value: Any) -> str:
     return str(value).strip()
 
 
+def normalize_integration_review(payload: dict[str, Any]) -> IntegrationReview:
+    return IntegrationReview(
+        status=str(payload.get("status", "")).strip() or "error",
+        verdict=str(payload.get("verdict", "")).strip(),
+        functional_equivalence=str(payload.get("functional_equivalence", "")).strip(),
+        quality_assessment=str(payload.get("quality_assessment", "")).strip(),
+        issues=clean_string_list(payload.get("issues", [])),
+        confidence=str(payload.get("confidence", "")).strip() or "low",
+    )
+
+
+def integration_review_error(message: str, *, issues: Iterable[Any] = ()) -> IntegrationReview:
+    return IntegrationReview(
+        status="error",
+        verdict=message.strip(),
+        functional_equivalence="The QA loop could not complete a grounded comparison against the post fixture.",
+        quality_assessment="The generated integration could not be accepted because the expert review did not complete successfully.",
+        issues=clean_string_list(issues),
+        confidence="high",
+    )
+
+
 def normalize_qa_report(payload: dict[str, Any], *, default_loop_state: str) -> QAReport:
     title = str(payload.get("title", "")).strip()
     if not title:
@@ -1802,6 +2002,25 @@ def format_codex_agent_payload(prefix: str, payload: dict[str, Any]) -> str:
         ):
             for item in clean_string_list(payload.get(field_name, [])):
                 lines.append(f"{prefix} {label}: {item}")
+        return "\n".join(lines) + "\n"
+
+    if "status" in payload or "verdict" in payload:
+        status = str(payload.get("status", "")).strip() or "unknown"
+        lines.append(f"{prefix} integration review: {status}")
+        verdict = str(payload.get("verdict", "")).strip()
+        if verdict:
+            lines.append(f"{prefix} verdict: {verdict}")
+        functional_equivalence = str(payload.get("functional_equivalence", "")).strip()
+        if functional_equivalence:
+            lines.append(f"{prefix} equivalence: {functional_equivalence}")
+        quality_assessment = str(payload.get("quality_assessment", "")).strip()
+        if quality_assessment:
+            lines.append(f"{prefix} quality: {quality_assessment}")
+        for issue in clean_string_list(payload.get("issues", [])):
+            lines.append(f"{prefix} issue: {issue}")
+        confidence = str(payload.get("confidence", "")).strip()
+        if confidence:
+            lines.append(f"{prefix} confidence: {confidence}")
         return "\n".join(lines) + "\n"
 
     return ""
@@ -2124,6 +2343,7 @@ def write_report_artifacts(*, paths: RunPaths, run_id: str, summary: dict[str, A
 
 
 def render_markdown_report(run_id: str, summary: dict[str, Any], report: QAReport) -> str:
+    integration_review = summary.get("integration_review")
     lines = [
         f"# {report.title or 'QA Loop Report'}",
         "",
@@ -2136,6 +2356,9 @@ def render_markdown_report(run_id: str, summary: dict[str, Any], report: QARepor
         "",
         "## Integration Progress",
         report.integration_progress or "No integration progress summary was provided.",
+        "",
+        "## Integration Review",
+        *render_integration_review(integration_review if isinstance(integration_review, dict) else None),
         "",
         "## UX Clarity",
         *render_bullets(report.ux_clarity),
@@ -2160,6 +2383,28 @@ def render_bullets(items: list[str]) -> list[str]:
     if not items:
         return ["- None recorded."]
     return [f"- {item}" for item in items]
+
+
+def render_integration_review(review: dict[str, Any] | None) -> list[str]:
+    if not review:
+        return ["No expert integration review was recorded for this run."]
+
+    lines = [
+        f"Status: `{str(review.get('status', '')).strip() or 'unknown'}`",
+        f"Confidence: `{str(review.get('confidence', '')).strip() or 'unknown'}`",
+    ]
+    verdict = str(review.get("verdict", "")).strip()
+    if verdict:
+        lines.extend(["", f"Verdict: {verdict}"])
+    functional_equivalence = str(review.get("functional_equivalence", "")).strip()
+    if functional_equivalence:
+        lines.extend(["", f"Functional equivalence: {functional_equivalence}"])
+    quality_assessment = str(review.get("quality_assessment", "")).strip()
+    if quality_assessment:
+        lines.extend(["", f"Quality assessment: {quality_assessment}"])
+    lines.extend(["", "Issues:"])
+    lines.extend(render_bullets(clean_string_list(review.get("issues", []))))
+    return lines
 
 
 def default_concierge_command(artifacts_root: Path) -> list[str]:

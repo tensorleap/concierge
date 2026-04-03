@@ -1,6 +1,7 @@
 # QA Loop Guide
 
 `QA/qa_loop.py` runs Concierge inside a Docker container PTY, lets Claude act as the user, and saves a transcript plus a qualitative QA report.
+For fixture-backed runs that provide a `post` repo, the loop now also runs a final Claude Code integration review against the exported generated workspace and the known-good fixture before it can declare true success.
 
 ## Prerequisites
 
@@ -50,6 +51,7 @@ What this does:
 - stages any declared runtime prerequisites into a temporary host directory and mounts them read-only under `/runtime-prerequisites`
 - keeps Claude in blind-first mode at the start
 - only exposes the `post` repo path if progress stalls
+- after a terminal success path, compares the exported generated integration against the `post` fixture with Claude Code and fails the run if the generated code is not judged functionally equivalent or otherwise sound
 - when using `make qa`, resets the chosen built-in fixture back to a clean pinned `pre`/`post` state first
 - starts a long-lived fixture container and runs Concierge inside it with `docker exec`
 - keeps per-turn transcripts, turn logs, and `docker diff` / exported `.concierge` artifacts
@@ -111,6 +113,8 @@ Everything after `--` is treated as the container-internal PTY command.
   Command used to launch Claude. Default: `claude`, or `CLAUDE_BIN` if set.
 - `--claude-timeout-seconds FLOAT`
   Timeout for each Claude control step. Default: `300`. Final report synthesis is capped at `120`.
+- `--review-timeout-seconds FLOAT`
+  Timeout for the final Claude Code integration review. Default: `300`.
 - `--model MODEL`
   Optional Claude model override.
 - `--run-id ID`
@@ -146,6 +150,7 @@ By default the harness writes:
 - `QA/reports/<run-id>.md`
 
 The harness prints the absolute path to the full-session transcript at the end of the run. The markdown report is still the easiest artifact to read first.
+When the review gate runs, `summary.json` also carries an `integration_review` object with the Claude Code verdict, equivalence assessment, quality assessment, issues, and confidence.
 
 For fixture runs, each `QA/runs/<run-id>/docker/export/workspace/` directory contains exported container artifacts such as `/workspace/.concierge`, `leap.yaml`, `leap_integration.py`, and other common Tensorleap integration files when they exist. If `--docker-snapshots` is enabled, `QA/runs/<run-id>/docker/` also includes per-turn `docker commit` metadata plus `docker diff` / `docker inspect` outputs.
 

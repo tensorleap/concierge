@@ -21,6 +21,8 @@ The loop has three parts:
    Supervises the session, captures artifacts, executes external shell commands when Claude asks for them, and decides when to stop.
 3. Claude structured control/report steps
    Claude receives the cleaned transcript tail plus recent terminal output, then returns schema-validated JSON for both live control and the final report.
+4. Claude Code integration review step
+   For fixture-backed runs that reach a terminal success path with exported integration artifacts, Claude Code compares the generated workspace against the known-good `post` fixture before the run can remain a true pass.
 
 ## Control Model
 
@@ -40,6 +42,7 @@ The supervisor:
 5. repeats until the loop state stops or the runtime/idle limits are hit
 
 Clean process exits do not automatically end QA. If Concierge exits after a reviewed step and tells the user to rerun `concierge run`, the supervisor should normally relaunch the command and continue the same QA session instead of treating that single-run boundary as completion.
+Likewise, Concierge reporting success does not by itself end QA. Fixture-backed success must also survive the final Claude Code comparison gate.
 
 ## Blind-First Policy
 
@@ -59,6 +62,12 @@ The shared runtime path is Claude-only:
 - CI installs Claude CLI and uses the same `QA/qa_loop.py` entrypoint
 - structured output is validated against JSON schemas for both control and report generation
 - the same `ANTHROPIC_API_KEY` powers the host-side supervisor and the fixture container
+
+The final integration-review stage also runs through Claude Code:
+
+- local runs use the same `claude` CLI path as the rest of the supervisor
+- CI installs Claude CLI once and uses the same authentication surface for control, review, and final report generation
+- the review compares exported generated integration artifacts to the fixture `post` repo and can rewrite `STOP_REPORT` to `STOP_FIX`
 
 ## Artifacts
 

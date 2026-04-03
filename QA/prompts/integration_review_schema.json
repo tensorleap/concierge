@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["pass", "fail", "error"]
+    },
+    "verdict": {
+      "type": "string"
+    },
+    "functional_equivalence": {
+      "type": "string"
+    },
+    "quality_assessment": {
+      "type": "string"
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    }
+  },
+  "required": [
+    "status",
+    "verdict",
+    "functional_equivalence",
+    "quality_assessment",
+    "issues",
+    "confidence"
+  ],
+  "additionalProperties": false
+}

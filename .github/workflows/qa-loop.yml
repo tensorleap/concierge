@@ -18,6 +18,7 @@ on:
           - mnist
           - cifar10_resnet
           - imdb
+          - infineon_ts_v2
       step:
         description: QA starting point. Use pre to start from the clean pre repo without a checkpoint.
         required: true
@@ -54,6 +55,7 @@ jobs:
     timeout-minutes: 120
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
       QA_RUNTIME_PREREQ_GITHUB_TOKEN: ${{ secrets.QA_RUNTIME_PREREQ_GITHUB_TOKEN }}
       QA_FIXTURE: ${{ inputs.fixture }}
       QA_STEP: ${{ inputs.step }}
@@ -84,6 +86,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "poetry>=2,<3"
           npm install -g @anthropic-ai/claude-code
+          npm install -g @openai/codex
           sudo apt-get update
           sudo apt-get install -y git-lfs jq ripgrep
           git lfs install --skip-smudge
@@ -107,6 +110,7 @@ jobs:
           jq --version
           rg --version
           claude --version
+          codex --version
 
       - name: Prepare selected fixture
         shell: bash

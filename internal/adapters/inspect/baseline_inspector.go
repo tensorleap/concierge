@@ -88,6 +88,7 @@ func (i *BaselineInspector) Inspect(ctx context.Context, snapshot core.Workspace
 	if err := inspectModelContract(repoRoot, contract, snapshot.SelectedModelPath, &status); err != nil {
 		return core.IntegrationStatus{}, err
 	}
+	inspectModelUploadBoundary(snapshot, contract, &status)
 	if status.Contracts == nil && !hasLeapYAML {
 		status.Contracts = &core.IntegrationContracts{}
 	}

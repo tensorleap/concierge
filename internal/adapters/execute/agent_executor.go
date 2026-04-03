@@ -487,7 +487,7 @@ func objectiveForStep(
 		constraints := []string{
 			"Bind @tensorleap_load_model to exactly one concrete supported .onnx/.h5 artifact path",
 			"Do not modify unrelated training/business logic",
-			"Model binaries are uploaded by leap CLI; leap.yaml include/exclude governs integration code",
+			"If load_model depends on a repo-local model artifact, keep that artifact path inside leap.yaml's upload boundary",
 		}
 		if selectedModelPath := strings.TrimSpace(snapshot.SelectedModelPath); selectedModelPath != "" {
 			constraints = append(constraints, fmt.Sprintf("Use model path %q unless repository evidence proves it invalid", selectedModelPath))

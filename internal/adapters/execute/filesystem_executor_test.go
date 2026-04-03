@@ -550,6 +550,40 @@ func TestExecutorSkipsRequirementsFileWhenNotOnDisk(t *testing.T) {
 	}
 }
 
+func TestExecutorRepairsLeapYAMLForSelectedConciergeModelPath(t *testing.T) {
+	executor := NewFilesystemExecutor()
+	repoRoot := t.TempDir()
+	step, _ := core.EnsureStepByID(core.EnsureStepLeapYAML)
+
+	writeFile(t, filepath.Join(repoRoot, core.CanonicalIntegrationEntryFile), "def noop():\n    return None\n")
+	writeModelFixtureFile(t, repoRoot, ".concierge/materialized_models/model.onnx")
+	writeFile(t, filepath.Join(repoRoot, "leap.yaml"), strings.Join([]string{
+		fmt.Sprintf("entryFile: %s", core.CanonicalIntegrationEntryFile),
+		"include:",
+		"  - leap.yaml",
+		"  - leap_integration.py",
+		"exclude:",
+		"  - .git/**",
+		"  - .concierge/**",
+		"",
+	}, "\n"))
+
+	result, err := executor.Execute(context.Background(), core.WorkspaceSnapshot{
+		Repository:        core.RepositoryState{Root: repoRoot},
+		SelectedModelPath: ".concierge/materialized_models/model.onnx",
+	}, step)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Applied {
+		t.Fatal("expected leap.yaml to be updated for selected model path")
+	}
+
+	contract := readLeapYAMLContract(t, filepath.Join(repoRoot, "leap.yaml"))
+	assertContainsAll(t, contract.Include, []string{".concierge/materialized_models/model.onnx"})
+	assertContainsNone(t, contract.Exclude, []string{".concierge/**"})
+}
+
 func TestExecutorAddsTensorleapRequirementsFile(t *testing.T) {
 	executor := NewFilesystemExecutor()
 	repoRoot := t.TempDir()

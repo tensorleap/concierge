@@ -229,6 +229,36 @@ func TestInspectorAllowsEntryFileExcludedByLeapYAML(t *testing.T) {
 	}
 }
 
+func TestInspectorReportsSelectedModelPathOutsideLeapYAMLBoundary(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
+		"entryFile: leap_integration.py",
+		"include:",
+		"  - leap.yaml",
+		"  - leap_integration.py",
+		"exclude:",
+		"  - .concierge/**",
+		"",
+	}, "\n"))
+	writeFixtureFile(t, root, "leap_integration.py", minimalIntegrationSourceWithLoadModel())
+	writeFixtureFile(t, root, ".concierge/materialized_models/model.onnx", "binary\n")
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), core.WorkspaceSnapshot{
+		Repository:        core.RepositoryState{Root: root},
+		SelectedModelPath: ".concierge/materialized_models/model.onnx",
+	})
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if !hasIssueCode(status.Issues, core.IssueCodeLeapYAMLIncludeMissingRequiredFiles) {
+		t.Fatalf("expected %q issue, got %+v", core.IssueCodeLeapYAMLIncludeMissingRequiredFiles, status.Issues)
+	}
+	if !hasIssueCode(status.Issues, core.IssueCodeLeapYAMLExcludeBlocksRequiredFiles) {
+		t.Fatalf("expected %q issue, got %+v", core.IssueCodeLeapYAMLExcludeBlocksRequiredFiles, status.Issues)
+	}
+}
+
 func TestInspectorReportsNonCanonicalEntryFile(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", "entryFile: wrong_entry.py\n")

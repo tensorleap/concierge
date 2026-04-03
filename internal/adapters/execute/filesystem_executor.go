@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	inspectadapter "github.com/tensorleap/concierge/internal/adapters/inspect"
 	"github.com/tensorleap/concierge/internal/core"
 	"gopkg.in/yaml.v3"
 )
@@ -27,8 +28,6 @@ func NewFilesystemExecutor() *FilesystemExecutor {
 
 // Execute applies supported ensure-steps and emits before/after checksum evidence.
 func (e *FilesystemExecutor) Execute(ctx context.Context, snapshot core.WorkspaceSnapshot, step core.EnsureStep) (core.ExecutionResult, error) {
-	_ = ctx
-
 	repoRoot := strings.TrimSpace(snapshot.Repository.Root)
 	if repoRoot == "" {
 		return core.ExecutionResult{}, core.NewError(core.KindUnknown, "execute.filesystem.repo_root", "snapshot repository root is empty")
@@ -45,7 +44,7 @@ func (e *FilesystemExecutor) Execute(ctx context.Context, snapshot core.Workspac
 
 	switch canonicalStep.ID {
 	case core.EnsureStepLeapYAML:
-		return ensureLeapYAML(repoRoot, canonicalStep)
+		return ensureLeapYAML(ctx, snapshot, canonicalStep)
 	case core.EnsureStepModelContract:
 		return ensureModelContract(snapshot, canonicalStep), nil
 	case core.EnsureStepIntegrationScript:
@@ -78,7 +77,17 @@ func ensureModelContract(snapshot core.WorkspaceSnapshot, step core.EnsureStep) 
 	}
 }
 
-func ensureLeapYAML(repoRoot string, step core.EnsureStep) (core.ExecutionResult, error) {
+func ensureLeapYAML(ctx context.Context, snapshot core.WorkspaceSnapshot, step core.EnsureStep) (core.ExecutionResult, error) {
+	repoRoot := strings.TrimSpace(snapshot.Repository.Root)
+	if repoRoot == "" {
+		return core.ExecutionResult{}, core.NewError(core.KindUnknown, "execute.filesystem.leap_yaml.repo_root", "snapshot repository root is empty")
+	}
+
+	requiredModelPath, err := resolveRequiredModelUploadPath(ctx, snapshot)
+	if err != nil {
+		return core.ExecutionResult{}, core.WrapError(core.KindUnknown, "execute.filesystem.required_model_path", err)
+	}
+
 	targetPath := filepath.Join(repoRoot, "leap.yaml")
 	beforeChecksum, beforeState, err := checksumForPath(targetPath)
 	if err != nil {
@@ -97,7 +106,7 @@ func ensureLeapYAML(repoRoot string, step core.EnsureStep) (core.ExecutionResult
 		if err != nil {
 			return core.ExecutionResult{}, core.WrapError(core.KindUnknown, "execute.filesystem.leap_yaml_read", err)
 		}
-		if reconciled, changed, _, recErr := reconcileLeapYAML(raw, repoRoot); recErr == nil && changed {
+		if reconciled, changed, _, recErr := reconcileLeapYAML(raw, repoRoot, requiredModelPath); recErr == nil && changed {
 			if writeErr := os.WriteFile(targetPath, reconciled, 0o644); writeErr != nil {
 				return core.ExecutionResult{}, core.WrapError(core.KindUnknown, "execute.filesystem.leap_yaml_write", writeErr)
 			}
@@ -123,7 +132,7 @@ func ensureLeapYAML(repoRoot string, step core.EnsureStep) (core.ExecutionResult
 		return core.ExecutionResult{}, core.WrapError(core.KindUnknown, "execute.filesystem.leap_yaml_read", err)
 	}
 
-	reconciled, changed, reason, err := reconcileLeapYAML(raw, repoRoot)
+	reconciled, changed, reason, err := reconcileLeapYAML(raw, repoRoot, requiredModelPath)
 	if err != nil {
 		return core.ExecutionResult{}, core.WrapError(core.KindUnknown, "execute.filesystem.leap_yaml_reconcile", err)
 	}
@@ -179,6 +188,22 @@ func ensureLeapYAML(repoRoot string, step core.EnsureStep) (core.ExecutionResult
 	return result, nil
 }
 
+func resolveRequiredModelUploadPath(ctx context.Context, snapshot core.WorkspaceSnapshot) (string, error) {
+	selected := normalizeUploadPath(snapshot.SelectedModelPath)
+	if selected != "" {
+		return selected, nil
+	}
+
+	status, err := inspectadapter.NewBaselineInspector().Inspect(ctx, snapshot)
+	if err != nil {
+		return "", err
+	}
+	if status.Contracts == nil {
+		return "", nil
+	}
+	return normalizeUploadPath(status.Contracts.ResolvedModelPath), nil
+}
+
 func leapYAMLEntryFileValue(contents []byte) string {
 	var contract struct {
 		EntryFile string `yaml:"entryFile"`
@@ -231,7 +256,7 @@ func ensureLeapYAMLEntryFile(repoRoot string, entryFile string) (bool, string, s
 	return true, beforeChecksum, afterChecksum, nil
 }
 
-func reconcileLeapYAML(contents []byte, repoRoot string) ([]byte, bool, string, error) {
+func reconcileLeapYAML(contents []byte, repoRoot string, modelPath string) ([]byte, bool, string, error) {
 	var document yaml.Node
 	if err := yaml.Unmarshal(contents, &document); err != nil {
 		templateContents, readErr := templateFS.ReadFile("templates/leap_yaml.tmpl")
@@ -271,7 +296,7 @@ func reconcileLeapYAML(contents []byte, repoRoot string) ([]byte, bool, string, 
 		entryAdjusted = true
 	}
 
-	required := requiredLeapYAMLPaths(repoRoot, entryFile)
+	required := requiredLeapYAMLPaths(repoRoot, entryFile, modelPath)
 
 	includeNode, includeExists := findMappingValue(root, "include")
 	if includeExists {
@@ -320,14 +345,7 @@ func reconcileLeapYAML(contents []byte, repoRoot string) ([]byte, bool, string, 
 				continue
 			}
 
-			exactMatch := false
-			for _, req := range required {
-				if normalizeUploadPath(pattern) == normalizeUploadPath(req) {
-					exactMatch = true
-					break
-				}
-			}
-			if exactMatch {
+			if shouldRemoveBlockingExcludePattern(pattern, required) {
 				changed = true
 				excludeAdjusted = true
 				continue
@@ -358,8 +376,58 @@ func reconcileLeapYAML(contents []byte, repoRoot string) ([]byte, bool, string, 
 	}
 }
 
-func requiredLeapYAMLPaths(repoRoot string, entryFile string) []string {
-	return core.RequiredUploadBoundaryPaths(repoRoot, entryFile)
+func requiredLeapYAMLPaths(repoRoot string, entryFile string, modelPath string) []string {
+	required := core.RequiredUploadBoundaryPaths(repoRoot, entryFile)
+	if normalizedModelPath := normalizeRequiredModelUploadPath(repoRoot, modelPath); normalizedModelPath != "" {
+		required = append(required, normalizedModelPath)
+	}
+	return dedupeStrings(required)
+}
+
+func normalizeRequiredModelUploadPath(repoRoot string, modelPath string) string {
+	normalizedModelPath := normalizeUploadPath(modelPath)
+	if normalizedModelPath == "" {
+		return ""
+	}
+	if !isConciergeMaterializedModelPath(normalizedModelPath) {
+		return ""
+	}
+
+	absolute := filepath.Join(repoRoot, filepath.FromSlash(normalizedModelPath))
+	if !isPathWithinRepo(repoRoot, absolute) {
+		return ""
+	}
+
+	switch strings.ToLower(filepath.Ext(normalizedModelPath)) {
+	case ".onnx", ".h5", ".keras":
+		return normalizedModelPath
+	default:
+		return ""
+	}
+}
+
+func isConciergeMaterializedModelPath(path string) bool {
+	return strings.HasPrefix(normalizeUploadPath(path), ".concierge/materialized_models/")
+}
+
+func shouldRemoveBlockingExcludePattern(pattern string, required []string) bool {
+	normalizedPattern := normalizeUploadPath(pattern)
+	if normalizedPattern == "" {
+		return false
+	}
+	if normalizedPattern == ".concierge/**" {
+		for _, req := range required {
+			if strings.HasPrefix(normalizeUploadPath(req), ".concierge/") {
+				return true
+			}
+		}
+	}
+	for _, req := range required {
+		if normalizedPattern == normalizeUploadPath(req) {
+			return true
+		}
+	}
+	return false
 }
 
 func ensureIntegrationTestScaffold(repoRoot string, step core.EnsureStep) (core.ExecutionResult, error) {

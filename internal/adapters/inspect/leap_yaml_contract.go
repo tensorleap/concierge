@@ -98,3 +98,61 @@ func isPathWithinRepo(repoRoot string, path string) bool {
 	}
 	return !strings.HasPrefix(rel, "..") && rel != ""
 }
+
+func inspectModelUploadBoundary(snapshot core.WorkspaceSnapshot, contract *leapYAMLContract, status *core.IntegrationStatus) {
+	if contract == nil || status == nil {
+		return
+	}
+
+	requiredModelPath := strings.TrimSpace(snapshot.SelectedModelPath)
+	if requiredModelPath == "" && status.Contracts != nil {
+		requiredModelPath = strings.TrimSpace(status.Contracts.ResolvedModelPath)
+	}
+	requiredModelPath = normalizeModelUploadBoundaryPath(requiredModelPath)
+	if requiredModelPath == "" || !strings.HasPrefix(requiredModelPath, ".concierge/materialized_models/") {
+		return
+	}
+
+	includePatterns := normalizeUploadBoundaryPatterns(contract.Include)
+	if !matchesUploadBoundaryAny(requiredModelPath, includePatterns) {
+		status.Issues = append(status.Issues, requiredArtifactIssue(
+			core.IssueCodeLeapYAMLIncludeMissingRequiredFiles,
+			fmt.Sprintf("leap.yaml include list does not include required model artifact %q", requiredModelPath),
+			core.IssueScopeLeapYAML,
+		))
+	}
+
+	excludePatterns := normalizeUploadBoundaryPatterns(contract.Exclude)
+	if uploadBoundaryExplicitlyBlocksRequiredPath(requiredModelPath, excludePatterns) {
+		status.Issues = append(status.Issues, requiredArtifactIssue(
+			core.IssueCodeLeapYAMLExcludeBlocksRequiredFiles,
+			fmt.Sprintf("leap.yaml exclude list blocks required model artifact %q", requiredModelPath),
+			core.IssueScopeLeapYAML,
+		))
+	}
+}
+
+func uploadBoundaryExplicitlyBlocksRequiredPath(path string, patterns []string) bool {
+	normalizedPath := normalizeModelUploadBoundaryPath(path)
+	for _, pattern := range patterns {
+		normalizedPattern := normalizeUploadBoundaryPattern(pattern)
+		if normalizedPattern == normalizedPath {
+			return true
+		}
+		if normalizedPattern == ".concierge/**" && strings.HasPrefix(normalizedPath, ".concierge/") {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeModelUploadBoundaryPath(path string) string {
+	normalized := strings.TrimSpace(path)
+	normalized = filepath.ToSlash(filepath.Clean(normalized))
+	normalized = strings.TrimPrefix(normalized, "./")
+	normalized = strings.TrimPrefix(normalized, "/")
+	if normalized == "." {
+		return ""
+	}
+	return normalized
+}

@@ -434,6 +434,7 @@ Keep the integration test thin:
 
 - call decorated encoders
 - call decorated model loader
+- execute inference using the runtime-correct call pattern for the object returned by `load_model()`
 - call decorated loss, metric, metadata, and visualizer functions as they are added
 - avoid ordinary Python transformations in the integration test body
 
@@ -446,6 +447,8 @@ Do not do this in the integration test body:
 - indexing intermediate objects other than model predictions
 
 Put that logic into decorated interfaces instead.
+
+Runtime-specific inference is allowed when it is the minimal wiring required by the returned model object. For example, if `load_model()` returns an ONNX Runtime `InferenceSession`, then `model.get_inputs()[0].name` plus `model.run(...)` is valid final wiring. What remains forbidden is manual batching and unrelated Python transforms around that call.
 
 Why the restriction is so strict:
 
@@ -800,7 +803,7 @@ The mapping-mode rerun saw indexing on something other than model predictions. R
 
 `Integration test is only allowed to call Tensorleap decorators. Ensure any arithmetics, external library use, Python logic is placed within Tensorleap decoders`
 
-This is the main mapping-mode failure. The integration test body contains plain Python logic that the mapping engine cannot trace. Move the logic into decorated functions and keep the integration test declarative.
+This is the main mapping-mode failure. The integration test body contains plain Python logic that the mapping engine cannot trace. Move that logic into decorated functions and keep the integration test declarative, while preserving the minimal runtime-specific inference calls required by the returned model object.
 
 `Successful!`
 

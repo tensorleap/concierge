@@ -18,8 +18,9 @@ func BuildIntegrationTestAuthoringRecommendation(
 		Constraints: []string{
 			"Repair only @tensorleap_integration_test wiring and keep the body thin and declarative.",
 			"Do not modify preprocess subset semantics, encoder implementations, or unrelated training/business logic in this step.",
-			"Never add manual batching, tensor reshaping, or raw runtime-session calls inside integration_test (`np.expand_dims`, `transpose`, `model.get_inputs`, `model.run`).",
+			"Never add manual batching or tensor reshaping inside integration_test (`np.expand_dims`, `transpose`).",
 			"Tensorleap handles batching automatically around decorated calls inside integration_test.",
+			"Use runtime-correct inference wiring for the object returned by load_model(); for ONNX Runtime sessions, `model.get_inputs()` / `model.run(...)` are valid final wiring.",
 			"If @tensorleap_load_model is present, integration_test must execute the returned model and route predictions into downstream decorated interfaces; do not stop after load_model().",
 		},
 	}
@@ -52,7 +53,7 @@ func BuildIntegrationTestAuthoringRecommendation(
 		recommendation.Constraints = append(
 			recommendation.Constraints,
 			fmt.Sprintf("Then remove illegal body logic: %s.", strings.Join(illegalBodyLogic, ", ")),
-			"Reject raw tensor/session logic in integration_test; move transforms into decorated interfaces and let Tensorleap manage batching.",
+			"Reject manual batching and unrelated tensor transforms in integration_test; keep only runtime-correct inference wiring and decorated interface calls.",
 		)
 	}
 	if recommendation.Rationale == "" {

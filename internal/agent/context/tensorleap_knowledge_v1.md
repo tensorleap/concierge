@@ -145,6 +145,9 @@ def integration_test(sample_id: Union[int, str], subset: PreprocessResponse) -> 
   4. Fetch GT via decorated GT encoder(s) for labeled subsets.
   5. Call decorated metadata/metrics/loss/visualizers as needed.
 - Do not add/remove batch dimension manually in integration test; Tensorleap handles batching around encoder calls.
+- Keep placeholder scaffolds minimal while the integration is incomplete, but use the runtime-correct final inference path once `load_model()` is real.
+- For ONNX Runtime sessions returned from `load_model()`, `model.get_inputs()` / `model.run(...)` are valid final integration-test wiring.
+- Still move unrelated transforms, decoding, formatting, and business logic into decorated interfaces instead of placing them in `integration_test()`.
 
 ## load_model_contract
 

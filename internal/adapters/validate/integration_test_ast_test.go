@@ -287,6 +287,89 @@ func TestIntegrationTestASTAnalyzerAllowsPredictionsThreadedIntoDecoratedSurface
 	assertNotContainsIssueMessage(t, result.Issues, "never consumes model outputs")
 }
 
+func TestIntegrationTestASTAnalyzerRejectsCallingRawOnnxSessionAsCallable(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 is required for AST analyzer tests")
+	}
+
+	repoRoot := t.TempDir()
+	writeGuideFixtureFile(t, repoRoot, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeGuideFixtureFile(t, repoRoot, "leap_integration.py", strings.Join([]string{
+		"import onnxruntime as ort",
+		"",
+		"@tensorleap_input_encoder(name='image')",
+		"def image_input(sample_id, preprocess_response):",
+		"    return sample_id",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model() -> ort.InferenceSession:",
+		"    return ort.InferenceSession('model.onnx')",
+		"",
+		"@tensorleap_integration_test()",
+		"def integration_test(sample_id, preprocess_response):",
+		"    image = image_input(sample_id, preprocess_response)",
+		"    model = load_model()",
+		"    predictions = model(image)",
+		"    _ = predictions[0]",
+		"    return None",
+	}, "\n"))
+
+	analyzer := &IntegrationTestASTAnalyzer{runtimeRunner: scriptRuntimeRunner(t)}
+	result, err := analyzer.Analyze(context.Background(), guideValidationSnapshot(t, repoRoot))
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+
+	if !containsIssueCode(result.Issues, core.IssueCodeIntegrationTestIllegalBodyLogic) {
+		t.Fatalf("expected illegal-body-logic issue, got %+v", result.Issues)
+	}
+	assertContainsIssueMessage(t, result.Issues, "raw ONNX Runtime session as a callable")
+}
+
+func TestIntegrationTestASTAnalyzerAllowsOnnxSessionRunPattern(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 is required for AST analyzer tests")
+	}
+
+	repoRoot := t.TempDir()
+	writeGuideFixtureFile(t, repoRoot, "leap.yaml", "entryFile: leap_integration.py\n")
+	writeGuideFixtureFile(t, repoRoot, "leap_integration.py", strings.Join([]string{
+		"import onnxruntime as ort",
+		"",
+		"@tensorleap_input_encoder(name='image')",
+		"def image_input(sample_id, preprocess_response):",
+		"    return sample_id",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model() -> ort.InferenceSession:",
+		"    return ort.InferenceSession('model.onnx')",
+		"",
+		"@tensorleap_integration_test()",
+		"def integration_test(sample_id, preprocess_response):",
+		"    image = image_input(sample_id, preprocess_response)",
+		"    model = load_model()",
+		"    input_name = model.get_inputs()[0].name",
+		"    predictions = model.run(None, {input_name: image})",
+		"    _ = predictions[0]",
+		"    return None",
+	}, "\n"))
+
+	analyzer := &IntegrationTestASTAnalyzer{runtimeRunner: scriptRuntimeRunner(t)}
+	result, err := analyzer.Analyze(context.Background(), guideValidationSnapshot(t, repoRoot))
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+
+	if containsIssueCode(result.Issues, core.IssueCodeIntegrationTestIllegalBodyLogic) {
+		t.Fatalf("did not expect illegal-body-logic issue for ONNX model.run pattern, got %+v", result.Issues)
+	}
+	if containsIssueCode(result.Issues, core.IssueCodeIntegrationTestCallsUnknownInterfaces) {
+		t.Fatalf("did not expect unknown-call issue for ONNX model.run pattern, got %+v", result.Issues)
+	}
+	assertNotContainsIssueMessage(t, result.Issues, "never executes model inference")
+	assertNotContainsIssueMessage(t, result.Issues, "never consumes model outputs")
+}
+
 func TestIntegrationTestASTAnalyzerRejectsIndexingNonPredictions(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 is required for AST analyzer tests")

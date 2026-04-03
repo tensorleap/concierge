@@ -259,6 +259,58 @@ func TestInspectorReportsSelectedModelPathOutsideLeapYAMLBoundary(t *testing.T) 
 	}
 }
 
+func TestInspectorReportsCombinedUltralyticsPortabilityBoundaryGaps(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "ultralytics/cfg/datasets/coco8.yaml", "path: coco8\n")
+	writeFixtureFile(t, root, ".concierge/materialized_models/model.onnx", "binary\n")
+	writeFixtureFile(t, root, "leap.yaml", strings.Join([]string{
+		"entryFile: leap_integration.py",
+		"include:",
+		"  - leap.yaml",
+		"  - leap_integration.py",
+		"exclude:",
+		"  - .concierge/**",
+		"",
+	}, "\n"))
+	writeFixtureFile(t, root, "leap_integration.py", strings.Join([]string{
+		"from pathlib import Path",
+		"from code_loader.inner_leap_binder.leapbinder_decorators import tensorleap_integration_test, tensorleap_load_model, tensorleap_preprocess",
+		"",
+		"_REPO_ROOT = Path(__file__).resolve().parent",
+		"_DATASET_MANIFEST = _REPO_ROOT / \"ultralytics\" / \"cfg\" / \"datasets\" / \"coco8.yaml\"",
+		"",
+		"@tensorleap_preprocess()",
+		"def preprocess():",
+		"    return []",
+		"",
+		"@tensorleap_load_model()",
+		"def load_model():",
+		"    return None",
+		"",
+		"@tensorleap_integration_test()",
+		"def integration_test(sample_id, preprocess_response):",
+		"    return None",
+		"",
+	}, "\n"))
+
+	inspector := NewBaselineInspector()
+	status, err := inspector.Inspect(context.Background(), core.WorkspaceSnapshot{
+		Repository:        core.RepositoryState{Root: root},
+		SelectedModelPath: ".concierge/materialized_models/model.onnx",
+	})
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if !hasIssueCode(status.Issues, core.IssueCodeLeapYAMLIncludeMissingRequiredFiles) {
+		t.Fatalf("expected %q issue, got %+v", core.IssueCodeLeapYAMLIncludeMissingRequiredFiles, status.Issues)
+	}
+	if !hasIssueCode(status.Issues, core.IssueCodeLeapYAMLExcludeBlocksRequiredFiles) {
+		t.Fatalf("expected %q issue, got %+v", core.IssueCodeLeapYAMLExcludeBlocksRequiredFiles, status.Issues)
+	}
+	assertIssueMessageContains(t, status.Issues, "ultralytics/cfg/datasets/coco8.yaml")
+	assertIssueMessageContains(t, status.Issues, ".concierge/materialized_models/model.onnx")
+}
+
 func TestInspectorReportsNonCanonicalEntryFile(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "leap.yaml", "entryFile: wrong_entry.py\n")
@@ -569,4 +621,14 @@ func assertIssueScopeAndSeverity(t *testing.T, issues map[core.IssueCode]core.Is
 	if issue.Severity != core.SeverityError {
 		t.Fatalf("expected issue %q severity %q, got %q", code, core.SeverityError, issue.Severity)
 	}
+}
+
+func assertIssueMessageContains(t *testing.T, issues []core.Issue, want string) {
+	t.Helper()
+	for _, issue := range issues {
+		if strings.Contains(issue.Message, want) {
+			return
+		}
+	}
+	t.Fatalf("expected one issue message to contain %q, got %+v", want, issues)
 }

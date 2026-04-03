@@ -94,3 +94,28 @@ func TestBuildIntegrationTestAuthoringRecommendationWarnsAgainstManualBatchingAn
 		t.Fatalf("expected explicit runtime-correct inference guidance, got %+v", recommendation.Constraints)
 	}
 }
+
+func TestBuildIntegrationTestAuthoringRecommendationExplainsHowToConsumePredictions(t *testing.T) {
+	recommendation, err := BuildIntegrationTestAuthoringRecommendation(core.WorkspaceSnapshot{}, core.IntegrationStatus{
+		Issues: []core.Issue{
+			{
+				Code:     core.IssueCodeIntegrationTestMissingRequiredCalls,
+				Message:  "integration_test executes model inference but never consumes model outputs",
+				Severity: core.SeverityError,
+				Scope:    core.IssueScopeIntegrationTest,
+				Location: &core.IssueLocation{Symbol: "prediction_outputs"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildIntegrationTestAuthoringRecommendation returned error: %v", err)
+	}
+
+	joined := strings.Join(recommendation.Constraints, " | ")
+	if !strings.Contains(joined, "Bare assignment is insufficient") {
+		t.Fatalf("expected explicit bare-assignment warning, got %+v", recommendation.Constraints)
+	}
+	if !strings.Contains(joined, "_ = prediction_outputs[0]") {
+		t.Fatalf("expected explicit valid consumption example, got %+v", recommendation.Constraints)
+	}
+}

@@ -21,7 +21,8 @@ func BuildIntegrationTestAuthoringRecommendation(
 			"Never add manual batching or tensor reshaping inside integration_test (`np.expand_dims`, `transpose`).",
 			"Tensorleap handles batching automatically around decorated calls inside integration_test.",
 			"Use runtime-correct inference wiring for the object returned by load_model(); for ONNX Runtime sessions, `model.get_inputs()` / `model.run(...)` are valid final wiring.",
-			"If @tensorleap_load_model is present, integration_test must execute the returned model and route predictions into downstream decorated interfaces; do not stop after load_model().",
+			"If @tensorleap_load_model is present, integration_test must execute the returned model and consume predictions; do not stop after load_model().",
+			"Bare assignment is insufficient for model outputs. After `model.run(...)`, either pass predictions into a decorated interface or explicitly index them (for example `_ = prediction_outputs[0]`).",
 		},
 	}
 

@@ -880,7 +880,15 @@ func parserClearsGTEncoder(parser core.GuideParserRunSummary) bool {
 }
 
 func parserClearsLoadModel(parser core.GuideParserRunSummary) bool {
-	return parser.Available && parser.IsValidForModel
+	if !parser.Available {
+		return false
+	}
+	if parser.IsValidForModel {
+		return true
+	}
+	// Some code-loader paths leave is_valid_for_model false even after the
+	// parser accepted the first sample and recorded explicit prediction types.
+	return parser.IsValid && parser.Setup != nil && len(parser.Setup.PredictionTypes) > 0
 }
 
 func selectPrimaryBlockingGuideStep(issues []core.Issue) (core.EnsureStep, bool) {

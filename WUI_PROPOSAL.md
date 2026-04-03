@@ -4,6 +4,11 @@
 
 This document captures the product thinking from an initial brainstorming session about a web UI for Concierge. It is intentionally focused on product UX and session behavior, not implementation design.
 
+The active Figma working file for this proposal is `Concierge Web UI Explorations`:
+https://www.figma.com/design/6om70Ik3atAWiLQ1hnulSh/Concierge-Web-UI-Explorations?t=8fC1ps5P8YMavHNN-0
+
+This file is the source of truth for ongoing UI iteration tied to this proposal.
+
 ## Problem
 
 Today, Concierge is a terminal-first experience. That keeps the runtime model simple, but it also makes some important parts of the product harder to understand than they should be:
@@ -119,18 +124,22 @@ This means:
 - active step and current substage are prominent
 - latest evidence and status are nearby
 - the user should not need to inspect logs to understand the current state
+- the default composition should be one execution log, not a sidebar-plus-detail split
 
 The UI should not open on a dashboard grid or a static checklist overview.
 
-### Persistent Step Rail
+### Inline Execution Log
 
 The session should expose the full expected Concierge workflow from the start.
 
-- all steps are visible immediately
-- untouched steps are still shown
+- all steps are visible in one main execution list
+- untouched steps are still shown as collapsed rows
 - the mapping should use Concierge's existing step model rather than a second user-facing taxonomy
+- completed steps should collapse to headline rows with status, title, and duration
+- the active step should stay open by default and show live logs inline
+- expanding a step should reveal its logs and evidence on demand rather than duplicating the step hierarchy in a separate pane
 
-This keeps the UI aligned with the engine and avoids maintaining a second conceptual model that can drift.
+The reference interaction here is closer to a GitHub Actions job log than to a dashboard with a persistent navigation rail. This keeps the UI aligned with the engine and avoids maintaining a second conceptual model that can drift.
 
 ### Step Detail Model
 
@@ -140,11 +149,12 @@ Navigation hierarchy:
 
 For a selected step:
 
+- the collapsed state should already communicate enough to scan progress quickly
 - the latest or current attempt should be shown first
 - prior attempts should remain accessible as history for that same step
 - each attempt should carry its own rationale, evidence, logs, diff, approval state, and validation result
 
-This creates a step dossier rather than a flat event feed.
+This creates a step dossier inside the execution log rather than a separate step-detail workspace for the default live view.
 
 ### Live Presence While Browsing History
 
@@ -152,7 +162,9 @@ Users should be able to inspect older steps without losing awareness of the live
 
 The preferred behavior is:
 
-- a persistent live strip or "now" bar visible everywhere
+- the currently running step remains visually distinct in the main log with a spinner or equivalent live marker
+- the active row stays expanded by default unless the user intentionally changes focus
+- if the user opens an older step, the UI should still make it easy to jump back to the live row
 - a persistent decision banner when user input is required
 - no forced snap-back to the live cockpit just because the run advances
 
@@ -173,6 +185,18 @@ Examples include:
 - any other interactive decisions required during a run
 
 This is important because a mixed authority model between stdin and browser would be confusing and fragile from a UX perspective.
+
+### Expanded Row As Task Surface
+
+The expanded active step should be the main task surface for the current interaction, rather than handing the user off to a second workspace beside the log.
+
+- when Concierge is actively working, the expanded row shows live logs and current evidence
+- when Concierge needs approval, the expanded row becomes an inline review surface with rationale, diff, and decision controls
+- when Concierge needs a selection, the expanded row becomes an inline comparison and choice surface
+- when Concierge is blocked, the expanded row becomes an inline recovery surface with failure summary, suggested actions, and free-text reply
+- when the run completes, the last meaningful row can expand into a compact completion summary with next actions
+
+This keeps one stable mental model across the run: the execution log remains the container, and the active row changes mode as the run changes mode.
 
 ### Approval UX
 

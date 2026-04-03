@@ -2023,7 +2023,19 @@ class QALoopTest(unittest.TestCase):
             )
             codex_script.chmod(0o755)
 
-            target_command = [sys.executable, str(concierge_script)]
+            concierge_wrapper = tmp / "concierge"
+            concierge_wrapper.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/bin/sh
+                    exec {shlex.quote(sys.executable)} {shlex.quote(str(concierge_script))} "$@"
+                    """
+                ),
+                encoding="utf-8",
+            )
+            concierge_wrapper.chmod(0o755)
+
+            target_command = [str(concierge_wrapper), "run"]
 
             env = os.environ.copy()
             env["FAKE_CODEX_STATE"] = str(tmp / "fake_codex_rerun_state.json")
@@ -2063,6 +2075,383 @@ class QALoopTest(unittest.TestCase):
             transcript_path = artifacts_root / "transcripts" / f"{run_dir.name}.terminal.txt"
             transcript = transcript_path.read_text(encoding="utf-8")
             self.assertIn("rerun `concierge run`", transcript)
+            self.assertIn("Continue to the next step? [y/N]:", transcript)
+            self.assertIn("Integration complete", transcript)
+
+    def test_supervisor_loop_restarts_target_for_compound_interactive_rerun_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            artifacts_root = tmp / "artifacts"
+            command_cwd = tmp / "fixture"
+            artifacts_root.mkdir()
+            command_cwd.mkdir()
+            fake_docker = write_fake_docker(tmp)
+            container_name = "fixture"
+
+            concierge_script = tmp / "fake_concierge_compound_rerun.py"
+            concierge_script.write_text(
+                textwrap.dedent(
+                    """
+                    from pathlib import Path
+
+                    marker = Path("rerun-ready.txt")
+                    if not marker.exists():
+                        marker.write_text("ready\\n", encoding="utf-8")
+                        print("Changes are in your working tree for local review. After reviewing or committing them, rerun `concierge run`.", flush=True)
+                        raise SystemExit(0)
+
+                    print("Continue to the next step? [y/N]: ", end="", flush=True)
+                    answer = input()
+                    print(f"Input received: {answer}", flush=True)
+                    print("Integration complete", flush=True)
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            codex_script = tmp / "fake_codex_compound_rerun.py"
+            codex_script.write_text(
+                textwrap.dedent(
+                    """
+                    import json
+                    import os
+                    import sys
+                    from pathlib import Path
+
+                    args = sys.argv[1:]
+                    output_path = None
+                    for index, value in enumerate(args):
+                        if value == "-o":
+                            output_path = Path(args[index + 1])
+                            break
+                    if output_path is None:
+                        raise SystemExit("missing -o")
+
+                    prompt = sys.stdin.read()
+                    state_path = Path(os.environ["FAKE_CODEX_STATE"])
+                    if state_path.exists():
+                        state = json.loads(state_path.read_text(encoding="utf-8"))
+                    else:
+                        state = {"turn": 0}
+
+                    if "final qualitative QA report" in prompt:
+                        payload = {
+                            "title": "Compound rerun report",
+                            "overall_outcome": "The supervisor ran the prelude shell command and relaunched the target interactively.",
+                            "loop_state": "STOP_REPORT",
+                            "integration_progress": "The compound rerun preserved the approval prompt and reached completion.",
+                            "ux_clarity": [],
+                            "product_issues": [],
+                            "agent_interaction_issues": [],
+                            "suggestions": [],
+                            "notable_moments": ["The compound rerun command preserved interactivity for the target relaunch."],
+                        }
+                    else:
+                        state["turn"] += 1
+                        if state["turn"] == 1:
+                            payload = {
+                                "action": "RUN_COMMAND",
+                                "input_text": os.environ["FAKE_TARGET_COMPOUND_COMMAND"],
+                                "loop_state": "CONTINUE",
+                                "summary": "Run the prelude fix and rerun Concierge interactively.",
+                                "issues": [],
+                                "next_focus": "Wait for the next prompt in the relaunched session.",
+                            }
+                        elif state["turn"] == 2:
+                            if "Continue to the next step? [y/N]:" not in prompt:
+                                payload = {
+                                    "action": "WAIT",
+                                    "input_text": "",
+                                    "loop_state": "STOP_FIX",
+                                    "summary": "The compound rerun did not preserve the approval prompt.",
+                                    "issues": ["Compound rerun was not relaunched interactively."],
+                                    "next_focus": "Split the prelude from the target rerun and restart under PTY control.",
+                                }
+                            else:
+                                payload = {
+                                    "action": "SEND_INPUT",
+                                    "input_text": "y",
+                                    "loop_state": "CONTINUE",
+                                    "summary": "Approve the relaunched prompt.",
+                                    "issues": [],
+                                    "next_focus": "Wait for completion.",
+                                }
+                        else:
+                            payload = {
+                                "action": "WAIT",
+                                "input_text": "",
+                                "loop_state": "STOP_REPORT",
+                                "summary": "The relaunched session completed cleanly.",
+                                "issues": [],
+                                "next_focus": "Write the final report.",
+                            }
+                        state_path.write_text(json.dumps(state), encoding="utf-8")
+
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    output_path.write_text(json.dumps(payload), encoding="utf-8")
+                    print(json.dumps({"type": "thread.started", "thread_id": "fake-thread"}))
+                    print(json.dumps({"type": "item.completed", "item": {"id": "item-1", "type": "agent_message", "text": json.dumps(payload)}}))
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            codex_script.chmod(0o755)
+
+            concierge_wrapper = tmp / "concierge"
+            concierge_wrapper.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/bin/sh
+                    exec {shlex.quote(sys.executable)} {shlex.quote(str(concierge_script))} "$@"
+                    """
+                ),
+                encoding="utf-8",
+            )
+            concierge_wrapper.chmod(0o755)
+
+            target_command = [str(concierge_wrapper), "run"]
+
+            env = os.environ.copy()
+            env["FAKE_CODEX_STATE"] = str(tmp / "fake_codex_compound_rerun_state.json")
+            env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
+            env["FAKE_TARGET_COMMAND"] = "concierge run"
+            env["FAKE_TARGET_COMPOUND_COMMAND"] = "touch prepared.txt && concierge run"
+
+            completed = subprocess.run(
+                qa_loop_command(
+                    artifacts_root=artifacts_root,
+                    fake_docker=fake_docker,
+                    container_name=container_name,
+                    claude_command=f"{sys.executable} {codex_script}",
+                    target_command=target_command,
+                    extra_args=["--max-runtime-seconds", "10"],
+                ),
+                cwd=str(ROOT),
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                completed.returncode,
+                0,
+                msg=f"stdout:\n{completed.stdout}\n\nstderr:\n{completed.stderr}",
+            )
+
+            self.assertTrue((command_cwd / "prepared.txt").exists(), "expected compound prelude command to run")
+
+            run_dir = next((artifacts_root / "runs").iterdir())
+            summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["loop_state"], "STOP_REPORT")
+            self.assertEqual(summary["report_status"], "ready")
+
+            interaction_log = artifacts_root / "transcripts" / f"{run_dir.name}.interaction.jsonl"
+            interaction_body = interaction_log.read_text(encoding="utf-8")
+            self.assertIn('"kind": "process_restart"', interaction_body)
+
+            transcript_path = artifacts_root / "transcripts" / f"{run_dir.name}.terminal.txt"
+            transcript = transcript_path.read_text(encoding="utf-8")
+            self.assertIn("Continue to the next step? [y/N]:", transcript)
+            self.assertIn("Integration complete", transcript)
+
+    def test_supervisor_loop_restarts_target_when_exact_rerun_arrives_before_exit_observed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            artifacts_root = tmp / "artifacts"
+            command_cwd = tmp / "fixture"
+            artifacts_root.mkdir()
+            command_cwd.mkdir()
+            fake_docker = write_fake_docker(tmp)
+            container_name = "fixture"
+            target_command = ["/usr/local/bin/concierge", "run"]
+
+            env = os.environ.copy()
+            env["FAKE_DOCKER_CONTAINERS"] = json.dumps({container_name: str(command_cwd)})
+
+            class FakeClaudeClient:
+                def __init__(self) -> None:
+                    self.turn = 0
+
+                def run_structured(self, **kwargs: object) -> dict[str, object]:
+                    prompt = str(kwargs["prompt"])
+                    if "final qualitative QA report" in prompt:
+                        return {
+                            "title": "Early rerun report",
+                            "overall_outcome": "The supervisor treated the rerun as an interactive restart even before the previous PTY fully dropped.",
+                            "loop_state": "STOP_REPORT",
+                            "integration_progress": "The restart preserved the approval prompt and reached completion.",
+                            "ux_clarity": [],
+                            "product_issues": [],
+                            "agent_interaction_issues": [],
+                            "suggestions": [],
+                            "notable_moments": [
+                                "The rerun stayed interactive despite the previous target still appearing alive when the directive arrived."
+                            ],
+                        }
+
+                    self.turn += 1
+                    if self.turn == 1:
+                        return {
+                            "action": "RUN_COMMAND",
+                            "input_text": "concierge run",
+                            "loop_state": "CONTINUE",
+                            "summary": "Rerun Concierge immediately after the failure output appears.",
+                            "issues": [],
+                            "next_focus": "Wait for the prompt in the relaunched session.",
+                        }
+                    if self.turn == 2:
+                        if "Continue to the next step? [y/N]:" not in prompt:
+                            return {
+                                "action": "WAIT",
+                                "input_text": "",
+                                "loop_state": "STOP_FIX",
+                                "summary": "The immediate rerun did not preserve the approval prompt.",
+                                "issues": ["Exact rerun was treated like a non-interactive subprocess while the old PTY was still alive."],
+                                "next_focus": "Treat rerun commands as PTY restarts even when exit observation lags.",
+                            }
+                        return {
+                            "action": "SEND_INPUT",
+                            "input_text": "y",
+                            "loop_state": "CONTINUE",
+                            "summary": "Approve the relaunched prompt.",
+                            "issues": [],
+                            "next_focus": "Wait for completion.",
+                        }
+                    return {
+                        "action": "WAIT",
+                        "input_text": "",
+                        "loop_state": "STOP_REPORT",
+                        "summary": "The relaunched session completed cleanly.",
+                        "issues": [],
+                        "next_focus": "Write the final report.",
+                    }
+
+            class FakeDriver:
+                def __init__(self) -> None:
+                    self.returncode = None
+                    self._running = False
+                    self._pending_output: list[str] = []
+                    self.started_commands: list[list[str]] = []
+                    self.sent_inputs: list[str] = []
+
+                def start(self, command: list[str], *, cwd: str | None = None, env: dict[str, str] | None = None) -> None:
+                    self.started_commands.append(list(command))
+                    self.returncode = None
+                    self._running = True
+                    if len(self.started_commands) == 1:
+                        self._pending_output.append("Poetry failed. Apply the fix and rerun `concierge run`.\n")
+                    else:
+                        self._pending_output.append("Continue to the next step? [y/N]: ")
+
+                def drain(self, *, max_bytes: int = 65536) -> str:
+                    return ""
+
+                def read_until_quiet(
+                    self,
+                    *,
+                    quiet_period: float = 0.35,
+                    hard_timeout: float = 2.0,
+                    max_bytes: int = 262144,
+                ) -> str:
+                    if self._pending_output:
+                        return self._pending_output.pop(0)
+                    return ""
+
+                def send(self, text: str, *, append_newline: bool = False) -> None:
+                    self.sent_inputs.append(text)
+                    self._pending_output.append("Integration complete\n")
+                    self._running = False
+                    self.returncode = 0
+
+                def is_running(self) -> bool:
+                    return self._running
+
+                def stop(self, *, terminate_timeout: float = 2.0, kill_timeout: float = 1.0) -> int | None:
+                    self._running = False
+                    if self.returncode is None:
+                        self.returncode = 1
+                    return self.returncode
+
+            class RecordingSupervisor(qa_loop.SupervisorLoop):
+                def __init__(self, **kwargs: object) -> None:
+                    super().__init__(**kwargs)
+                    self.external_commands: list[str] = []
+
+                def _run_external_command(self, **kwargs: object) -> dict[str, object]:
+                    command_text = str(kwargs["command_text"])
+                    self.external_commands.append(command_text)
+                    return {
+                        "returncode": 1,
+                        "stdout": "",
+                        "stderr": "unknown: execute.approval.prompt: prompt input closed before a response was provided",
+                        "transcript": (
+                            f"[qa-loop] external command in {self.config.container_name}:{self.config.command_cwd}:\n"
+                            f"$ {command_text}\n"
+                            "[stderr]\n"
+                            "unknown: execute.approval.prompt: prompt input closed before a response was provided\n"
+                            "[qa-loop] external command exit code: 1\n"
+                        ),
+                    }
+
+            config = qa_loop.LoopConfig(
+                artifacts_root=artifacts_root,
+                docker_bin=str(fake_docker),
+                host_cwd=tmp,
+                container_name=container_name,
+                container_image=None,
+                command=target_command,
+                command_cwd="/workspace",
+                claude_command="claude",
+                claude_model=None,
+                claude_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
+                review_timeout_seconds=qa_loop.DEFAULT_CODEX_TIMEOUT_SECONDS,
+                max_iterations=qa_loop.DEFAULT_MAX_ITERATIONS,
+                max_idle_turns=qa_loop.DEFAULT_MAX_IDLE_TURNS,
+                max_runtime_seconds=5,
+                read_quiet_seconds=0.01,
+                read_timeout_seconds=0.01,
+                settle_timeout_seconds=0.02,
+                transcript_tail_chars=qa_loop.DEFAULT_TRANSCRIPT_TAIL_CHARS,
+                latest_output_chars=qa_loop.DEFAULT_LATEST_OUTPUT_CHARS,
+                fixture_post_path=None,
+                docker_snapshots_enabled=False,
+                fixture_id="yolov5_visdrone",
+                guide_step="pre",
+                ref_under_test="feature/issue-186-rerun-pty@test",
+                checkpoint_key="yolov5_visdrone:pre",
+                source_kind="variant",
+                source_id="pre",
+            )
+
+            supervisor = RecordingSupervisor(
+                config=config,
+                claude_client=FakeClaudeClient(),
+                driver=FakeDriver(),
+                role_prompt="role",
+                nudge_prompt="nudge",
+            )
+
+            old_environ = os.environ.copy()
+            os.environ.update(env)
+            try:
+                result = supervisor.run(run_id="run-early-rerun")
+            finally:
+                os.environ.clear()
+                os.environ.update(old_environ)
+
+            self.assertEqual(result["loop_state"], "STOP_REPORT")
+            self.assertEqual(supervisor.external_commands, [])
+
+            summary = json.loads(Path(result["summary_path"]).read_text(encoding="utf-8"))
+            self.assertEqual(summary["loop_state"], "STOP_REPORT")
+            self.assertEqual(summary["report_status"], "ready")
+
+            interaction_body = Path(summary["paths"]["interaction_log"]).read_text(encoding="utf-8")
+            self.assertIn('"kind": "process_restart"', interaction_body)
+
+            transcript = Path(result["terminal_clean_path"]).read_text(encoding="utf-8")
             self.assertIn("Continue to the next step? [y/N]:", transcript)
             self.assertIn("Integration complete", transcript)
 

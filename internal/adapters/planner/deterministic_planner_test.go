@@ -235,3 +235,37 @@ func TestPlannerDefersModelAcquisitionBehindIntegrationTestWhenArtifactAlreadyEx
 		t.Fatalf("expected primary step %q, got %q", core.EnsureStepIntegrationTestWiring, plan.Primary.ID)
 	}
 }
+
+func TestPlannerKeepsModelContractAheadOfIntegrationTestWhenArtifactAlreadyExists(t *testing.T) {
+	adapter := NewDeterministicPlanner()
+	status := core.IntegrationStatus{
+		Issues: []core.Issue{
+			{Code: core.IssueCodeLoadModelDecoratorMissing, Severity: core.SeverityError},
+			{Code: core.IssueCodeIntegrationTestMissingRequiredCalls, Severity: core.SeverityError},
+		},
+		Contracts: &core.IntegrationContracts{
+			ModelCandidates: []core.ModelCandidate{
+				{
+					Path:   "model/model.onnx",
+					Exists: true,
+				},
+			},
+			ResolvedModelPath: "model/model.onnx",
+			ConfirmedMapping: &core.EncoderMappingContract{
+				InputSymbols:       []string{"image"},
+				GroundTruthSymbols: []string{"classes"},
+			},
+		},
+	}
+
+	plan, err := adapter.Plan(context.Background(), core.WorkspaceSnapshot{}, status)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	if plan.Primary.ID != core.EnsureStepModelContract {
+		t.Fatalf("expected primary step %q, got %q", core.EnsureStepModelContract, plan.Primary.ID)
+	}
+	if len(plan.Additional) == 0 || plan.Additional[0].ID != core.EnsureStepIntegrationTestWiring {
+		t.Fatalf("expected integration-test wiring to remain queued behind model contract, got %+v", plan.Additional)
+	}
+}

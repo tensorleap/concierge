@@ -136,11 +136,15 @@ jobs:
           echo "notification_action=$(jq -r '.notification_action' "${result_json}")" >> "$GITHUB_OUTPUT"
 
       - name: Notify Slack for nightly regression transitions
-        if: ${{ always() && github.ref_name == 'main' && secrets.SLACK_NIGHTLY_WEBHOOK_URL != '' && (steps.nightly_sync.outputs.notification_action == 'regression_opened' || steps.nightly_sync.outputs.notification_action == 'recovered') }}
+        if: ${{ always() && github.ref_name == 'main' && (steps.nightly_sync.outputs.notification_action == 'regression_opened' || steps.nightly_sync.outputs.notification_action == 'recovered') }}
         env:
           SLACK_NIGHTLY_WEBHOOK_URL: ${{ secrets.SLACK_NIGHTLY_WEBHOOK_URL }}
         shell: bash
         run: |
+          if [[ -z "${SLACK_NIGHTLY_WEBHOOK_URL}" ]]; then
+            echo "error: SLACK_NIGHTLY_WEBHOOK_URL is required for main-branch Slack transitions" >&2
+            exit 1
+          fi
           payload_json="${RUNNER_TEMP}/nightly-slack-payload.json"
           python3 scripts/qa_nightly_issue.py build-slack-payload \
             --result-json "${{ steps.nightly_sync.outputs.result_json }}" > "${payload_json}"

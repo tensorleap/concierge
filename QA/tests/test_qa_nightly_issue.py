@@ -5,10 +5,39 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.qa_nightly_issue import build_recovery_comment, build_regression_issue_body, classify_summary
+from scripts.qa_nightly_issue import (
+    NightlySyncResult,
+    build_recovery_comment,
+    build_regression_issue_body,
+    build_slack_payload,
+    classify_summary,
+    determine_notification_action,
+)
 
 
 class QANightlyIssueTest(unittest.TestCase):
+    def test_determine_notification_action_distinguishes_transition_states(self) -> None:
+        self.assertEqual(
+            determine_notification_action(classification_kind="product_regression", has_open_issue=False),
+            "regression_opened",
+        )
+        self.assertEqual(
+            determine_notification_action(classification_kind="product_regression", has_open_issue=True),
+            "regression_still_open",
+        )
+        self.assertEqual(
+            determine_notification_action(classification_kind="pass", has_open_issue=True),
+            "recovered",
+        )
+        self.assertEqual(
+            determine_notification_action(classification_kind="pass", has_open_issue=False),
+            "no_open_issue",
+        )
+        self.assertEqual(
+            determine_notification_action(classification_kind="infra_failure", has_open_issue=True),
+            "infra_failure",
+        )
+
     def test_classify_summary_treats_stop_report_as_pass(self) -> None:
         classification = classify_summary(
             {
@@ -80,6 +109,51 @@ class QANightlyIssueTest(unittest.TestCase):
         self.assertIn("Nightly ultralytics/pre QA recovered", comment)
         self.assertIn("nightly-ultralytics-pre-20260404", comment)
         self.assertIn("https://github.com/tensorleap/concierge/actions/runs/123456790", comment)
+
+    def test_build_slack_payload_for_regression_transition_includes_run_and_issue_links(self) -> None:
+        payload = build_slack_payload(
+            NightlySyncResult(
+                classification_kind="product_regression",
+                loop_state="STOP_FIX",
+                stop_reason="integration_review_failed",
+                report_status="ready",
+                notification_action="regression_opened",
+                issue_number=184,
+                issue_title="Nightly QA regression: ultralytics/pre",
+                issue_url="https://github.com/tensorleap/concierge/issues/184",
+                run_id="nightly-ultralytics-pre-20260403-23950721920",
+                workflow_run_url="https://github.com/tensorleap/concierge/actions/runs/23950721920",
+                artifact_name="qa-loop-nightly-ultralytics-pre-20260403-23950721920",
+                summary_text="Nightly ultralytics/pre QA stopped on STOP_FIX (integration_review_failed).",
+            )
+        )
+
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertIn("Nightly ultralytics/pre QA regression detected.", payload["text"])
+        self.assertIn("<https://github.com/tensorleap/concierge/actions/runs/23950721920|nightly-ultralytics-pre-20260403-23950721920>", payload["text"])
+        self.assertIn("<https://github.com/tensorleap/concierge/issues/184|Nightly QA regression: ultralytics/pre>", payload["text"])
+        self.assertIn("STOP_FIX", payload["text"])
+
+    def test_build_slack_payload_returns_none_for_non_transition_actions(self) -> None:
+        payload = build_slack_payload(
+            NightlySyncResult(
+                classification_kind="product_regression",
+                loop_state="STOP_FIX",
+                stop_reason="integration_review_failed",
+                report_status="ready",
+                notification_action="regression_still_open",
+                issue_number=184,
+                issue_title="Nightly QA regression: ultralytics/pre",
+                issue_url="https://github.com/tensorleap/concierge/issues/184",
+                run_id="nightly-ultralytics-pre-20260403-23950721920",
+                workflow_run_url="https://github.com/tensorleap/concierge/actions/runs/23950721920",
+                artifact_name="qa-loop-nightly-ultralytics-pre-20260403-23950721920",
+                summary_text="Nightly ultralytics/pre QA stopped on STOP_FIX (integration_review_failed).",
+            )
+        )
+
+        self.assertIsNone(payload)
 
     def _write_run_artifacts(self, qa_root: Path, run_id: str) -> None:
         run_dir = qa_root / "runs" / run_id

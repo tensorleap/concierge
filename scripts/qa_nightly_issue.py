@@ -27,6 +27,58 @@ class NightlyClassification:
     report_status: str
 
 
+@dataclass(frozen=True)
+class NightlySyncResult:
+    classification_kind: str
+    loop_state: str
+    stop_reason: str
+    report_status: str
+    notification_action: str
+    issue_number: int | None
+    issue_title: str | None
+    issue_url: str | None
+    run_id: str
+    workflow_run_url: str
+    artifact_name: str
+    summary_text: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "classification_kind": self.classification_kind,
+            "loop_state": self.loop_state,
+            "stop_reason": self.stop_reason,
+            "report_status": self.report_status,
+            "notification_action": self.notification_action,
+            "issue_number": self.issue_number,
+            "issue_title": self.issue_title,
+            "issue_url": self.issue_url,
+            "run_id": self.run_id,
+            "workflow_run_url": self.workflow_run_url,
+            "artifact_name": self.artifact_name,
+            "summary_text": self.summary_text,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "NightlySyncResult":
+        issue_number = payload.get("issue_number")
+        if issue_number in ("", None):
+            issue_number = None
+        return cls(
+            classification_kind=str(payload.get("classification_kind", "")).strip(),
+            loop_state=str(payload.get("loop_state", "")).strip(),
+            stop_reason=str(payload.get("stop_reason", "")).strip(),
+            report_status=str(payload.get("report_status", "")).strip(),
+            notification_action=str(payload.get("notification_action", "")).strip(),
+            issue_number=int(issue_number) if issue_number is not None else None,
+            issue_title=str(payload.get("issue_title", "")).strip() or None,
+            issue_url=str(payload.get("issue_url", "")).strip() or None,
+            run_id=str(payload.get("run_id", "")).strip(),
+            workflow_run_url=str(payload.get("workflow_run_url", "")).strip(),
+            artifact_name=str(payload.get("artifact_name", "")).strip(),
+            summary_text=str(payload.get("summary_text", "")).strip(),
+        )
+
+
 def classify_summary(summary: dict[str, Any] | None) -> NightlyClassification:
     if not isinstance(summary, dict):
         return NightlyClassification(
@@ -53,6 +105,14 @@ def classify_summary(summary: dict[str, Any] | None) -> NightlyClassification:
         stop_reason=stop_reason,
         report_status=report_status,
     )
+
+
+def determine_notification_action(*, classification_kind: str, has_open_issue: bool) -> str:
+    if classification_kind == "product_regression":
+        return "regression_opened" if not has_open_issue else "regression_still_open"
+    if classification_kind == "pass":
+        return "recovered" if has_open_issue else "no_open_issue"
+    return "infra_failure"
 
 
 def build_regression_issue_body(
@@ -102,9 +162,51 @@ def build_recovery_comment(*, run_id: str, workflow_run_url: str, artifact_name:
     )
 
 
+def build_slack_payload(result: NightlySyncResult) -> dict[str, str] | None:
+    if result.notification_action not in {"regression_opened", "recovered"}:
+        return None
+
+    issue_label = result.issue_title or DEFAULT_ISSUE_TITLE
+    issue_reference = issue_label
+    if result.issue_url:
+        issue_reference = f"<{result.issue_url}|{issue_label}>"
+
+    issue_heading = "Rolling issue" if result.notification_action == "regression_opened" else "Closed issue"
+    summary_heading = (
+        "Nightly ultralytics/pre QA regression detected."
+        if result.notification_action == "regression_opened"
+        else "Nightly ultralytics/pre QA recovered."
+    )
+    text = "\n".join(
+        [
+            summary_heading,
+            f"- Outcome: {result.summary_text}",
+            f"- Run: <{result.workflow_run_url}|{result.run_id}>",
+            f"- {issue_heading}: {issue_reference}",
+        ]
+    )
+    return {"text": text}
+
+
 def load_summary(*, repo_root: Path, artifacts_root: Path | None, run_id: str) -> dict[str, Any] | None:
     resolved_artifacts_root = resolve_artifacts_root(repo_root, artifacts_root)
     path = summary_path_for(resolved_artifacts_root, run_id)
+    if not path.is_file():
+        return None
+    return load_json(path)
+
+
+def load_report(*, repo_root: Path, artifacts_root: Path | None, run_id: str, summary: dict[str, Any] | None) -> dict[str, Any] | None:
+    candidate = None
+    if isinstance(summary, dict):
+        candidate = str(summary.get("paths", {}).get("report_json", "")).strip()
+    if candidate:
+        path = Path(candidate)
+        if path.is_file():
+            return load_json(path)
+
+    resolved_artifacts_root = resolve_artifacts_root(repo_root, artifacts_root)
+    path = resolved_artifacts_root / "reports" / f"{run_id}.json"
     if not path.is_file():
         return None
     return load_json(path)
@@ -131,6 +233,51 @@ def find_open_issue_by_title(title: str) -> dict[str, Any] | None:
     return None
 
 
+def issue_reference_from_url(*, url: str | None, title: str) -> dict[str, Any] | None:
+    cleaned_url = (url or "").strip()
+    if not cleaned_url:
+        return None
+
+    issue_number: int | None = None
+    try:
+        issue_number = int(cleaned_url.rstrip("/").rsplit("/", 1)[-1])
+    except ValueError:
+        issue_number = None
+
+    return {
+        "number": issue_number,
+        "title": title,
+        "url": cleaned_url,
+    }
+
+
+def build_summary_text(
+    *,
+    classification: NightlyClassification,
+    notification_action: str,
+    report: dict[str, Any] | None,
+) -> str:
+    if notification_action == "recovered":
+        return "Nightly ultralytics/pre QA passed and closed the rolling regression issue."
+    if notification_action == "no_open_issue":
+        return "Nightly ultralytics/pre QA passed with no open rolling regression issue."
+
+    if isinstance(report, dict):
+        overall_outcome = str(report.get("overall_outcome", "")).strip()
+        if overall_outcome:
+            return overall_outcome
+
+    return (
+        "Nightly ultralytics/pre QA "
+        f"stopped on {classification.loop_state} ({classification.stop_reason})."
+    )
+
+
+def write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
 def sync_issue(
     *,
     repo_root: Path,
@@ -139,16 +286,15 @@ def sync_issue(
     issue_title: str,
     workflow_run_url: str,
     artifact_name: str,
-) -> int:
+) -> NightlySyncResult:
     summary = load_summary(repo_root=repo_root, artifacts_root=artifacts_root, run_id=run_id)
     classification = classify_summary(summary)
-    print(
-        f"[qa-nightly] classification={classification.kind} "
-        f"loop_state={classification.loop_state} stop_reason={classification.stop_reason}",
-        flush=True,
-    )
-
     existing_issue = find_open_issue_by_title(issue_title)
+    notification_action = determine_notification_action(
+        classification_kind=classification.kind,
+        has_open_issue=existing_issue is not None,
+    )
+    issue_reference = existing_issue
 
     if classification.kind == "product_regression":
         body = build_regression_issue_body(
@@ -159,7 +305,7 @@ def sync_issue(
             artifact_name=artifact_name,
         )
         if existing_issue is None:
-            run_gh(
+            created = run_gh(
                 [
                     "issue",
                     "create",
@@ -172,8 +318,12 @@ def sync_issue(
                     "--body-file",
                     "-",
                 ],
+                capture_output=True,
                 input_text=body,
             )
+            issue_reference = issue_reference_from_url(url=created.stdout.strip(), title=issue_title)
+            if issue_reference is None:
+                issue_reference = find_open_issue_by_title(issue_title)
             print(f"[qa-nightly] created rolling regression issue: {issue_title}", flush=True)
         else:
             run_gh(
@@ -191,34 +341,57 @@ def sync_issue(
                 input_text=body,
             )
             print(f"[qa-nightly] updated rolling regression issue #{existing_issue['number']}", flush=True)
-        return 0
 
-    if classification.kind == "pass":
+    elif classification.kind == "pass":
         if existing_issue is None:
             print("[qa-nightly] no open rolling regression issue to close", flush=True)
-            return 0
+        else:
+            comment = build_recovery_comment(
+                run_id=run_id,
+                workflow_run_url=workflow_run_url,
+                artifact_name=artifact_name,
+            )
+            run_gh(
+                [
+                    "issue",
+                    "comment",
+                    str(existing_issue["number"]),
+                    "--body-file",
+                    "-",
+                ],
+                input_text=comment,
+            )
+            run_gh(["issue", "close", str(existing_issue["number"])])
+            print(f"[qa-nightly] closed rolling regression issue #{existing_issue['number']}", flush=True)
+    else:
+        print("[qa-nightly] infra or harness failure; leaving rolling regression issue untouched", flush=True)
 
-        comment = build_recovery_comment(
-            run_id=run_id,
-            workflow_run_url=workflow_run_url,
-            artifact_name=artifact_name,
-        )
-        run_gh(
-            [
-                "issue",
-                "comment",
-                str(existing_issue["number"]),
-                "--body-file",
-                "-",
-            ],
-            input_text=comment,
-        )
-        run_gh(["issue", "close", str(existing_issue["number"])])
-        print(f"[qa-nightly] closed rolling regression issue #{existing_issue['number']}", flush=True)
-        return 0
-
-    print("[qa-nightly] infra or harness failure; leaving rolling regression issue untouched", flush=True)
-    return 0
+    report = load_report(repo_root=repo_root, artifacts_root=artifacts_root, run_id=run_id, summary=summary)
+    result = NightlySyncResult(
+        classification_kind=classification.kind,
+        loop_state=classification.loop_state,
+        stop_reason=classification.stop_reason,
+        report_status=classification.report_status,
+        notification_action=notification_action,
+        issue_number=int(issue_reference["number"]) if issue_reference and issue_reference.get("number") is not None else None,
+        issue_title=(str(issue_reference.get("title", "")).strip() or None) if issue_reference else None,
+        issue_url=(str(issue_reference.get("url", "")).strip() or None) if issue_reference else None,
+        run_id=run_id,
+        workflow_run_url=workflow_run_url,
+        artifact_name=artifact_name,
+        summary_text=build_summary_text(
+            classification=classification,
+            notification_action=notification_action,
+            report=report,
+        ),
+    )
+    print(
+        f"[qa-nightly] classification={classification.kind} "
+        f"loop_state={classification.loop_state} stop_reason={classification.stop_reason} "
+        f"notification_action={notification_action}",
+        flush=True,
+    )
+    return result
 
 
 def run_gh(args: list[str], *, capture_output: bool = False, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
@@ -247,6 +420,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     sync_parser.add_argument("--issue-title", default=DEFAULT_ISSUE_TITLE)
     sync_parser.add_argument("--workflow-run-url", required=True)
     sync_parser.add_argument("--artifact-name", required=True)
+    sync_parser.add_argument("--result-json", default=None)
+
+    slack_parser = subparsers.add_parser("build-slack-payload")
+    slack_parser.add_argument("--result-json", required=True)
 
     return parser.parse_args(argv)
 
@@ -257,7 +434,7 @@ def main(argv: list[str] | None = None) -> int:
     artifacts_root = Path(args.artifacts_root).resolve() if args.artifacts_root else None
 
     if args.command == "sync-issue":
-        return sync_issue(
+        result = sync_issue(
             repo_root=repo_root,
             artifacts_root=artifacts_root,
             run_id=args.run_id,
@@ -265,6 +442,20 @@ def main(argv: list[str] | None = None) -> int:
             workflow_run_url=args.workflow_run_url,
             artifact_name=args.artifact_name,
         )
+        if args.result_json:
+            write_json(Path(args.result_json).resolve(), result.to_dict())
+        return 0
+
+    if args.command == "build-slack-payload":
+        result = NightlySyncResult.from_dict(load_json(Path(args.result_json).resolve()))
+        payload = build_slack_payload(result)
+        if payload is None:
+            raise SystemExit(
+                f"no Slack payload for notification action: {result.notification_action}"
+            )
+        json.dump(payload, sys.stdout)
+        sys.stdout.write("\n")
+        return 0
 
     raise AssertionError(f"unsupported command: {args.command}")
 

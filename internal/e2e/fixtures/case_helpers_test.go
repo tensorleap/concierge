@@ -2,7 +2,10 @@ package fixtures
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -38,6 +41,13 @@ type fixtureCaseEntry struct {
 type fixtureCaseMapping struct {
 	InputSymbols       []string `json:"input_symbols,omitempty"`
 	GroundTruthSymbols []string `json:"ground_truth_symbols,omitempty"`
+}
+
+const fixtureCaseStateFile = ".fixture_case_state.json"
+
+type fixtureCaseState struct {
+	SourceRef   string `json:"source_ref"`
+	PatchSHA256 string `json:"patch_sha256"`
 }
 
 type fixtureFakeAgentRunner struct {
@@ -106,6 +116,14 @@ func resolveCaseRoot(t *testing.T, caseID string) string {
 	caseRoot := filepath.Join(repoRootFromRuntime(t), ".fixtures", "cases", caseID)
 	if _, err := os.Stat(filepath.Join(caseRoot, ".git")); err != nil {
 		t.Fatalf("fixture case repo missing for %q at %q: %v (run bash scripts/fixtures_mutate_cases.sh)", caseID, caseRoot, err)
+	}
+	entry := loadFixtureCase(t, caseID)
+	reason, err := fixtureCaseFreshnessReason(repoRootFromRuntime(t), entry, caseRoot)
+	if err != nil {
+		t.Fatalf("fixture case freshness check failed for %q: %v", caseID, err)
+	}
+	if reason != "" {
+		t.Skipf("fixture case %q is stale; run `bash scripts/fixtures_mutate_cases.sh` (%s)", caseID, reason)
 	}
 	return caseRoot
 }
@@ -393,4 +411,62 @@ func seedModelArtifactIfNeeded(t *testing.T, entry fixtureCaseEntry, repoRoot st
 			t.Fatalf("WriteFile failed for %q: %v", modelPath, err)
 		}
 	}
+}
+
+func fixtureCaseFreshnessReason(repoRoot string, entry fixtureCaseEntry, caseRoot string) (string, error) {
+	statePath := filepath.Join(caseRoot, fixtureCaseStateFile)
+	raw, err := os.ReadFile(statePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "missing freshness metadata", nil
+		}
+		return "", fmt.Errorf("read freshness metadata: %w", err)
+	}
+
+	var state fixtureCaseState
+	if err := json.Unmarshal(raw, &state); err != nil {
+		return "invalid freshness metadata", nil
+	}
+
+	if strings.TrimSpace(state.PatchSHA256) == "" {
+		return "missing patch hash", nil
+	}
+	expectedPatchSHA256, err := fileSHA256(filepath.Join(repoRoot, filepath.FromSlash(entry.Patch)))
+	if err != nil {
+		return "", fmt.Errorf("hash patch file %q: %w", entry.Patch, err)
+	}
+	if !strings.EqualFold(state.PatchSHA256, expectedPatchSHA256) {
+		return fmt.Sprintf("patch hash mismatch: generated=%s current=%s", state.PatchSHA256, expectedPatchSHA256), nil
+	}
+
+	if strings.TrimSpace(state.SourceRef) == "" {
+		return "missing source fixture ref", nil
+	}
+	sourceRoot := filepath.Join(repoRoot, ".fixtures", entry.SourceFixtureID, entry.SourceVariant)
+	sourceRef, err := gitRevParseHead(sourceRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolve source fixture ref for %q: %w", sourceRoot, err)
+	}
+	if !strings.EqualFold(state.SourceRef, sourceRef) {
+		return fmt.Sprintf("source fixture ref changed: generated=%s current=%s", state.SourceRef, sourceRef), nil
+	}
+
+	return "", nil
+}
+
+func gitRevParseHead(repoRoot string) (string, error) {
+	output, err := exec.Command("git", "-C", repoRoot, "rev-parse", "HEAD").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("%w (%s)", err, strings.TrimSpace(string(output)))
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+func fileSHA256(path string) (string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
 }

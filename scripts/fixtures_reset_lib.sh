@@ -141,6 +141,39 @@ fixture_apply_case_patch() {
   fixture_commit_with_fixed_metadata "${repo_dir}" "${commit_message}"
 }
 
+fixture_patch_sha256() {
+  local patch_path="$1"
+
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "${patch_path}" | awk '{print $1}'
+    return
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "${patch_path}" | awk '{print $1}'
+    return
+  fi
+
+  fixture_fail "required command 'shasum' or 'sha256sum' not found"
+}
+
+fixture_write_case_state_file() {
+  local repo_dir="$1"
+  local source_ref="$2"
+  local patch_path="$3"
+  local patch_sha256
+
+  [[ -d "${repo_dir}" ]] || fixture_fail "fixture case repo missing: ${repo_dir}"
+  [[ -f "${patch_path}" ]] || fixture_fail "fixture case patch is missing: ${patch_path}"
+
+  patch_sha256="$(fixture_patch_sha256 "${patch_path}")"
+  cat >"${repo_dir}/.fixture_case_state.json" <<EOF
+{
+  "source_ref": "${source_ref}",
+  "patch_sha256": "${patch_sha256}"
+}
+EOF
+}
+
 fixture_reset_case_variant() {
   local repo_dir="$1"
   local source_ref="$2"
@@ -148,6 +181,7 @@ fixture_reset_case_variant() {
   local commit_message="$4"
 
   fixture_reset_post_variant "${repo_dir}" "${source_ref}"
+  fixture_write_case_state_file "${repo_dir}" "${source_ref}" "${patch_path}"
   fixture_apply_case_patch "${repo_dir}" "${patch_path}" "${commit_message}"
 }
 

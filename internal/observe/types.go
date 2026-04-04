@@ -11,9 +11,11 @@ import (
 type Mode string
 
 const (
-	ModeSpinner     Mode = "spinner"
-	ModeHighlights  Mode = "highlights"
-	ModePassthrough Mode = "passthrough"
+	ModeSpinner      Mode = "spinner"
+	ModeHighlights   Mode = "highlights"
+	ModePassthrough  Mode = "passthrough"
+	ModeSplitScreen  Mode = "splitscreen"
+	ModeTUI          Mode = "tui"
 )
 
 // EventKind is the machine-readable type for one live run event.

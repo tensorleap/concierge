@@ -145,6 +145,7 @@ while IFS= read -r case_json; do
   reset_case_dir "${case_dir}"
   cp -R "${source_dir}" "${case_dir}"
   git -C "${case_dir}" checkout --quiet "${source_ref}"
+  fixture_write_case_state_file "${case_dir}" "${source_ref}" "${patch_path}"
   fixture_apply_case_patch "${case_dir}" "${patch_path}" "${commit_message}"
   write_case_reset_script "${case_dir}" "${source_ref}" "${patch_path}" "${commit_message}"
 

@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, TextIO
 
+from final_review_bundle import build_final_review_comparison_bundle, write_final_review_comparison_bundle
 from pty_driver import PTYDriver
 
 
@@ -139,6 +140,7 @@ class RunPaths:
     run_dir: Path
     claude_dir: Path
     docker_dir: Path
+    final_review_comparison_bundle: Path
     summary_json: Path
     turns_jsonl: Path
     terminal_raw: Path
@@ -941,6 +943,7 @@ class SupervisorLoop:
                 "full_transcript": str(paths.full_transcript),
                 "report_json": str(paths.report_json),
                 "report_markdown": str(paths.report_markdown),
+                "final_review_comparison_bundle": str(paths.final_review_comparison_bundle),
             },
         }
         exported_artifacts = self._export_container_artifacts(paths=paths)
@@ -1393,11 +1396,35 @@ class SupervisorLoop:
                 issues=["The QA loop could not find the ground-truth fixture checkout for expert review."],
             )
 
+        qa_context = summary.get("qa_context", {})
+        if not isinstance(qa_context, dict):
+            qa_context = {}
+        comparison_bundle = build_final_review_comparison_bundle(
+            run_context={
+                "run_id": str(summary.get("run_id", "")).strip(),
+                "fixture_id": str(qa_context.get("fixture_id", "")).strip(),
+                "guide_step": str(qa_context.get("guide_step", "")).strip(),
+                "ref_under_test": str(qa_context.get("ref_under_test", "")).strip(),
+                "checkpoint_key": str(qa_context.get("checkpoint_key", "")).strip(),
+                "source_kind": str(qa_context.get("source_kind", "")).strip(),
+                "source_id": str(qa_context.get("source_id", "")).strip(),
+                "stop_reason": str(summary.get("stop_reason", "")).strip(),
+            },
+            candidate_workspace=candidate_workspace,
+            fixture_post_path=self.config.fixture_post_path,
+        )
+        write_final_review_comparison_bundle(comparison_bundle, paths.final_review_comparison_bundle)
+        summary_paths = summary.get("paths")
+        if not isinstance(summary_paths, dict):
+            summary_paths = {}
+            summary["paths"] = summary_paths
+        summary_paths["final_review_comparison_bundle"] = str(paths.final_review_comparison_bundle)
         context = build_integration_review_context(
             summary=summary,
             turns=load_jsonl(paths.turns_jsonl),
             candidate_workspace=candidate_workspace,
             fixture_post_path=self.config.fixture_post_path,
+            comparison_bundle=comparison_bundle,
         )
         prompt = textwrap.dedent(
             f"""
@@ -1406,6 +1433,7 @@ class SupervisorLoop:
             the generated code is functionally equivalent and appropriate for the scoped checkpoint.
 
             Rules:
+            - Use the structured `comparison_bundle` as your primary review surface.
             - Ground your judgment in the exported candidate workspace and the post fixture files.
             - Literal code identity is not required.
             - Functional equivalence and correct integration wiring are required.
@@ -1585,6 +1613,7 @@ def prepare_run_paths(artifacts_root: Path, run_id: str) -> RunPaths:
         run_dir=run_dir,
         claude_dir=claude_dir,
         docker_dir=docker_dir,
+        final_review_comparison_bundle=run_dir / "final_review_comparison_bundle.json",
         summary_json=run_dir / "summary.json",
         turns_jsonl=run_dir / "turns.jsonl",
         terminal_raw=transcripts_dir / f"{run_id}.terminal.raw.txt",
@@ -1745,6 +1774,7 @@ def build_integration_review_context(
     turns: list[dict[str, Any]],
     candidate_workspace: Path,
     fixture_post_path: Path,
+    comparison_bundle: dict[str, Any],
 ) -> dict[str, Any]:
     qa_context = summary.get("qa_context", {})
     if not isinstance(qa_context, dict):
@@ -1763,6 +1793,8 @@ def build_integration_review_context(
         },
         "candidate_workspace": str(candidate_workspace),
         "fixture_post_path": str(fixture_post_path),
+        "comparison_bundle_path": str(summary.get("paths", {}).get("final_review_comparison_bundle", "")).strip(),
+        "comparison_bundle": comparison_bundle,
         "recent_turn_summaries": [
             {
                 "iteration": int(turn.get("iteration", 0) or 0),

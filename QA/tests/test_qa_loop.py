@@ -559,12 +559,19 @@ class QALoopTest(unittest.TestCase):
 
             self.assertEqual(review.status, "pass")
             self.assertEqual(review.confidence, "high")
+            bundle_path = paths.run_dir / "final_review_comparison_bundle.json"
+            self.assertTrue(bundle_path.is_file())
+            self.assertEqual(
+                Path(summary["paths"]["final_review_comparison_bundle"]).resolve(),
+                bundle_path.resolve(),
+            )
             call = fake_claude.calls[0]
             prompt = str(call["prompt"])
             self.assertIn(str(export_root), prompt)
             self.assertIn(str(fixture_post), prompt)
             self.assertIn('"fixture_id": "ultralytics"', prompt)
             self.assertIn('"guide_step": "input_encoders"', prompt)
+            self.assertIn('"comparison_bundle"', prompt)
             self.assertEqual(list(call["add_dirs"]), [export_root, fixture_post])
             self.assertEqual(call["allowed_tools"], "Read,Grep,Glob,LS")
             self.assertEqual(call["session_label"], "claude-integration-review")
@@ -1743,6 +1750,12 @@ class QALoopTest(unittest.TestCase):
             self.assertEqual(summary["integration_review"]["status"], "fail")
             self.assertEqual(summary["integration_review"]["confidence"], "high")
             self.assertIn("not functionally equivalent", summary["integration_review"]["verdict"])
+            bundle_path = run_dir / "final_review_comparison_bundle.json"
+            self.assertTrue(bundle_path.is_file())
+            self.assertEqual(
+                Path(summary["paths"]["final_review_comparison_bundle"]).resolve(),
+                bundle_path.resolve(),
+            )
 
             report_path = artifacts_root / "reports" / f"{run_dir.name}.md"
             report_body = report_path.read_text(encoding="utf-8")

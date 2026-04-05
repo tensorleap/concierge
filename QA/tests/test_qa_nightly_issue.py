@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import http.server
 import json
+import subprocess
+import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -13,6 +17,9 @@ from scripts.qa_nightly_issue import (
     classify_summary,
     determine_notification_action,
 )
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class QANightlyIssueTest(unittest.TestCase):
@@ -155,6 +162,73 @@ class QANightlyIssueTest(unittest.TestCase):
 
         self.assertIsNone(payload)
 
+    def test_build_slack_payload_cli_accepts_result_json_without_sync_only_args(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result_json = Path(tmpdir) / "nightly-sync-result.json"
+            result_json.write_text(
+                json.dumps(self._slack_result().to_dict(), indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "scripts" / "qa_nightly_issue.py"),
+                    "build-slack-payload",
+                    "--result-json",
+                    str(result_json),
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            payload = json.loads(completed.stdout)
+            self.assertIn("Nightly ultralytics/pre QA regression detected.", payload["text"])
+            self.assertIn(
+                "<https://github.com/tensorleap/concierge/issues/190|Nightly QA regression: ultralytics/pre>",
+                payload["text"],
+            )
+
+    def test_send_slack_cli_posts_payload_to_local_test_webhook(self) -> None:
+        server = _SlackCaptureServer()
+        server.start()
+        self.addCleanup(server.stop)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result_json = Path(tmpdir) / "nightly-sync-result.json"
+            result_json.write_text(
+                json.dumps(self._slack_result().to_dict(), indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "scripts" / "qa_nightly_issue.py"),
+                    "send-slack",
+                    "--result-json",
+                    str(result_json),
+                    "--webhook-url",
+                    server.url,
+                    "--allow-insecure-webhook-url",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            request = server.wait_for_request()
+            self.assertEqual(request["path"], "/")
+            self.assertEqual(request["headers"]["Content-Type"], "application/json")
+            payload = json.loads(request["body"])
+            self.assertIn("Nightly ultralytics/pre QA regression detected.", payload["text"])
+            self.assertIn("nightly-ultralytics-pre-20260405-23994060462", payload["text"])
+
     def _write_run_artifacts(self, qa_root: Path, run_id: str) -> None:
         run_dir = qa_root / "runs" / run_id
         report_dir = qa_root / "reports"
@@ -213,3 +287,70 @@ class QANightlyIssueTest(unittest.TestCase):
 
         (export_root / "reports").mkdir(parents=True, exist_ok=True)
         (export_root / "reports" / "snapshot.json").write_text("{}\n", encoding="utf-8")
+
+    def _slack_result(self) -> NightlySyncResult:
+        return NightlySyncResult(
+            classification_kind="product_regression",
+            loop_state="STOP_FIX",
+            stop_reason="integration_review_failed",
+            report_status="ready",
+            notification_action="regression_opened",
+            issue_number=190,
+            issue_title="Nightly QA regression: ultralytics/pre",
+            issue_url="https://github.com/tensorleap/concierge/issues/190",
+            run_id="nightly-ultralytics-pre-20260405-23994060462",
+            workflow_run_url="https://github.com/tensorleap/concierge/actions/runs/23994060462",
+            artifact_name="qa-loop-nightly-ultralytics-pre-20260405-23994060462",
+            summary_text="Nightly ultralytics/pre QA stopped on STOP_FIX (integration_review_failed).",
+        )
+
+
+class _SlackCaptureServer:
+    def __init__(self) -> None:
+        self._requests: list[dict[str, object]] = []
+        self._event = threading.Event()
+        handler = self._build_handler()
+        self._server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    @property
+    def url(self) -> str:
+        host, port = self._server.server_address
+        return f"http://{host}:{port}/"
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=5)
+
+    def wait_for_request(self) -> dict[str, object]:
+        if not self._event.wait(timeout=5):
+            raise AssertionError("timed out waiting for Slack webhook request")
+        return self._requests[-1]
+
+    def _build_handler(self) -> type[http.server.BaseHTTPRequestHandler]:
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802
+                content_length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(content_length).decode("utf-8")
+                outer._requests.append(
+                    {
+                        "path": self.path,
+                        "headers": dict(self.headers.items()),
+                        "body": body,
+                    }
+                )
+                outer._event.set()
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        return Handler

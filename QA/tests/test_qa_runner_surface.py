@@ -39,8 +39,7 @@ class QARunnerSurfaceTest(unittest.TestCase):
         workflow = (REPO_ROOT / ".github" / "workflows" / "nightly-ultralytics-qa.yml").read_text(encoding="utf-8")
 
         self.assertIn("SLACK_NIGHTLY_WEBHOOK_URL", workflow)
-        self.assertIn("build-slack-payload", workflow)
-        self.assertIn("curl -fsS", workflow)
+        self.assertIn("send-slack", workflow)
         self.assertIn("notification_action", workflow)
         self.assertIn("github.ref_name == 'main'", workflow)
 

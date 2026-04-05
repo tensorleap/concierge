@@ -145,10 +145,6 @@ jobs:
             echo "error: SLACK_NIGHTLY_WEBHOOK_URL is required for main-branch Slack transitions" >&2
             exit 1
           fi
-          payload_json="${RUNNER_TEMP}/nightly-slack-payload.json"
-          python3 scripts/qa_nightly_issue.py build-slack-payload \
-            --result-json "${{ steps.nightly_sync.outputs.result_json }}" > "${payload_json}"
-          curl -fsS -X POST \
-            -H 'Content-type: application/json' \
-            --data @"${payload_json}" \
-            "${SLACK_NIGHTLY_WEBHOOK_URL}"
+          python3 scripts/qa_nightly_issue.py send-slack \
+            --result-json "${{ steps.nightly_sync.outputs.result_json }}" \
+            --webhook-url "${SLACK_NIGHTLY_WEBHOOK_URL}"

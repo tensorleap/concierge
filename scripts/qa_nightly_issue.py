@@ -8,6 +8,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib import error, parse, request
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -186,6 +187,42 @@ def build_slack_payload(result: NightlySyncResult) -> dict[str, str] | None:
         ]
     )
     return {"text": text}
+
+
+def validate_webhook_url(webhook_url: str, *, allow_insecure_webhook_url: bool) -> str:
+    cleaned = webhook_url.strip()
+    if not cleaned:
+        raise ValueError("webhook URL is required")
+
+    parsed = parse.urlparse(cleaned)
+    if parsed.scheme not in {"https", "http"} or not parsed.netloc:
+        raise ValueError(f"invalid webhook URL: {cleaned}")
+
+    if parsed.scheme != "https" and not allow_insecure_webhook_url:
+        raise ValueError(
+            "refusing non-HTTPS webhook URL without --allow-insecure-webhook-url"
+        )
+
+    return cleaned
+
+
+def post_slack_payload(
+    *,
+    webhook_url: str,
+    payload: dict[str, str],
+) -> None:
+    body = json.dumps(payload).encode("utf-8")
+    req = request.Request(
+        webhook_url,
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with request.urlopen(req, timeout=30) as response:
+            response.read()
+    except error.URLError as exc:
+        raise RuntimeError(f"Slack webhook POST failed: {exc}") from exc
 
 
 def load_summary(*, repo_root: Path, artifacts_root: Path | None, run_id: str) -> dict[str, Any] | None:
@@ -425,15 +462,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     slack_parser = subparsers.add_parser("build-slack-payload")
     slack_parser.add_argument("--result-json", required=True)
 
+    send_parser = subparsers.add_parser("send-slack")
+    send_parser.add_argument("--result-json", required=True)
+    send_parser.add_argument("--webhook-url", required=True)
+    send_parser.add_argument("--allow-insecure-webhook-url", action="store_true")
+
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    repo_root = Path(args.repo_root).resolve()
-    artifacts_root = Path(args.artifacts_root).resolve() if args.artifacts_root else None
 
     if args.command == "sync-issue":
+        repo_root = Path(args.repo_root).resolve()
+        artifacts_root = Path(args.artifacts_root).resolve() if args.artifacts_root else None
         result = sync_issue(
             repo_root=repo_root,
             artifacts_root=artifacts_root,
@@ -455,6 +497,24 @@ def main(argv: list[str] | None = None) -> int:
             )
         json.dump(payload, sys.stdout)
         sys.stdout.write("\n")
+        return 0
+
+    if args.command == "send-slack":
+        result = NightlySyncResult.from_dict(load_json(Path(args.result_json).resolve()))
+        payload = build_slack_payload(result)
+        if payload is None:
+            raise SystemExit(
+                f"no Slack payload for notification action: {result.notification_action}"
+            )
+        webhook_url = validate_webhook_url(
+            args.webhook_url,
+            allow_insecure_webhook_url=bool(args.allow_insecure_webhook_url),
+        )
+        post_slack_payload(webhook_url=webhook_url, payload=payload)
+        print(
+            f"[qa-nightly] sent Slack notification for {result.notification_action}",
+            flush=True,
+        )
         return 0
 
     raise AssertionError(f"unsupported command: {args.command}")

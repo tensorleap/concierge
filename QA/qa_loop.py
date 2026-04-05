@@ -12,11 +12,18 @@ import threading
 import textwrap
 import time
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable, TextIO
+from typing import Any, Callable, Iterable, Mapping, TextIO
 
 from final_review_bundle import build_final_review_comparison_bundle, write_final_review_comparison_bundle
+from final_review_criteria import (
+    aggregate_review,
+    criteria_for_step,
+    criterion_error_result,
+    normalize_criterion_result,
+    write_final_review_scorecard,
+)
 from pty_driver import PTYDriver
 
 
@@ -100,6 +107,12 @@ class IntegrationReview:
     quality_assessment: str
     issues: list[str]
     confidence: str
+    aggregate_score: float | None = None
+    aggregate_band: str = ""
+    passing_score_threshold: float | None = None
+    blocking_criteria: list[str] = field(default_factory=list)
+    criteria_errors: list[str] = field(default_factory=list)
+    criteria: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -141,6 +154,7 @@ class RunPaths:
     claude_dir: Path
     docker_dir: Path
     final_review_comparison_bundle: Path
+    final_review_scorecard: Path
     summary_json: Path
     turns_jsonl: Path
     terminal_raw: Path
@@ -944,6 +958,7 @@ class SupervisorLoop:
                 "report_json": str(paths.report_json),
                 "report_markdown": str(paths.report_markdown),
                 "final_review_comparison_bundle": str(paths.final_review_comparison_bundle),
+                "final_review_scorecard": str(paths.final_review_scorecard),
             },
         }
         exported_artifacts = self._export_container_artifacts(paths=paths)
@@ -968,6 +983,8 @@ class SupervisorLoop:
                         "kind": "integration_review",
                         "status": review.status,
                         "confidence": review.confidence,
+                        "aggregate_band": review.aggregate_band,
+                        "aggregate_score": review.aggregate_score,
                         "verdict": review.verdict,
                     },
                 )
@@ -1419,58 +1436,97 @@ class SupervisorLoop:
             summary_paths = {}
             summary["paths"] = summary_paths
         summary_paths["final_review_comparison_bundle"] = str(paths.final_review_comparison_bundle)
-        context = build_integration_review_context(
-            summary=summary,
-            turns=load_jsonl(paths.turns_jsonl),
-            candidate_workspace=candidate_workspace,
-            fixture_post_path=self.config.fixture_post_path,
-            comparison_bundle=comparison_bundle,
+        criteria = criteria_for_step(
+            str(qa_context.get("guide_step", "")).strip(),
+            comparison_bundle.get("step_context", {}).get("primary_criteria", []),
         )
-        prompt = textwrap.dedent(
-            f"""
-            You are the final expert reviewer for a Tensorleap integration QA run.
-            Compare the generated integration against the known-good post fixture and decide whether
-            the generated code is functionally equivalent and appropriate for the scoped checkpoint.
+        criterion_results: list[dict[str, Any]] = []
+        recent_turns = load_jsonl(paths.turns_jsonl)
 
-            Rules:
-            - Use the structured `comparison_bundle` as your primary review surface.
-            - Ground your judgment in the exported candidate workspace and the post fixture files.
-            - Literal code identity is not required.
-            - Functional equivalence and correct integration wiring are required.
-            - Mark `status` as `pass` only when the generated integration is clearly correct for the scope.
-            - Mark `status` as `fail` when the generated integration has literal bugs, missing wiring, incorrect semantics, or material divergence from the post fixture.
-            - Mark `status` as `error` only when you genuinely cannot judge from the available artifacts.
-            - Keep `verdict`, `functional_equivalence`, and `quality_assessment` concise.
-            - Keep `issues` to at most 5 concrete items.
+        for criterion in criteria:
+            context = build_final_review_criterion_context(
+                summary=summary,
+                turns=recent_turns,
+                candidate_workspace=candidate_workspace,
+                fixture_post_path=self.config.fixture_post_path,
+                comparison_bundle=comparison_bundle,
+                criterion=criterion,
+            )
+            prompt = textwrap.dedent(
+                f"""
+                You are evaluating exactly one final review criterion for a Tensorleap integration QA run.
+                Judge only the requested criterion. Do not give an overall pass/fail verdict.
 
-            Return only JSON matching the provided schema with exactly these keys:
-            - `status`
-            - `verdict`
-            - `functional_equivalence`
-            - `quality_assessment`
-            - `issues`
-            - `confidence`
+                Scoring rules:
+                - Return `score` as a number from 0.0 to 1.0 for this criterion only.
+                - `1.0` means the candidate is clearly aligned with the post fixture for this criterion.
+                - `0.0` means the candidate is clearly misaligned for this criterion.
+                - Use the structured `comparison_bundle` as your primary review surface.
+                - Ground the review in the exported candidate workspace and the post fixture files.
+                - Literal code identity is not required.
+                - Keep `summary` concise.
+                - Keep `evidence` and `concerns` concrete and limited to the active criterion.
+                - Respect checkpoint appropriateness: missing downstream surfaces can be acceptable when the scope does not require them yet.
 
-            Context:
-            ```json
-            {json.dumps(context, indent=2)}
-            ```
-            """
-        ).strip()
-        review_base = paths.claude_dir / "integration-review"
-        payload = self.claude_client.run_structured(
-            prompt=prompt,
-            schema_path=PROMPTS_DIR / "integration_review_schema.json",
-            output_path=review_base.with_suffix(".output.json"),
-            event_log_path=review_base.with_suffix(".jsonl"),
-            stderr_log_path=review_base.with_suffix(".stderr.log"),
-            add_dirs=[candidate_workspace, self.config.fixture_post_path],
-            allowed_tools="Read,Grep,Glob,LS",
-            timeout_seconds=self.config.review_timeout_seconds,
-            live_io=live_io,
-            session_label="claude-integration-review",
-        )
-        return normalize_integration_review(payload)
+                Return only JSON matching the provided schema with exactly these keys:
+                - `score`
+                - `confidence`
+                - `summary`
+                - `evidence`
+                - `concerns`
+
+                Context:
+                ```json
+                {json.dumps(context, indent=2)}
+                ```
+                """
+            ).strip()
+            session_slug = str(criterion["id"]).replace("_", "-")
+            review_base = paths.claude_dir / f"final-review-{session_slug}"
+            artifact_paths = {
+                "output_json": str(review_base.with_suffix(".output.json")),
+                "event_log": str(review_base.with_suffix(".jsonl")),
+                "stderr_log": str(review_base.with_suffix(".stderr.log")),
+            }
+            try:
+                payload = self.claude_client.run_structured(
+                    prompt=prompt,
+                    schema_path=PROMPTS_DIR / "final_review_criterion_schema.json",
+                    output_path=review_base.with_suffix(".output.json"),
+                    event_log_path=review_base.with_suffix(".jsonl"),
+                    stderr_log_path=review_base.with_suffix(".stderr.log"),
+                    add_dirs=[candidate_workspace, self.config.fixture_post_path],
+                    allowed_tools="Read,Grep,Glob,LS",
+                    timeout_seconds=self.config.review_timeout_seconds,
+                    live_io=live_io,
+                    session_label=f"claude-final-review-criterion-{session_slug}",
+                )
+                payload["artifact_paths"] = artifact_paths
+                result = normalize_criterion_result(criterion=criterion, payload=payload)
+            except ClaudeInvocationError as exc:
+                result = criterion_error_result(
+                    criterion=criterion,
+                    message=f"Criterion runner failed: {exc}",
+                )
+                result["artifact_paths"] = artifact_paths
+            criterion_results.append(result)
+
+        scorecard = aggregate_review(criteria=criteria, results=criterion_results)
+        scorecard["run"] = {
+            "run_id": str(summary.get("run_id", "")).strip(),
+            "fixture_id": str(qa_context.get("fixture_id", "")).strip(),
+            "guide_step": str(qa_context.get("guide_step", "")).strip(),
+            "ref_under_test": str(qa_context.get("ref_under_test", "")).strip(),
+            "checkpoint_key": str(qa_context.get("checkpoint_key", "")).strip(),
+            "source_kind": str(qa_context.get("source_kind", "")).strip(),
+            "source_id": str(qa_context.get("source_id", "")).strip(),
+            "stop_reason": str(summary.get("stop_reason", "")).strip(),
+        }
+        scorecard["comparison_bundle_path"] = str(paths.final_review_comparison_bundle)
+        write_final_review_scorecard(scorecard, paths.final_review_scorecard)
+        summary_paths["final_review_scorecard"] = str(paths.final_review_scorecard)
+        summary_paths["final_review_criteria_dir"] = str(paths.claude_dir)
+        return normalize_integration_review(scorecard)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -1614,6 +1670,7 @@ def prepare_run_paths(artifacts_root: Path, run_id: str) -> RunPaths:
         claude_dir=claude_dir,
         docker_dir=docker_dir,
         final_review_comparison_bundle=run_dir / "final_review_comparison_bundle.json",
+        final_review_scorecard=run_dir / "final_review_scorecard.json",
         summary_json=run_dir / "summary.json",
         turns_jsonl=run_dir / "turns.jsonl",
         terminal_raw=transcripts_dir / f"{run_id}.terminal.raw.txt",
@@ -1757,7 +1814,7 @@ def build_report_context(*, summary: dict[str, Any], turns: list[dict[str, Any]]
     }
     integration_review = summary.get("integration_review")
     if isinstance(integration_review, dict):
-        context["integration_review"] = {
+        review_context = {
             "status": str(integration_review.get("status", "")).strip(),
             "verdict": str(integration_review.get("verdict", "")).strip(),
             "functional_equivalence": str(integration_review.get("functional_equivalence", "")).strip(),
@@ -1765,16 +1822,30 @@ def build_report_context(*, summary: dict[str, Any], turns: list[dict[str, Any]]
             "issues": clean_string_list(integration_review.get("issues", [])),
             "confidence": str(integration_review.get("confidence", "")).strip(),
         }
+        aggregate_score = integration_review.get("aggregate_score")
+        if aggregate_score is not None:
+            try:
+                review_context["aggregate_score"] = float(aggregate_score)
+            except (TypeError, ValueError):
+                pass
+        aggregate_band = str(integration_review.get("aggregate_band", "")).strip()
+        if aggregate_band:
+            review_context["aggregate_band"] = aggregate_band
+        blocking_criteria = clean_string_list(integration_review.get("blocking_criteria", []))
+        if blocking_criteria:
+            review_context["blocking_criteria"] = blocking_criteria
+        context["integration_review"] = review_context
     return context
 
 
-def build_integration_review_context(
+def build_final_review_criterion_context(
     *,
     summary: dict[str, Any],
     turns: list[dict[str, Any]],
     candidate_workspace: Path,
     fixture_post_path: Path,
     comparison_bundle: dict[str, Any],
+    criterion: Mapping[str, Any],
 ) -> dict[str, Any]:
     qa_context = summary.get("qa_context", {})
     if not isinstance(qa_context, dict):
@@ -1790,6 +1861,15 @@ def build_integration_review_context(
             "source_kind": str(qa_context.get("source_kind", "")).strip(),
             "source_id": str(qa_context.get("source_id", "")).strip(),
             "stop_reason": str(summary.get("stop_reason", "")).strip(),
+        },
+        "criterion": {
+            "id": str(criterion.get("id", "")).strip(),
+            "title": str(criterion.get("title", "")).strip(),
+            "weight": float(criterion.get("weight", 0.0) or 0.0),
+            "primary": bool(criterion.get("primary", False)),
+            "minimum_score": float(criterion.get("minimum_score", 0.0) or 0.0),
+            "focus": str(criterion.get("focus", "")).strip(),
+            "guidance": str(criterion.get("guidance", "")).strip(),
         },
         "candidate_workspace": str(candidate_workspace),
         "fixture_post_path": str(fixture_post_path),
@@ -1984,6 +2064,18 @@ def normalize_integration_progress(value: Any) -> str:
 
 
 def normalize_integration_review(payload: dict[str, Any]) -> IntegrationReview:
+    aggregate_score = payload.get("aggregate_score")
+    try:
+        normalized_aggregate_score = None if aggregate_score is None else float(aggregate_score)
+    except (TypeError, ValueError):
+        normalized_aggregate_score = None
+
+    passing_score_threshold = payload.get("passing_score_threshold")
+    try:
+        normalized_passing_score_threshold = None if passing_score_threshold is None else float(passing_score_threshold)
+    except (TypeError, ValueError):
+        normalized_passing_score_threshold = None
+
     return IntegrationReview(
         status=str(payload.get("status", "")).strip() or "error",
         verdict=str(payload.get("verdict", "")).strip(),
@@ -1991,6 +2083,12 @@ def normalize_integration_review(payload: dict[str, Any]) -> IntegrationReview:
         quality_assessment=str(payload.get("quality_assessment", "")).strip(),
         issues=clean_string_list(payload.get("issues", [])),
         confidence=str(payload.get("confidence", "")).strip() or "low",
+        aggregate_score=normalized_aggregate_score,
+        aggregate_band=str(payload.get("aggregate_band", "")).strip(),
+        passing_score_threshold=normalized_passing_score_threshold,
+        blocking_criteria=clean_string_list(payload.get("blocking_criteria", [])),
+        criteria_errors=clean_string_list(payload.get("criteria_errors", [])),
+        criteria=[dict(item) for item in payload.get("criteria", []) if isinstance(item, dict)],
     )
 
 
@@ -2482,6 +2580,18 @@ def render_integration_review(review: dict[str, Any] | None) -> list[str]:
         f"Status: `{str(review.get('status', '')).strip() or 'unknown'}`",
         f"Confidence: `{str(review.get('confidence', '')).strip() or 'unknown'}`",
     ]
+    aggregate_score = review.get("aggregate_score")
+    if aggregate_score is not None:
+        try:
+            lines.append(f"Aggregate score: `{float(aggregate_score):.2f}`")
+        except (TypeError, ValueError):
+            pass
+    aggregate_band = str(review.get("aggregate_band", "")).strip()
+    if aggregate_band:
+        lines.append(f"Aggregate band: `{aggregate_band}`")
+    blocking_criteria = clean_string_list(review.get("blocking_criteria", []))
+    if blocking_criteria:
+        lines.append(f"Blocking criteria: `{', '.join(blocking_criteria)}`")
     verdict = str(review.get("verdict", "")).strip()
     if verdict:
         lines.extend(["", f"Verdict: {verdict}"])

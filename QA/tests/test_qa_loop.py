@@ -484,13 +484,26 @@ class QALoopTest(unittest.TestCase):
 
                 def run_structured(self, **kwargs: object) -> dict[str, object]:
                     self.calls.append(kwargs)
+                    prompt = str(kwargs["prompt"])
+                    criterion_id = "unknown"
+                    for candidate in (
+                        "checkpoint_appropriateness",
+                        "encoder_inventory_alignment",
+                        "prediction_surface_alignment",
+                        "preprocess_sample_model_alignment",
+                        "input_tensor_contract_alignment",
+                        "gt_contract_alignment",
+                        "overall_subjective_judgment",
+                    ):
+                        if candidate in prompt:
+                            criterion_id = candidate
+                            break
                     return {
-                        "status": "pass",
-                        "verdict": "The generated integration is functionally equivalent to the post fixture.",
-                        "functional_equivalence": "Equivalent for the scoped checkpoint.",
-                        "quality_assessment": "The generated files are appropriate and well wired.",
-                        "issues": [],
+                        "score": 0.82,
                         "confidence": "high",
+                        "summary": f"{criterion_id} is aligned.",
+                        "evidence": [f"{criterion_id} evidence"],
+                        "concerns": [],
                     }
 
             fake_claude = FakeClaudeClient()
@@ -561,10 +574,17 @@ class QALoopTest(unittest.TestCase):
             self.assertEqual(review.confidence, "high")
             bundle_path = paths.run_dir / "final_review_comparison_bundle.json"
             self.assertTrue(bundle_path.is_file())
+            scorecard_path = paths.run_dir / "final_review_scorecard.json"
+            self.assertTrue(scorecard_path.is_file())
             self.assertEqual(
                 Path(summary["paths"]["final_review_comparison_bundle"]).resolve(),
                 bundle_path.resolve(),
             )
+            self.assertEqual(
+                Path(summary["paths"]["final_review_scorecard"]).resolve(),
+                scorecard_path.resolve(),
+            )
+            self.assertEqual(len(fake_claude.calls), 7)
             call = fake_claude.calls[0]
             prompt = str(call["prompt"])
             self.assertIn(str(export_root), prompt)
@@ -572,9 +592,10 @@ class QALoopTest(unittest.TestCase):
             self.assertIn('"fixture_id": "ultralytics"', prompt)
             self.assertIn('"guide_step": "input_encoders"', prompt)
             self.assertIn('"comparison_bundle"', prompt)
+            self.assertIn('"criterion"', prompt)
             self.assertEqual(list(call["add_dirs"]), [export_root, fixture_post])
             self.assertEqual(call["allowed_tools"], "Read,Grep,Glob,LS")
-            self.assertEqual(call["session_label"], "claude-integration-review")
+            self.assertTrue(str(call["session_label"]).startswith("claude-final-review-criterion-"))
 
     def test_build_report_context_includes_integration_review(self) -> None:
         context = qa_loop.build_report_context(
@@ -1664,15 +1685,23 @@ class QALoopTest(unittest.TestCase):
                     else:
                         state = {"turn": 0}
 
-                    if "final expert reviewer for a Tensorleap integration QA run" in prompt:
-                        payload = {
-                            "status": "fail",
-                            "verdict": "The generated integration is not functionally equivalent to the post fixture.",
-                            "functional_equivalence": "The generated code diverges from the fixture in behaviorally significant ways.",
-                            "quality_assessment": "The authored integration contains incorrect wiring and should not be accepted.",
-                            "issues": ["The generated integration does not preserve the fixture's expected encoder behavior."],
-                            "confidence": "high"
-                        }
+                    if "evaluating exactly one final review criterion" in prompt:
+                        if '"title": "Encoder Inventory Alignment"' in prompt:
+                            payload = {
+                                "score": 0.10,
+                                "confidence": "high",
+                                "summary": "The encoder inventory diverges from the post fixture.",
+                                "evidence": ["The candidate omits the fixture's expected encoder registration."],
+                                "concerns": ["The generated integration does not preserve the fixture's expected encoder behavior."]
+                            }
+                        else:
+                            payload = {
+                                "score": 0.92,
+                                "confidence": "high",
+                                "summary": "The criterion is aligned with the post fixture.",
+                                "evidence": ["The extracted comparison surfaces are aligned for this criterion."],
+                                "concerns": []
+                            }
                     elif "final qualitative QA report" in prompt:
                         payload = {
                             "title": "Synthetic QA Report",
@@ -1749,7 +1778,9 @@ class QALoopTest(unittest.TestCase):
             self.assertEqual(summary["stop_reason"], "integration_review_failed")
             self.assertEqual(summary["integration_review"]["status"], "fail")
             self.assertEqual(summary["integration_review"]["confidence"], "high")
-            self.assertIn("not functionally equivalent", summary["integration_review"]["verdict"])
+            self.assertEqual(summary["integration_review"]["aggregate_band"], "accept")
+            self.assertIn("controller thresholds", summary["integration_review"]["verdict"])
+            self.assertIn("encoder_inventory_alignment", summary["integration_review"]["blocking_criteria"])
             bundle_path = run_dir / "final_review_comparison_bundle.json"
             self.assertTrue(bundle_path.is_file())
             self.assertEqual(
